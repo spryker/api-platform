@@ -1,0 +1,17 @@
+{
+    "include": {
+        "api-platform/api-pack": "Required for the APi Platform.",
+        "api-platform/hal": "Required for the APi Platform.",
+        "api-platform/json-api": "Required for the APi Platform.",
+        "api-platform/metadata": "Required for the APi Platform.",
+        "api-platform/state": "Required for the APi Platform.",
+        "symfony/config": "Required for the APi Platform.",
+        "symfony/console": "Required for the APi Platform.",
+        "symfony/finder": "Required for the APi Platform.",
+        "symfony/http-kernel": "Required for the APi Platform.",
+        "symfony/yaml": "Required for the APi Platform."
+    },
+    "exclude": {
+        "spryker/helper": "Bug in the Dependency Finder."
+    }
+}

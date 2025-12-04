@@ -1,0 +1,61 @@
+{
+    "name": "spryker/api-platform",
+    "type": "library",
+    "description": "ApiPlatform module",
+    "license": "proprietary",
+    "require": {
+        "api-platform/api-pack": "^1.4.0",
+        "api-platform/hal": "^4.2.0",
+        "api-platform/json-api": "^4.2.0",
+        "api-platform/metadata": "^4.2.0",
+        "api-platform/state": "^4.2.0",
+        "php": ">=8.3",
+        "spryker/log": "^3.0.0",
+        "symfony/config": "^6.0.0 || ^7.0.0",
+        "symfony/console": "^6.0.0 || ^7.0.0",
+        "symfony/finder": "^6.0.0 || ^7.0.0",
+        "symfony/http-kernel": "^6.0.0 || ^7.0.0",
+        "symfony/yaml": "^6.0.0 || ^7.0.0"
+    },
+    "require-dev": {
+        "spryker/code-sniffer": "*",
+        "spryker/console": "*",
+        "spryker/symfony": "*",
+        "spryker/testify": "*"
+    },
+    "autoload": {
+        "psr-4": {
+            "Spryker\\": "src/Spryker/"
+        }
+    },
+    "autoload-dev": {
+        "psr-4": {
+            "SprykerTest\\ApiPlatform\\Helper\\": "tests/SprykerTest/ApiPlatform/_support/Helper/",
+            "SprykerTest\\": "tests/SprykerTest/"
+        }
+    },
+    "minimum-stability": "dev",
+    "prefer-stable": true,
+    "scripts": {
+        "cs-check": "phpcs -p -s --standard=vendor/spryker/code-sniffer/SprykerStrict/ruleset.xml src/ tests/",
+        "cs-fix": "phpcbf -p --standard=vendor/spryker/code-sniffer/SprykerStrict/ruleset.xml src/ tests/"
+    },
+    "extra": {
+        "branch-alias": {
+            "dev-master": "1.0.x-dev"
+        }
+    },
+    "config": {
+        "sort-packages": true,
+        "allow-plugins": {
+            "dealerdirect/phpcodesniffer-composer-installer": true
+        }
+    },
+    "keywords": [
+        "spryker",
+        "api-platform",
+        "code-generation",
+        "schema",
+        "api"
+    ]
+}

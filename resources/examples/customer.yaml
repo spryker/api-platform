@@ -1,0 +1,75 @@
+# yaml-language-server: $schema=../schemas/api-resource-schema-v1.json
+
+resource:
+    name: Customer
+    shortName: Customer
+    description: 'Customer resource for backoffice API'
+
+    provider: "SprykerFeature\\Zed\\Customer\\Api\\Provider\\CustomerBackofficeProvider"
+    processor: "SprykerFeature\\Zed\\Customer\\Api\\Processor\\CustomerBackofficeProcessor"
+    paginationEnabled: true
+    paginationItemsPerPage: 10
+
+    operations:
+        - type: Get
+        - type: GetCollection
+        - type: Post
+        - type: Patch
+        - type: Delete
+
+    properties:
+        idCustomer:
+            type: integer
+            description: 'The unique identifier'
+            writable: false
+            identifier: true
+            required: true
+
+        email:
+            type: string
+            description: 'Email address'
+            required: true
+            openapiContext:
+                example: 'customer@example.com'
+                schema:
+                    format: 'email'
+
+        salutation:
+            type: string
+            description: 'Customer salutation'
+            openapiContext:
+                example: 'Mr'
+                schema:
+                    enum:
+                        - 'Mr'
+                        - 'Mrs'
+                        - 'Dr'
+                        - 'Ms'
+
+        firstName:
+            type: string
+            description: 'First name'
+            required: true
+            openapiContext:
+                example: 'John'
+
+        lastName:
+            type: string
+            description: 'Last name'
+            required: true
+            openapiContext:
+                example: 'Doe'
+
+        isActive:
+            type: boolean
+            description: 'Whether the customer is active'
+            default: true
+
+        createdAt:
+            type: string
+            description: 'Creation timestamp'
+            writable: false
+            openapiContext:
+                example: '2024-01-01T12:00:00Z'
+                schema:
+                    format: 'date-time'

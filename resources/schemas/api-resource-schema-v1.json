@@ -1,0 +1,320 @@
+{
+    "$schema": "http://json-schema.org/draft-07/schema#",
+    "$id": "https://static.spryker.com/api-resource-schema-v1.json",
+    "title": "Spryker API Resource Schema",
+    "description": "Schema for defining API Platform resources in Spryker using YAML format",
+    "type": "object",
+    "required": ["resource"],
+    "properties": {
+        "resource": {
+            "type": "object",
+            "description": "Root element containing the API resource definition",
+            "required": ["shortName"],
+            "properties": {
+                "name": {
+                    "type": "string",
+                    "description": "The full name of the resource (e.g., 'Customer')",
+                    "pattern": "^[A-Za-z][A-Za-z0-9]*$",
+                    "examples": ["Customer", "Product", "Order"]
+                },
+                "shortName": {
+                    "type": "string",
+                    "description": "The short name of the resource, used in API URLs (required)",
+                    "pattern": "^[A-Za-z][A-Za-z0-9]*$",
+                    "examples": ["Customer", "Product", "Order"]
+                },
+                "description": {
+                    "type": "string",
+                    "description": "Human-readable description of the resource",
+                    "examples": ["Customer resource for storefront API"]
+                },
+                "operations": {
+                    "type": "array",
+                    "description": "List of operations available on this resource",
+                    "minItems": 1,
+                    "items": {
+                        "type": "object",
+                        "required": ["type"],
+                        "properties": {
+                            "type": {
+                                "type": "string",
+                                "description": "The HTTP operation type",
+                                "enum": ["Get", "GetCollection", "Post", "Put", "Patch", "Delete"],
+                                "examples": ["Get", "GetCollection", "Post"]
+                            },
+                            "security": {
+                                "type": "string",
+                                "description": "Security expression using Symfony Expression Language syntax",
+                                "examples": [
+                                    "is_granted('ROLE_USER')",
+                                    "is_granted('ROLE_ADMIN') or object.owner == user"
+                                ]
+                            }
+                        },
+                        "additionalProperties": true
+                    }
+                },
+                "properties": {
+                    "type": "object",
+                    "description": "Properties of the resource, indexed by property name",
+                    "minProperties": 1,
+                    "patternProperties": {
+                        "^[a-zA-Z_][a-zA-Z0-9_]*$": {
+                            "type": "object",
+                            "description": "Property definition",
+                            "required": ["type"],
+                            "properties": {
+                                "type": {
+                                    "type": "string",
+                                    "description": "The data type of the property",
+                                    "enum": [
+                                        "string",
+                                        "integer",
+                                        "boolean",
+                                        "array",
+                                        "object",
+                                        "mixed",
+                                        "int",
+                                        "bool",
+                                        "str",
+                                        "arr"
+                                    ],
+                                    "examples": ["string", "integer", "boolean"]
+                                },
+                                "description": {
+                                    "type": "string",
+                                    "description": "Human-readable description of the property",
+                                    "examples": ["The unique identifier", "Customer email address"]
+                                },
+                                "writable": {
+                                    "type": "boolean",
+                                    "description": "Whether the property can be written (updated) via API",
+                                    "default": true,
+                                    "examples": [true, false]
+                                },
+                                "readable": {
+                                    "type": "boolean",
+                                    "description": "Whether the property can be read via API",
+                                    "default": true,
+                                    "examples": [true, false]
+                                },
+                                "identifier": {
+                                    "type": "boolean",
+                                    "description": "Whether this property is the resource identifier (at least one required)",
+                                    "default": false,
+                                    "examples": [true, false]
+                                },
+                                "required": {
+                                    "type": "boolean",
+                                    "description": "Whether this property is required when creating the resource",
+                                    "default": false,
+                                    "examples": [true, false]
+                                },
+                                "default": {
+                                    "description": "Default value for the property (must match the property type)",
+                                    "examples": [0, "", false, []]
+                                },
+                                "openapiContext": {
+                                    "type": "object",
+                                    "description": "Additional OpenAPI specification attributes for this property",
+                                    "properties": {
+                                        "example": {
+                                            "description": "Example value for documentation",
+                                            "examples": ["test@example.com", "John Doe", 42]
+                                        },
+                                        "schema": {
+                                            "type": "object",
+                                            "description": "OpenAPI schema overrides",
+                                            "properties": {
+                                                "enum": {
+                                                    "type": "array",
+                                                    "description": "Allowed values for the property",
+                                                    "items": {
+                                                        "type": ["string", "number", "boolean"]
+                                                    },
+                                                    "examples": [
+                                                        ["Mr", "Mrs", "Dr"],
+                                                        ["active", "inactive"]
+                                                    ]
+                                                },
+                                                "format": {
+                                                    "type": "string",
+                                                    "description": "Data format specification",
+                                                    "examples": ["date-time", "email", "uri", "uuid"]
+                                                },
+                                                "minLength": {
+                                                    "type": "integer",
+                                                    "description": "Minimum string length",
+                                                    "minimum": 0
+                                                },
+                                                "maxLength": {
+                                                    "type": "integer",
+                                                    "description": "Maximum string length",
+                                                    "minimum": 0
+                                                },
+                                                "minimum": {
+                                                    "type": "number",
+                                                    "description": "Minimum numeric value"
+                                                },
+                                                "maximum": {
+                                                    "type": "number",
+                                                    "description": "Maximum numeric value"
+                                                },
+                                                "pattern": {
+                                                    "type": "string",
+                                                    "description": "Regular expression pattern",
+                                                    "examples": ["^[A-Z]{2}$", "^\\d{5}$"]
+                                                }
+                                            },
+                                            "additionalProperties": true
+                                        }
+                                    },
+                                    "additionalProperties": true
+                                }
+                            },
+                            "additionalProperties": false
+                        }
+                    },
+                    "additionalProperties": false
+                },
+                "provider": {
+                    "type": "string",
+                    "description": "Fully Qualified Class Name of the resource provider",
+                    "pattern": "^([A-Z][a-zA-Z0-9]*\\\\)+[A-Z][a-zA-Z0-9]*$",
+                    "examples": ["SprykerFeature\\Zed\\Module\\Api\\Provider\\CustomerProvider"]
+                },
+                "processor": {
+                    "type": "string",
+                    "description": "Fully Qualified Class Name of the resource processor",
+                    "pattern": "^([A-Z][a-zA-Z0-9]*\\\\)+[A-Z][a-zA-Z0-9]*$",
+                    "examples": ["SprykerFeature\\Zed\\Module\\Api\\Processor\\CustomerProcessor"]
+                },
+                "paginationEnabled": {
+                    "type": "boolean",
+                    "description": "Whether pagination is enabled for this resource",
+                    "default": false,
+                    "examples": [true, false]
+                },
+                "paginationItemsPerPage": {
+                    "type": "integer",
+                    "description": "Number of items per page (required if pagination is enabled)",
+                    "minimum": 1,
+                    "examples": [10, 20, 50]
+                },
+                "paginationMaximumItemsPerPage": {
+                    "type": "integer",
+                    "description": "Maximum number of items per page",
+                    "minimum": 1,
+                    "examples": [100, 200]
+                },
+                "paginationClientEnabled": {
+                    "type": "boolean",
+                    "description": "Whether client can control pagination",
+                    "default": false,
+                    "examples": [true, false]
+                },
+                "paginationClientItemsPerPage": {
+                    "type": "boolean",
+                    "description": "Whether client can set items per page",
+                    "default": false,
+                    "examples": [true, false]
+                },
+                "openapiContext": {
+                    "type": "object",
+                    "description": "Additional OpenAPI specification attributes for the resource",
+                    "additionalProperties": true,
+                    "examples": [
+                        {
+                            "summary": "Customer API",
+                            "description": "Manage customer data"
+                        }
+                    ]
+                },
+                "sourceFile": {
+                    "type": "string",
+                    "description": "Full path to the source YAML file (auto-generated, read-only)",
+                    "readOnly": true
+                },
+                "sourceLayer": {
+                    "type": "string",
+                    "description": "Source layer of the schema (auto-generated, read-only)",
+                    "enum": ["core", "feature", "project"],
+                    "readOnly": true
+                }
+            },
+            "additionalProperties": false
+        }
+    },
+    "additionalProperties": false,
+    "examples": [
+        {
+            "resource": {
+                "name": "Customer",
+                "shortName": "Customer",
+                "description": "Customer resource for storefront API",
+                "operations": [
+                    {
+                        "type": "Get"
+                    },
+                    {
+                        "type": "GetCollection"
+                    },
+                    {
+                        "type": "Post"
+                    },
+                    {
+                        "type": "Patch"
+                    }
+                ],
+                "properties": {
+                    "idCustomer": {
+                        "type": "integer",
+                        "description": "The unique identifier",
+                        "writable": false,
+                        "identifier": true,
+                        "required": true
+                    },
+                    "email": {
+                        "type": "string",
+                        "description": "Email address",
+                        "required": true,
+                        "openapiContext": {
+                            "example": "test@example.com",
+                            "schema": {
+                                "format": "email"
+                            }
+                        }
+                    },
+                    "salutation": {
+                        "type": "string",
+                        "description": "Customer salutation",
+                        "openapiContext": {
+                            "example": "Mr",
+                            "schema": {
+                                "enum": ["Mr", "Mrs", "Dr", "Ms"]
+                            }
+                        }
+                    },
+                    "firstName": {
+                        "type": "string",
+                        "description": "First name",
+                        "required": true
+                    },
+                    "lastName": {
+                        "type": "string",
+                        "description": "Last name",
+                        "required": true
+                    },
+                    "isActive": {
+                        "type": "boolean",
+                        "description": "Whether the customer is active",
+                        "default": true
+                    }
+                },
+                "provider": "SprykerFeature\\Zed\\Customer\\Api\\Provider\\CustomerProvider",
+                "paginationEnabled": true,
+                "paginationItemsPerPage": 10
+            }
+        }
+    ]
+}
