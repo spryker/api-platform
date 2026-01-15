@@ -58,9 +58,22 @@ class SchemaParser implements SchemaParserInterface
 
         $resourceName = $this->generateResourceKey($filePath);
 
-        if (isset($validationSchemas[$resourceName])) {
-            $parsedSchema['validation'] = $validationSchemas[$resourceName]['schema'];
-            $parsedSchema['validationSourceFiles'] = [$validationSchemas[$resourceName]['sourceFile']];
+        if (isset($validationSchemas[$resourceName]) && is_array($validationSchemas[$resourceName])) {
+            $validationSchemaList = [];
+            $validationSourceFiles = [];
+
+            foreach ($validationSchemas[$resourceName] as $validationData) {
+                $validationSchemaList[] = $validationData['schema'];
+                $validationSourceFiles[] = $validationData['sourceFile'];
+            }
+
+            if ($validationSchemaList !== []) {
+                $parsedSchema['validation'] = count($validationSchemaList) === 1
+                    ? $validationSchemaList[0]
+                    : $validationSchemaList;
+
+                $parsedSchema['validationSourceFiles'] = $validationSourceFiles;
+            }
         }
 
         return $parsedSchema;
@@ -105,8 +118,14 @@ class SchemaParser implements SchemaParserInterface
                 continue;
             }
 
+            $normalizedOperation = ['type' => $operationType];
+
+            if (isset($operation['validationGroups']) && is_array($operation['validationGroups'])) {
+                $normalizedOperation['validationGroups'] = $operation['validationGroups'];
+            }
+
             // Operations are indexed by type to prevent duplicates and simplify lookup
-            $normalized[$operationType] = $operation;
+            $normalized[$operationType] = $normalizedOperation;
         }
 
         return $normalized;
@@ -143,17 +162,39 @@ class SchemaParser implements SchemaParserInterface
                 continue;
             }
 
-            $normalized[$propertyName] = [
-                'name' => $propertyName,
-                'type' => $this->normalizePropertyType($this->getValue($property, 'type', 'string')),
-                'description' => $this->getValue($property, 'description', ''),
-                'writable' => $this->getValue($property, 'writable', true),
-                'readable' => $this->getValue($property, 'readable', true),
-                'identifier' => $this->getValue($property, 'identifier', false),
-                'required' => $this->getValue($property, 'required', false),
-                'default' => $this->getValue($property, 'default', null),
-                'openapiContext' => $this->getValue($property, 'openapiContext', []),
-            ];
+            $normalized[$propertyName] = ['name' => $propertyName];
+
+            if (isset($property['type'])) {
+                $normalized[$propertyName]['type'] = $this->normalizePropertyType($property['type']);
+            }
+
+            if (isset($property['description'])) {
+                $normalized[$propertyName]['description'] = $property['description'];
+            }
+
+            if (isset($property['writable'])) {
+                $normalized[$propertyName]['writable'] = $property['writable'];
+            }
+
+            if (isset($property['readable'])) {
+                $normalized[$propertyName]['readable'] = $property['readable'];
+            }
+
+            if (isset($property['identifier'])) {
+                $normalized[$propertyName]['identifier'] = $property['identifier'];
+            }
+
+            if (isset($property['required'])) {
+                $normalized[$propertyName]['required'] = $property['required'];
+            }
+
+            if (isset($property['default'])) {
+                $normalized[$propertyName]['default'] = $property['default'];
+            }
+
+            if (isset($property['openapiContext'])) {
+                $normalized[$propertyName]['openapiContext'] = $property['openapiContext'];
+            }
         }
 
         return $normalized;
@@ -193,11 +234,10 @@ class SchemaParser implements SchemaParserInterface
     protected function generateResourceKey(string $filePath): string
     {
         $apiType = $this->extractApiTypeFromPath($filePath);
-        $layer = $this->detectSourceLayer($filePath);
         $fileName = basename($filePath, '.resource.yml');
         $fileName = basename($fileName, '.resource.yaml');
 
-        return sprintf('%s_%s_%s', $apiType, $layer, $fileName);
+        return sprintf('%s_%s', $apiType, $fileName);
     }
 
     protected function extractApiTypeFromPath(string $filePath): string

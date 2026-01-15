@@ -34,3 +34,6 @@ src/*/Zed/*/Persistence/Propel/Map/*
 tests/**/_generated/
 tests/_output/*
 !tests/_output/.gitkeep
+tests/SprykerTest/ApiPlatform/_data/public
+tests/SprykerTest/ApiPlatform/_data/tests
+tests/SprykerTest/ApiPlatform/_data/symfony_test_kernel_logs

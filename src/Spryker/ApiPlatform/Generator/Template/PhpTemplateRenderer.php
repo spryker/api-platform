@@ -127,6 +127,14 @@ PHP;
                 $propertyLines[] = "    {$property['attributes']}";
             }
 
+            // required arrays need to have an empty array as default, so the validation is triggered for it when not send via the API
+            if ($property['phpType'] === 'array') {
+                $propertyLines[] = "    public {$property['phpType']} \${$property['name']} = [];";
+                $rendered[] = implode("\n", $propertyLines);
+
+                continue;
+            }
+
             $propertyLines[] = "    public ?{$property['phpType']} \${$property['name']} = null;";
             $rendered[] = implode("\n", $propertyLines);
         }
@@ -210,6 +218,12 @@ PHP;
         $assignments = [];
 
         foreach ($properties as $property) {
+            if ($property['phpType'] === 'array') {
+                $assignments[] = "        \$instance->{$property['name']} = \$data['{$property['name']}'] ?? [];";
+
+                continue;
+            }
+
             $assignments[] = "        \$instance->{$property['name']} = \$data['{$property['name']}'] ?? null;";
         }
 

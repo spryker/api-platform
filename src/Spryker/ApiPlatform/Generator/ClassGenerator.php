@@ -30,6 +30,20 @@ class ClassGenerator implements ClassGeneratorInterface
         'mixed' => 'mixed',
     ];
 
+    /**
+     * @var array<string>
+     */
+    protected const array COMPOSITE_CONSTRAINTS_WITH_CONSTRAINTS_PARAMETER = [
+        'All',
+        'Sequentially',
+        'Composite',
+    ];
+
+    /**
+     * @var array<string, array{fqcn: string, shortName: string, alias: string}>
+     */
+    protected array $fqcnConstraintMap = [];
+
     public function __construct(
         protected readonly TemplateRendererInterface $templateRenderer,
         protected readonly ValidationGroupMapperInterface $validationGroupMapper,
@@ -51,14 +65,25 @@ class ClassGenerator implements ClassGeneratorInterface
      */
     public function generate(array $schema, string $apiType): string
     {
+        $this->fqcnConstraintMap = [];
+
         $apiType = ApiTypeNormalizer::normalizeForGeneration($apiType);
 
         $resourceName = $schema['name'];
         $className = $this->generateClassName($resourceName, $apiType);
         $namespace = $this->generateNamespace($apiType);
+
+        $this->fqcnConstraintMap = $this->collectFqcnConstraints(
+            $schema['validation'] ?? [],
+            $schema['operations'] ?? [],
+            $schema['properties'] ?? [],
+        );
+
         $properties = $this->transformProperties($schema['properties'] ?? [], $schema['validation'] ?? [], $schema['operations'] ?? [], $resourceName);
         $uses = $this->collectUseStatements($schema, $properties);
         $resourceAttribute = $this->generateResourceAttribute($schema);
+
+        $sourceFiles = $this->extractSourceFiles($schema);
 
         $templateData = [
             'className' => $className,
@@ -68,12 +93,48 @@ class ClassGenerator implements ClassGeneratorInterface
             'properties' => $properties,
             'metadata' => [
                 'timestamp' => date('Y-m-d H:i:s'),
-                'sourceFiles' => [$schema['sourceFile'] ?? 'unknown'],
+                'sourceFiles' => $sourceFiles,
                 'validationSourceFiles' => $schema['validationSourceFiles'] ?? [],
             ],
         ];
 
         return $this->templateRenderer->render($templateData);
+    }
+
+    /**
+     * @param array<string, mixed> $schema
+     *
+     * @return array<string>
+     */
+    protected function extractSourceFiles(array $schema): array
+    {
+        $sourceFiles = [];
+
+        if (!isset($schema['_metadata']['contributingSources']) || !is_array($schema['_metadata']['contributingSources'])) {
+            if (isset($schema['sourceFile'])) {
+                return [$schema['sourceFile']];
+            }
+
+            return ['unknown'];
+        }
+
+        foreach ($schema['_metadata']['contributingSources'] as $source) {
+            if (isset($source['files']) && is_array($source['files'])) {
+                $sourceFiles = array_merge($sourceFiles, $source['files']);
+
+                continue;
+            }
+
+            if (isset($source['file'])) {
+                $sourceFiles[] = $source['file'];
+            }
+        }
+
+        if ($sourceFiles === []) {
+            return ['unknown'];
+        }
+
+        return $sourceFiles;
     }
 
     protected function generateClassName(string $resourceName, string $apiType): string
@@ -204,6 +265,10 @@ class ClassGenerator implements ClassGeneratorInterface
             }
         }
 
+        foreach ($this->fqcnConstraintMap as $constraintData) {
+            $uses[] = $this->formatUseStatement($constraintData);
+        }
+
         $operations = $schema['operations'] ?? [];
 
         if (isset($operations['Get'])) {
@@ -242,6 +307,18 @@ class ClassGenerator implements ClassGeneratorInterface
     }
 
     /**
+     * @param array{fqcn: string, shortName: string, alias: string}|array $constraintData
+     */
+    protected function formatUseStatement(array $constraintData): string
+    {
+        if ($constraintData['alias'] === $constraintData['shortName']) {
+            return $constraintData['fqcn'];
+        }
+
+        return sprintf('%s as %s', $constraintData['fqcn'], $constraintData['alias']);
+    }
+
+    /**
      * @param array<string, mixed> $schema
      */
     protected function generateResourceAttribute(array $schema): string
@@ -251,7 +328,7 @@ class ClassGenerator implements ClassGeneratorInterface
 
         foreach ($operations as $type => $operation) {
             if (is_array($operation)) {
-                $operationsParts[] = "new {$type}()";
+                $operationsParts[] = $this->generateOperationAttribute($type, $operation);
             }
         }
 
@@ -299,6 +376,25 @@ class ClassGenerator implements ClassGeneratorInterface
     }
 
     /**
+     * @param array<string, mixed> $operation
+     */
+    protected function generateOperationAttribute(string $type, array $operation): string
+    {
+        if (!isset($operation['validationGroups']) || !is_array($operation['validationGroups'])) {
+            return sprintf('new %s()', $type);
+        }
+
+        $validationGroups = $operation['validationGroups'];
+        $groupsString = "['" . implode("', '", $validationGroups) . "']";
+
+        return sprintf(
+            'new %s(validationContext: [\'groups\' => %s])',
+            $type,
+            $groupsString,
+        );
+    }
+
+    /**
      * @param array<string, mixed> $validationSchema
      * @param array<string, mixed> $operations
      *
@@ -306,7 +402,7 @@ class ClassGenerator implements ClassGeneratorInterface
      */
     protected function generateValidationAttributes(array $validationSchema, array $operations, string $propertyName, string $resourceName): array
     {
-        $attributes = [];
+        $constraintsWithGroups = [];
 
         foreach ($operations as $operationType => $operation) {
             $httpMethod = strtolower($operationType);
@@ -327,23 +423,110 @@ class ClassGenerator implements ClassGeneratorInterface
                             continue;
                         }
 
-                        $attributes[] = $this->generateConstraintAttribute($nestedConstraint, $group);
+                        $constraintsWithGroups[] = [
+                            'constraint' => $nestedConstraint,
+                            'group' => $group,
+                        ];
                     }
 
                     continue;
                 }
 
-                $attributes[] = $this->generateConstraintAttribute($constraint, $group);
+                $constraintsWithGroups[] = [
+                    'constraint' => $constraint,
+                    'group' => $group,
+                ];
             }
+        }
+
+        $deduplicatedConstraints = $this->deduplicateConstraintsByGroups($constraintsWithGroups);
+
+        $attributes = [];
+
+        foreach ($deduplicatedConstraints as $constraintData) {
+            $attributes[] = $this->generateConstraintAttribute($constraintData['constraint'], $constraintData['groups']);
         }
 
         return $attributes;
     }
 
-    protected function generateConstraintAttribute(mixed $constraint, string $group): string
+    /**
+     * @param array<array{constraint: mixed, group: string}> $constraintsWithGroups
+     *
+     * @return array<array{constraint: mixed, groups: array<string>}>
+     */
+    protected function deduplicateConstraintsByGroups(array $constraintsWithGroups): array
+    {
+        $groupedByConstraint = [];
+
+        foreach ($constraintsWithGroups as $item) {
+            $constraint = $item['constraint'];
+            $group = $item['group'];
+
+            $key = $this->generateConstraintKey($constraint);
+
+            if (!isset($groupedByConstraint[$key])) {
+                $groupedByConstraint[$key] = [
+                    'constraint' => $constraint,
+                    'groups' => [],
+                ];
+            }
+
+            $groupedByConstraint[$key]['groups'][] = $group;
+        }
+
+        foreach ($groupedByConstraint as $key => $data) {
+            $groupedByConstraint[$key]['groups'] = array_values(array_unique($data['groups']));
+            sort($groupedByConstraint[$key]['groups']);
+        }
+
+        return array_values($groupedByConstraint);
+    }
+
+    /**
+     * @param mixed $constraint
+     */
+    protected function generateConstraintKey(mixed $constraint): string
     {
         if (is_string($constraint)) {
-            return sprintf("#[Assert\\%s(groups: ['%s'])]", $constraint, $group);
+            if ($this->isFqcn($constraint)) {
+                return $this->normalizeFqcn($constraint);
+            }
+
+            return $constraint;
+        }
+
+        if (!is_array($constraint)) {
+            return 'unknown_' . md5(serialize($constraint));
+        }
+
+        $constraintName = (string)array_key_first($constraint);
+        $normalizedName = $this->isFqcn($constraintName) ? $this->normalizeFqcn($constraintName) : $constraintName;
+        $options = $constraint[$constraintName];
+
+        if (!is_array($options)) {
+            return $normalizedName;
+        }
+
+        return $normalizedName . '_' . md5(serialize($options));
+    }
+
+    /**
+     * @param array<string> $groups
+     */
+    protected function generateConstraintAttribute(mixed $constraint, array $groups): string
+    {
+        $groupsString = implode("', '", $groups);
+
+        if (is_string($constraint)) {
+            if ($this->isFqcn($constraint)) {
+                $normalized = $this->normalizeFqcn($constraint);
+                $alias = $this->fqcnConstraintMap[$normalized]['alias'] ?? $this->parseConstraintFqcn($constraint)['shortName'];
+
+                return sprintf("#[%s(groups: ['%s'])]", $alias, $groupsString);
+            }
+
+            return sprintf("#[Assert\\%s(groups: ['%s'])]", $constraint, $groupsString);
         }
 
         if (!is_array($constraint)) {
@@ -353,17 +536,34 @@ class ClassGenerator implements ClassGeneratorInterface
         $constraintName = (string)array_key_first($constraint);
         $options = $constraint[$constraintName];
 
+        if ($this->isFqcn($constraintName)) {
+            $normalized = $this->normalizeFqcn($constraintName);
+            $alias = $this->fqcnConstraintMap[$normalized]['alias'] ?? $this->parseConstraintFqcn($constraintName)['shortName'];
+
+            if (!is_array($options)) {
+                return sprintf("#[%s(groups: ['%s'])]", $alias, $groupsString);
+            }
+
+            $formattedOptions = $this->formatConstraintOptions($options, $constraintName);
+
+            if ($formattedOptions === '') {
+                return sprintf("#[%s(groups: ['%s'])]", $alias, $groupsString);
+            }
+
+            return sprintf("#[%s(%s, groups: ['%s'])]", $alias, $formattedOptions, $groupsString);
+        }
+
         if (!is_array($options)) {
-            return sprintf("#[Assert\\%s(groups: ['%s'])]", $constraintName, $group);
+            return sprintf("#[Assert\\%s(groups: ['%s'])]", $constraintName, $groupsString);
         }
 
         $formattedOptions = $this->formatConstraintOptions($options, $constraintName);
 
         if ($formattedOptions === '') {
-            return sprintf("#[Assert\\%s(groups: ['%s'])]", $constraintName, $group);
+            return sprintf("#[Assert\\%s(groups: ['%s'])]", $constraintName, $groupsString);
         }
 
-        return sprintf("#[Assert\\%s(%s, groups: ['%s'])]", $constraintName, $formattedOptions, $group);
+        return sprintf("#[Assert\\%s(%s, groups: ['%s'])]", $constraintName, $formattedOptions, $groupsString);
     }
 
     /**
@@ -375,6 +575,13 @@ class ClassGenerator implements ClassGeneratorInterface
 
         foreach ($options as $key => $value) {
             if (is_array($value)) {
+                if ($key === 'constraints' && in_array($constraintName, static::COMPOSITE_CONSTRAINTS_WITH_CONSTRAINTS_PARAMETER, true)) {
+                    $formattedConstraints = $this->formatNestedConstraints($value);
+                    $parts[] = sprintf('%s: %s', $key, $formattedConstraints);
+
+                    continue;
+                }
+
                 $formattedArray = $this->formatArrayValue($value);
                 $parts[] = sprintf('%s: %s', $key, $formattedArray);
 
@@ -398,6 +605,74 @@ class ClassGenerator implements ClassGeneratorInterface
         }
 
         return implode(', ', $parts);
+    }
+
+    /**
+     * @param array<mixed> $constraints
+     */
+    protected function formatNestedConstraints(array $constraints): string
+    {
+        $formattedConstraints = [];
+
+        foreach ($constraints as $constraint) {
+            $formattedConstraint = $this->formatSingleNestedConstraint($constraint);
+
+            if ($formattedConstraint !== '') {
+                $formattedConstraints[] = $formattedConstraint;
+            }
+        }
+
+        return '[' . implode(', ', $formattedConstraints) . ']';
+    }
+
+    protected function formatSingleNestedConstraint(mixed $constraint): string
+    {
+        if (is_string($constraint)) {
+            if ($this->isFqcn($constraint)) {
+                $normalized = $this->normalizeFqcn($constraint);
+                $alias = $this->fqcnConstraintMap[$normalized]['alias'] ?? $this->parseConstraintFqcn($constraint)['shortName'];
+
+                return sprintf('new %s()', $alias);
+            }
+
+            return sprintf('new Assert\%s()', $constraint);
+        }
+
+        if (!is_array($constraint)) {
+            return '';
+        }
+
+        $constraintName = (string)array_key_first($constraint);
+        $options = $constraint[$constraintName];
+
+        if ($this->isFqcn($constraintName)) {
+            $normalized = $this->normalizeFqcn($constraintName);
+            $alias = $this->fqcnConstraintMap[$normalized]['alias'] ?? $this->parseConstraintFqcn($constraintName)['shortName'];
+
+            if (!is_array($options)) {
+                return sprintf('new %s()', $alias);
+            }
+
+            $formattedOptions = $this->formatConstraintOptions($options, $constraintName);
+
+            if ($formattedOptions === '') {
+                return sprintf('new %s()', $alias);
+            }
+
+            return sprintf('new %s(%s)', $alias, $formattedOptions);
+        }
+
+        if (!is_array($options)) {
+            return sprintf('new Assert\%s()', $constraintName);
+        }
+
+        $formattedOptions = $this->formatConstraintOptions($options, $constraintName);
+
+        if ($formattedOptions === '') {
+            return sprintf('new Assert\%s()', $constraintName);
+        }
+
+        return sprintf('new Assert\%s(%s)', $constraintName, $formattedOptions);
     }
 
     /**
@@ -460,6 +735,257 @@ class ClassGenerator implements ClassGeneratorInterface
         }
 
         return false;
+    }
+
+    protected function normalizeFqcn(string $fqcn): string
+    {
+        return ltrim($fqcn, '\\');
+    }
+
+    protected function isFqcn(string $constraintName): bool
+    {
+        return str_contains($constraintName, '\\');
+    }
+
+    /**
+     * @return array{namespace: string, shortName: string, namespaceParts: array<string>}
+     */
+    protected function parseConstraintFqcn(string $fqcn): array
+    {
+        $normalized = $this->normalizeFqcn($fqcn);
+        $parts = explode('\\', $normalized);
+        $shortName = array_pop($parts);
+
+        return [
+            'namespace' => implode('\\', $parts),
+            'shortName' => $shortName,
+            'namespaceParts' => $parts,
+        ];
+    }
+
+    /**
+     * @param array<string, mixed> $validationSchema
+     * @param array<string, mixed> $operations
+     * @param array<string, mixed> $properties
+     *
+     * @return array<string, array{fqcn: string, shortName: string, alias: string}>
+     */
+    protected function collectFqcnConstraints(array $validationSchema, array $operations, array $properties): array
+    {
+        $fqcnConstraints = [];
+
+        foreach ($operations as $operationType => $operation) {
+            $httpMethod = strtolower($operationType);
+
+            if (!isset($validationSchema[$httpMethod])) {
+                continue;
+            }
+
+            foreach ($validationSchema[$httpMethod] as $propertyName => $constraints) {
+                foreach ($constraints as $constraint) {
+                    $this->extractFqcnFromConstraint($constraint, $fqcnConstraints);
+                }
+            }
+        }
+
+        return $this->resolveFqcnConstraintAliases($fqcnConstraints);
+    }
+
+    /**
+     * @param array<string, array{fqcn: string, shortName: string, alias: string}> $fqcnConstraints
+     */
+    protected function extractFqcnFromConstraint(mixed $constraint, array &$fqcnConstraints): void
+    {
+        if (is_string($constraint) && $this->isFqcn($constraint)) {
+            $parsed = $this->parseConstraintFqcn($constraint);
+            $normalized = $this->normalizeFqcn($constraint);
+
+            if (!isset($fqcnConstraints[$normalized])) {
+                $fqcnConstraints[$normalized] = [
+                    'fqcn' => $normalized,
+                    'shortName' => $parsed['shortName'],
+                    'alias' => $parsed['shortName'],
+                    'namespaceParts' => $parsed['namespaceParts'],
+                ];
+            }
+
+            return;
+        }
+
+        if (!is_array($constraint)) {
+            return;
+        }
+
+        $constraintName = (string)array_key_first($constraint);
+
+        if ($this->isFqcn($constraintName)) {
+            $parsed = $this->parseConstraintFqcn($constraintName);
+            $normalized = $this->normalizeFqcn($constraintName);
+
+            if (!isset($fqcnConstraints[$normalized])) {
+                $fqcnConstraints[$normalized] = [
+                    'fqcn' => $normalized,
+                    'shortName' => $parsed['shortName'],
+                    'alias' => $parsed['shortName'],
+                    'namespaceParts' => $parsed['namespaceParts'],
+                ];
+            }
+
+            return;
+        }
+
+        $options = $constraint[$constraintName];
+
+        if (is_array($options) && isset($options['constraints'])) {
+            foreach ($options['constraints'] as $nestedConstraint) {
+                $this->extractFqcnFromConstraint($nestedConstraint, $fqcnConstraints);
+            }
+        }
+    }
+
+    /**
+     * @param array<string, array{fqcn: string, shortName: string, alias: string, namespaceParts: array<string>}> $fqcnConstraints
+     *
+     * @return array<string, array<string>>
+     */
+    protected function groupConstraintsByShortName(array $fqcnConstraints): array
+    {
+        $shortNameMap = [];
+
+        foreach ($fqcnConstraints as $normalized => $data) {
+            $shortName = $data['shortName'];
+
+            if (!isset($shortNameMap[$shortName])) {
+                $shortNameMap[$shortName] = [];
+            }
+
+            $shortNameMap[$shortName][] = $normalized;
+        }
+
+        return $shortNameMap;
+    }
+
+    /**
+     * @param array<string> $fqcns
+     * @param array<string, array{fqcn: string, shortName: string, alias: string, namespaceParts: array<string>}> $fqcnConstraints
+     *
+     * @return array<string, array<string>>
+     */
+    protected function groupByVendor(array $fqcns, array $fqcnConstraints): array
+    {
+        $vendorGroups = [];
+
+        foreach ($fqcns as $fqcn) {
+            $vendor = $fqcnConstraints[$fqcn]['namespaceParts'][0] ?? '';
+
+            if (!isset($vendorGroups[$vendor])) {
+                $vendorGroups[$vendor] = [];
+            }
+
+            $vendorGroups[$vendor][] = $fqcn;
+        }
+
+        return $vendorGroups;
+    }
+
+    /**
+     * @param array<string, array<string>> $vendorGroups
+     * @param array<string, array{fqcn: string, shortName: string, alias: string, namespaceParts: array<string>}> $fqcnConstraints
+     */
+    protected function resolveVendorGroupAliases(array $vendorGroups, string $shortName, array &$fqcnConstraints): void
+    {
+        foreach ($vendorGroups as $vendor => $vendorFqcns) {
+            if ($vendor === 'Symfony') {
+                continue;
+            }
+
+            $this->resolveVendorAliases($vendorFqcns, $vendor, $shortName, $fqcnConstraints);
+        }
+    }
+
+    /**
+     * @param array<string> $vendorFqcns
+     * @param array<string, array{fqcn: string, shortName: string, alias: string, namespaceParts: array<string>}> $fqcnConstraints
+     */
+    protected function resolveVendorAliases(array $vendorFqcns, string $vendor, string $shortName, array &$fqcnConstraints): void
+    {
+        if (count($vendorFqcns) === 1) {
+            $fqcnConstraints[$vendorFqcns[0]]['alias'] = sprintf('%s%s', $vendor, $shortName);
+
+            return;
+        }
+
+        $this->resolveVendorCollisionAliases($vendorFqcns, $vendor, $shortName, $fqcnConstraints);
+    }
+
+    /**
+     * @param array<string> $vendorFqcns
+     * @param array<string, array{fqcn: string, shortName: string, alias: string, namespaceParts: array<string>}> $fqcnConstraints
+     */
+    protected function resolveVendorCollisionAliases(array $vendorFqcns, string $vendor, string $shortName, array &$fqcnConstraints): void
+    {
+        foreach ($vendorFqcns as $fqcn) {
+            $namespaceParts = $fqcnConstraints[$fqcn]['namespaceParts'];
+            $disambiguatingPart = $this->extractDisambiguatingPart($namespaceParts);
+            $fqcnConstraints[$fqcn]['alias'] = sprintf('%s%s%s', $vendor, $disambiguatingPart, $shortName);
+        }
+    }
+
+    /**
+     * @param array<string> $namespaceParts
+     */
+    protected function extractDisambiguatingPart(array $namespaceParts): string
+    {
+        if (count($namespaceParts) >= 3) {
+            return $namespaceParts[2];
+        }
+
+        if (count($namespaceParts) >= 2) {
+            return $namespaceParts[1];
+        }
+
+        return '';
+    }
+
+    /**
+     * @param array<string, array{fqcn: string, shortName: string, alias: string, namespaceParts: array<string>}> $fqcnConstraints
+     *
+     * @return array<string, array{fqcn: string, shortName: string, alias: string}>
+     */
+    protected function formatResolvedConstraints(array $fqcnConstraints): array
+    {
+        $result = [];
+
+        foreach ($fqcnConstraints as $data) {
+            $result[$data['fqcn']] = [
+                'fqcn' => $data['fqcn'],
+                'shortName' => $data['shortName'],
+                'alias' => $data['alias'],
+            ];
+        }
+
+        return $result;
+    }
+
+    /**
+     * @param array<string, array{fqcn: string, shortName: string, alias: string, namespaceParts: array<string>}> $fqcnConstraints
+     *
+     * @return array<string, array{fqcn: string, shortName: string, alias: string}>
+     */
+    protected function resolveFqcnConstraintAliases(array $fqcnConstraints): array
+    {
+        $shortNameMap = $this->groupConstraintsByShortName($fqcnConstraints);
+
+        foreach ($shortNameMap as $shortName => $fqcns) {
+            if (count($fqcns) === 1) {
+                continue;
+            }
+
+            $vendorGroups = $this->groupByVendor($fqcns, $fqcnConstraints);
+            $this->resolveVendorGroupAliases($vendorGroups, $shortName, $fqcnConstraints);
+        }
+
+        return $this->formatResolvedConstraints($fqcnConstraints);
     }
 
     /**

@@ -37,11 +37,67 @@ class ValidationSchemaMerger implements ValidationSchemaMergerInterface
                 }
 
                 foreach ($fieldConstraints as $fieldName => $constraints) {
-                    $result[$httpMethod][$fieldName] = $constraints;
+                    if (!isset($result[$httpMethod][$fieldName])) {
+                        $result[$httpMethod][$fieldName] = $constraints;
+
+                        continue;
+                    }
+
+                    $result[$httpMethod][$fieldName] = $this->deduplicateConstraints(
+                        $result[$httpMethod][$fieldName],
+                        $constraints,
+                    );
                 }
             }
         }
 
         return $result;
+    }
+
+    /**
+     * @param array<mixed> $existingConstraints
+     * @param array<mixed> $newConstraints
+     *
+     * @return array<mixed>
+     */
+    protected function deduplicateConstraints(array $existingConstraints, array $newConstraints): array
+    {
+        $mergedConstraints = array_merge($existingConstraints, $newConstraints);
+        $constraintsByType = [];
+
+        foreach ($mergedConstraints as $constraint) {
+            $normalized = $this->normalizeConstraint($constraint);
+            $type = $normalized['type'];
+
+            // Last occurrence wins (override strategy for same constraint type)
+            $constraintsByType[$type] = $constraint;
+        }
+
+        return array_values($constraintsByType);
+    }
+
+    /**
+     * @param mixed $constraint
+     *
+     * @return array{type: string, parameters: array<mixed>}
+     */
+    protected function normalizeConstraint(mixed $constraint): array
+    {
+        if (is_string($constraint)) {
+            return ['type' => $constraint, 'parameters' => []];
+        }
+
+        if (is_array($constraint) && isset($constraint[0]) && is_string($constraint[0])) {
+            return ['type' => $constraint[0], 'parameters' => $constraint[1] ?? []];
+        }
+
+        if (is_array($constraint) && count($constraint) === 1) {
+            $type = array_key_first($constraint);
+            $parameters = is_array($constraint[$type]) ? $constraint[$type] : [];
+
+            return ['type' => (string)$type, 'parameters' => $parameters];
+        }
+
+        return ['type' => 'Unknown', 'parameters' => $constraint];
     }
 }

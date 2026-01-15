@@ -37,6 +37,7 @@ class SchemaMerger implements SchemaMergerInterface
 
         if (count($schemas) === 1) {
             $schema = reset($schemas);
+            $schema = $this->mergeValidationSchemas($schema, [$schema]);
 
             return $this->enrichWithMetadata($schema, [$this->createSourceInfo($schema)]);
         }
@@ -116,7 +117,13 @@ class SchemaMerger implements SchemaMergerInterface
                     'current' => $schema['sourceFile'] ?? 'unknown',
                 ]);
 
+                $previousFiles = $grouped[$layer]['_layerSourceFiles'] ?? [$grouped[$layer]['sourceFile'] ?? null];
+                $currentFile = $schema['sourceFile'] ?? null;
+
                 $grouped[$layer] = $this->deepMerge($grouped[$layer], $schema);
+
+                $allFiles = array_filter(array_merge($previousFiles, [$currentFile]));
+                $grouped[$layer]['_layerSourceFiles'] = $allFiles;
 
                 continue;
             }
@@ -219,13 +226,22 @@ class SchemaMerger implements SchemaMergerInterface
     /**
      * @param array<string, mixed> $schema
      *
-     * @return array<string, string>
+     * @return array<string, mixed>
      */
     protected function createSourceInfo(array $schema): array
     {
+        $layer = $schema['sourceLayer'] ?? 'unknown';
+
+        if (!isset($schema['_layerSourceFiles']) || !is_array($schema['_layerSourceFiles'])) {
+            return [
+                'layer' => $layer,
+                'files' => [$schema['sourceFile'] ?? 'unknown'],
+            ];
+        }
+
         return [
-            'layer' => $schema['sourceLayer'] ?? 'unknown',
-            'file' => $schema['sourceFile'] ?? 'unknown',
+            'layer' => $layer,
+            'files' => $schema['_layerSourceFiles'],
         ];
     }
 
@@ -258,7 +274,16 @@ class SchemaMerger implements SchemaMergerInterface
 
         foreach ($schemas as $schema) {
             if (isset($schema['validation'])) {
-                $validationSchemas[] = $schema['validation'];
+                $validation = $schema['validation'];
+                $isMultiple = $this->isMultipleValidations($validation);
+
+                if ($isMultiple) {
+                    foreach ($validation as $validationSchema) {
+                        $validationSchemas[] = $validationSchema;
+                    }
+                } else {
+                    $validationSchemas[] = $validation;
+                }
             }
 
             if (isset($schema['validationSourceFiles'])) {
@@ -267,10 +292,30 @@ class SchemaMerger implements SchemaMergerInterface
         }
 
         if ($validationSchemas !== []) {
-            $result['validation'] = $this->validationSchemaMerger->merge($validationSchemas);
+            $mergedValidation = $this->validationSchemaMerger->merge($validationSchemas);
+
+            $result['validation'] = $mergedValidation;
             $result['validationSourceFiles'] = array_unique($validationSourceFiles);
         }
 
         return $result;
+    }
+
+    /**
+     * @param mixed $validation
+     */
+    protected function isMultipleValidations(mixed $validation): bool
+    {
+        if (!is_array($validation)) {
+            return false;
+        }
+
+        if ($validation === []) {
+            return false;
+        }
+
+        $firstKey = array_key_first($validation);
+
+        return is_int($firstKey);
     }
 }

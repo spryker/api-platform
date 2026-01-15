@@ -27,6 +27,8 @@ suites:
         modules:
             enabled:
                 - Asserts
+                - \SprykerTest\ApiPlatform\Helper\ApiPlatformHelper:
+                      mode: 'core'
                 - \SprykerTest\Shared\Testify\Helper\SymfonyHelper:
                       mode: 'core'
                       environment: 'test'

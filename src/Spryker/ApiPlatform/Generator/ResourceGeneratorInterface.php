@@ -10,6 +10,7 @@ declare(strict_types=1);
 namespace Spryker\ApiPlatform\Generator;
 
 use Generator;
+use Psr\Log\LoggerInterface;
 
 /**
  * Main orchestrator for the complete resource generation pipeline.
@@ -28,4 +29,6 @@ interface ResourceGeneratorInterface
      * @return \Generator<array{status: string, resource?: string, file?: string, className?: string, sourceFiles?: array<string>, validationSourceFiles?: array<string>, message?: string, diagnostics?: array<string, mixed>, suggestion?: string}>
      */
     public function generateResources(string $apiType): Generator;
+
+    public function setLogger(LoggerInterface $logger): void;
 }

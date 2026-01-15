@@ -11,12 +11,12 @@ namespace Spryker\ApiPlatform\DependencyInjection\Compiler;
 
 use ApiPlatform\State\ProcessorInterface;
 use ApiPlatform\State\ProviderInterface;
-use RecursiveDirectoryIterator;
-use RecursiveIteratorIterator;
+use InvalidArgumentException;
 use SplFileInfo;
 use Symfony\Component\DependencyInjection\Compiler\CompilerPassInterface;
 use Symfony\Component\DependencyInjection\ContainerBuilder;
 use Symfony\Component\DependencyInjection\Definition;
+use Symfony\Component\Finder\Finder;
 use Symfony\Component\Yaml\Yaml;
 use Throwable;
 
@@ -89,42 +89,71 @@ class ApiResourceServiceRegistrationPass implements CompilerPassInterface
     protected function findSchemaFiles(array $sourceDirectories, string $apiType): array
     {
         $apiType = strtolower($apiType);
+        $searchDirectories = $this->getSearchDirectories($sourceDirectories, $apiType);
+
+        if ($searchDirectories === []) {
+            return [];
+        }
 
         $schemaFiles = [];
-        $extensions = ['resource.yaml', 'resource.yml'];
+
+        $finder = new Finder();
+        $finder->files()
+            ->in($searchDirectories)
+            ->name('*.resource.yml')
+            ->name('*.resource.yaml');
+
+        foreach ($finder as $file) {
+            $schemaFiles[] = $file;
+        }
+
+        return $schemaFiles;
+    }
+
+    /**
+     * @param array<string> $sourceDirectories
+     *
+     * @return array<string>
+     */
+    protected function getSearchDirectories(array $sourceDirectories, string $apiType): array
+    {
+        $directories = [];
 
         foreach ($sourceDirectories as $sourceDirectory) {
             if (!is_dir($sourceDirectory)) {
                 continue;
             }
 
-            $iterator = new RecursiveIteratorIterator(
-                new RecursiveDirectoryIterator($sourceDirectory, RecursiveDirectoryIterator::SKIP_DOTS),
-                RecursiveIteratorIterator::SELF_FIRST,
-            );
+            try {
+                $directoryFinder = new Finder();
+                $directoryFinder
+                    ->directories()
+                    ->in($sourceDirectory)
+                    ->name($apiType)
+                    ->filter(function (SplFileInfo $file) use ($apiType): bool {
+                        $path = $file->getRelativePathname();
 
-            foreach ($iterator as $file) {
-                if (!$file->isFile()) {
-                    continue;
+                        return str_ends_with($path, sprintf('resources/api/%s', $apiType));
+                    });
+
+                foreach ($directoryFinder as $directory) {
+                    $directories[] = $directory->getRealPath();
                 }
-
-                $path = $file->getPathname();
-
-                if (!str_contains($path, sprintf('/resources/api/%s/', $apiType))) {
-                    continue;
-                }
-
-                foreach ($extensions as $extension) {
-                    if (str_ends_with($path, '.' . $extension)) {
-                        $schemaFiles[] = $file;
-
-                        break;
-                    }
-                }
+            } catch (InvalidArgumentException $e) {
+                continue;
             }
         }
 
-        return $schemaFiles;
+        return $directories;
+    }
+
+    protected function makeAbsolutePath(string $path, string $projectPath): string
+    {
+        if ($path === '' || $path[0] === '/') {
+            return $path;
+        }
+
+        return rtrim($projectPath, '/') . '/' . ltrim($path, '/');
     }
 
     /**

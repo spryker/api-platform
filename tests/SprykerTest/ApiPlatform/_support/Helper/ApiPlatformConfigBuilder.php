@@ -25,15 +25,34 @@ class ApiPlatformConfigBuilder
 
     protected bool $debug;
 
+    protected ?string $moduleRoot = null;
+
     public function __construct()
+    {
+        $this->moduleRoot = $this->detectModuleRoot();
+
+        $this->sourceDir = sprintf('%s/resources', $this->moduleRoot);
+        $this->cacheDir = sprintf('%s/tests/_data/cache', $this->moduleRoot);
+        $this->generatedDir = sprintf('%s/tests/_data/Api', $this->moduleRoot);
+        $this->apiTypes = static::DEFAULT_API_TYPES;
+        $this->debug = true;
+    }
+
+    public function withModuleRoot(string $moduleRoot): self
+    {
+        $this->moduleRoot = $moduleRoot;
+        $this->sourceDir = sprintf('%s/resources', $moduleRoot);
+        $this->cacheDir = sprintf('%s/tests/_data/cache', $moduleRoot);
+        $this->generatedDir = sprintf('%s/tests/_data/Api', $moduleRoot);
+
+        return $this;
+    }
+
+    protected function detectModuleRoot(): string
     {
         $dataDir = rtrim(codecept_data_dir(), DIRECTORY_SEPARATOR);
 
-        $this->sourceDir = sprintf('%s', $dataDir);
-        $this->cacheDir = sprintf('%s/cache', $dataDir);
-        $this->generatedDir = sprintf('%s/generated', $dataDir);
-        $this->apiTypes = static::DEFAULT_API_TYPES;
-        $this->debug = true;
+        return dirname($dataDir, 2);
     }
 
     public function build(): ApiPlatformConfig

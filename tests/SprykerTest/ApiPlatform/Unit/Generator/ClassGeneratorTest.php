@@ -217,6 +217,185 @@ class ClassGeneratorTest extends Unit
         $this->assertStringContainsString('class UserProfileDataV3BackendResource', $result);
     }
 
+    public function testGivenFqcnConstraintWhenGeneratingThenAddsUseStatementAndAttribute(): void
+    {
+        // Arrange
+        $schema = [
+            'name' => 'Customer',
+            'properties' => ['email' => ['type' => 'string']],
+            'validation' => [
+                'post' => [
+                    'email' => [
+                        'NotBlank',
+                        '\Spryker\Zed\Customer\Business\Validator\UniqueEmail',
+                    ],
+                ],
+            ],
+            'operations' => ['post' => []],
+        ];
+        $validationGroupMapper = $this->createValidationGroupMapper('post');
+        $generator = new ClassGenerator(new PhpTemplateRenderer(), $validationGroupMapper);
+
+        // Act
+        $result = $generator->generate($schema, 'Backend');
+
+        // Assert
+        $this->assertStringContainsString('use Spryker\Zed\Customer\Business\Validator\UniqueEmail;', $result);
+        $this->assertStringContainsString("#[UniqueEmail(groups: ['post'])]", $result);
+    }
+
+    public function testGivenFqcnConstraintWithoutLeadingBackslashWhenGeneratingThenNormalizesCorrectly(): void
+    {
+        // Arrange
+        $schema = [
+            'name' => 'Customer',
+            'properties' => ['email' => ['type' => 'string']],
+            'validation' => [
+                'post' => [
+                    'email' => [
+                        'Spryker\Zed\Customer\Business\Validator\UniqueEmail',
+                    ],
+                ],
+            ],
+            'operations' => ['Post' => []],
+        ];
+        $validationGroupMapper = $this->createValidationGroupMapper('post');
+        $generator = new ClassGenerator(new PhpTemplateRenderer(), $validationGroupMapper);
+
+        // Act
+        $result = $generator->generate($schema, 'Backend');
+
+        // Assert
+        $this->assertStringContainsString('use Spryker\Zed\Customer\Business\Validator\UniqueEmail;', $result);
+        $this->assertStringContainsString("#[UniqueEmail(groups: ['post'])]", $result);
+    }
+
+    public function testGivenSprykerConstraintCollisionWhenGeneratingThenUsesModuleAlias(): void
+    {
+        // Arrange
+        $schema = [
+            'name' => 'Product',
+            'properties' => ['email' => ['type' => 'string']],
+            'validation' => [
+                'post' => [
+                    'email' => [
+                        '\Spryker\Zed\Customer\Business\Validator\Email',
+                        '\Spryker\Glue\Product\Business\Validator\Email',
+                    ],
+                ],
+            ],
+            'operations' => ['Post' => []],
+        ];
+        $validationGroupMapper = $this->createValidationGroupMapper('post');
+        $generator = new ClassGenerator(new PhpTemplateRenderer(), $validationGroupMapper);
+
+        // Act
+        $result = $generator->generate($schema, 'Backend');
+
+        // Assert
+        $this->assertStringContainsString('use Spryker\Zed\Customer\Business\Validator\Email as SprykerCustomerEmail;', $result);
+        $this->assertStringContainsString('use Spryker\Glue\Product\Business\Validator\Email as SprykerProductEmail;', $result);
+        $this->assertStringContainsString("#[SprykerCustomerEmail(groups: ['post'])]", $result);
+        $this->assertStringContainsString("#[SprykerProductEmail(groups: ['post'])]", $result);
+    }
+
+    public function testGivenMultiVendorConstraintCollisionWhenGeneratingThenUsesVendorAlias(): void
+    {
+        // Arrange
+        $schema = [
+            'name' => 'Product',
+            'properties' => ['value' => ['type' => 'string']],
+            'validation' => [
+                'post' => [
+                    'value' => [
+                        '\Spryker\Zed\Validator\NotNull',
+                        '\Acme\Validation\NotNull',
+                    ],
+                ],
+            ],
+            'operations' => ['Post' => []],
+        ];
+        $validationGroupMapper = $this->createValidationGroupMapper('post');
+        $generator = new ClassGenerator(new PhpTemplateRenderer(), $validationGroupMapper);
+
+        // Act
+        $result = $generator->generate($schema, 'Backend');
+
+        // Assert
+        $this->assertStringContainsString('use Spryker\Zed\Validator\NotNull as SprykerNotNull;', $result);
+        $this->assertStringContainsString('use Acme\Validation\NotNull as AcmeNotNull;', $result);
+        $this->assertStringContainsString("#[SprykerNotNull(groups: ['post'])]", $result);
+        $this->assertStringContainsString("#[AcmeNotNull(groups: ['post'])]", $result);
+    }
+
+    public function testGivenFqcnConstraintWithOptionsWhenGeneratingThenFormatsOptionsCorrectly(): void
+    {
+        // Arrange
+        $schema = [
+            'name' => 'Customer',
+            'properties' => ['email' => ['type' => 'string']],
+            'validation' => [
+                'post' => [
+                    'email' => [
+                        [
+                            '\Spryker\Zed\Customer\Business\Validator\UniqueEmail' => [
+                                'message' => 'Email already exists',
+                            ],
+                        ],
+                    ],
+                ],
+            ],
+            'operations' => ['Post' => []],
+        ];
+        $validationGroupMapper = $this->createValidationGroupMapper('post');
+        $generator = new ClassGenerator(new PhpTemplateRenderer(), $validationGroupMapper);
+
+        // Act
+        $result = $generator->generate($schema, 'Backend');
+
+        // Assert
+        $this->assertStringContainsString('use Spryker\Zed\Customer\Business\Validator\UniqueEmail;', $result);
+        $this->assertStringContainsString("#[UniqueEmail(message: 'Email already exists', groups: ['post'])]", $result);
+    }
+
+    public function testGivenSymfonyAndFqcnConstraintsTogetherWhenGeneratingThenIncludesBothUseStatements(): void
+    {
+        // Arrange
+        $schema = [
+            'name' => 'Customer',
+            'properties' => ['email' => ['type' => 'string']],
+            'validation' => [
+                'post' => [
+                    'email' => [
+                        'NotBlank',
+                        '\Spryker\Zed\Customer\Business\Validator\UniqueEmail',
+                    ],
+                ],
+            ],
+            'operations' => ['Post' => []],
+        ];
+        $validationGroupMapper = $this->createValidationGroupMapper('post');
+        $generator = new ClassGenerator(new PhpTemplateRenderer(), $validationGroupMapper);
+
+        // Act
+        $result = $generator->generate($schema, 'Backend');
+
+        // Assert
+        $this->assertStringContainsString('use Symfony\Component\Validator\Constraints as Assert;', $result);
+        $this->assertStringContainsString('use Spryker\Zed\Customer\Business\Validator\UniqueEmail;', $result);
+        $this->assertStringContainsString("#[Assert\\NotBlank(groups: ['post'])]", $result);
+        $this->assertStringContainsString("#[UniqueEmail(groups: ['post'])]", $result);
+    }
+
+    protected function createValidationGroupMapper(string $group): ValidationGroupMapperInterface
+    {
+        $validationGroupMapper = $this->makeEmpty(ValidationGroupMapperInterface::class, [
+            'mapOperationToGroup' => $group,
+        ]);
+
+        return $validationGroupMapper;
+    }
+
     protected function createClassGenerator(): ClassGenerator
     {
         $validationGroupMapper = $this->makeEmpty(ValidationGroupMapperInterface::class);

@@ -94,7 +94,7 @@ class SchemaFinder implements SchemaFinderInterface
                     ->filter(function (SplFileInfo $file) use ($apiType): bool {
                         $path = $file->getRelativePathname();
 
-                        return str_ends_with($path, sprintf('/resources/api/%s', $apiType));
+                        return str_ends_with($path, sprintf('resources/api/%s', $apiType));
                     });
 
                 foreach ($directoryFinder as $directory) {

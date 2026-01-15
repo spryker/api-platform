@@ -18,10 +18,14 @@
         "symfony/yaml": "^6.0.0 || ^7.0.0"
     },
     "require-dev": {
+        "api-platform/symfony": "*",
         "spryker/code-sniffer": "*",
         "spryker/console": "*",
+        "spryker/container": "*",
+        "spryker/kernel": "*",
         "spryker/symfony": "*",
-        "spryker/testify": "*"
+        "spryker/testify": "*",
+        "symfony/framework-bundle": "*"
     },
     "autoload": {
         "psr-4": {

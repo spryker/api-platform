@@ -10,9 +10,16 @@ declare(strict_types=1);
 namespace Spryker\ApiPlatform\Generator;
 
 use Generator;
+use Psr\Log\LoggerInterface;
+use Psr\Log\NullLogger;
 use SplFileInfo;
 use Spryker\ApiPlatform\Configuration\ApiPlatformConfig;
 use Spryker\ApiPlatform\Exception\ApiSchemaGenerationException;
+use Spryker\ApiPlatform\Generator\Result\MergeResult;
+use Spryker\ApiPlatform\Generator\Result\ParseResult;
+use Spryker\ApiPlatform\Generator\Result\ResourceParseResult;
+use Spryker\ApiPlatform\Generator\Result\ValidationParseResult;
+use Spryker\ApiPlatform\Generator\Result\ValidationResult;
 use Spryker\ApiPlatform\Schema\Finder\SchemaFinderInterface;
 use Spryker\ApiPlatform\Schema\Merger\SchemaMergerInterface;
 use Spryker\ApiPlatform\Schema\Parser\SchemaParserInterface;
@@ -40,7 +47,13 @@ class ResourceGenerator implements ResourceGeneratorInterface
         protected readonly ValidationSchemaFinderInterface $validationSchemaFinder,
         protected readonly ValidationSchemaLoaderInterface $validationSchemaLoader,
         protected readonly Filesystem $filesystem,
+        protected LoggerInterface $logger = new NullLogger(),
     ) {
+    }
+
+    public function setLogger(LoggerInterface $logger): void
+    {
+        $this->logger = $logger;
     }
 
     /**
@@ -48,94 +61,55 @@ class ResourceGenerator implements ResourceGeneratorInterface
      */
     public function generateResources(string $apiType): Generator
     {
-        $apiType = ApiTypeNormalizer::normalizeForGeneration($apiType);
+        $apiType = $this->prepareGeneration($apiType);
 
-        $this->cleanOutputDirectory($apiType);
+        $parseResult = $this->parseSchemas($apiType);
 
-        $sourceFiles = [];
-        $resourceSchemas = [];
-        $failedSchemaFiles = [];
-        $failedValidationFiles = [];
+        foreach ($parseResult->getFailedSchemaFiles() as $failure) {
+            yield [
+                'status' => 'error',
+                'message' => sprintf(
+                    'Failed to process schema file %s: %s',
+                    $failure['file'],
+                    $failure['error'],
+                ),
+            ];
+        }
 
-        $validationSchemas = $this->loadAllValidationSchemas($apiType, $failedValidationFiles);
+        $mergeResult = $this->mergeResourceSchemas($parseResult->getGroupedSchemas(), $apiType);
 
-        foreach ($this->schemaFinder->findSchemaFiles($apiType) as $file) {
-            $sourceFiles[] = $file->getRealPath() ?: $file->getPathname();
+        foreach ($mergeResult->getFailedMerges() as $failure) {
+            yield [
+                'status' => 'error',
+                'message' => sprintf(
+                    'Failed to merge resource %s: %s',
+                    $failure['resource'],
+                    $failure['error'],
+                ),
+            ];
+        }
 
-            try {
-                $rawSchema = $this->loadSchema($file);
-                $parsedSchema = $this->schemaParser->parse($rawSchema, $file, $validationSchemas);
+        $validationResult = $this->validateMergedSchemas($mergeResult->getMergedSchemas());
 
-                $resourceKey = $this->generateResourceKey($file);
-
-                if (!isset($resourceSchemas[$resourceKey])) {
-                    $resourceSchemas[$resourceKey] = [];
-                }
-
-                $resourceSchemas[$resourceKey][] = $parsedSchema;
-            } catch (Throwable $exception) {
-                $failedSchemaFiles[] = [
-                    'file' => $file->getPathname(),
-                    'error' => $exception->getMessage(),
-                ];
-
-                yield [
-                    'status' => 'error',
-                    'message' => sprintf(
-                        'Failed to process schema file %s: %s',
-                        $file->getPathname(),
-                        $exception->getMessage(),
-                    ),
-                ];
-
-                continue;
-            }
+        foreach ($validationResult->getFailedValidations() as $failure) {
+            yield [
+                'status' => 'error',
+                'message' => sprintf(
+                    'Validation failed for resource %s: %s',
+                    $failure['resource'],
+                    $failure['error'],
+                ),
+            ];
         }
 
         $generatedCount = 0;
 
-        foreach ($resourceSchemas as $resourceKey => $schemas) {
-            try {
-                $mergedSchema = $this->schemaMerger->merge($schemas, $resourceKey, $apiType);
-                $this->schemaValidator->validatePostMerge($mergedSchema);
-
-                $resourceName = $mergedSchema['name'] ?? $mergedSchema['shortName'] ?? $resourceKey;
-
-                $generatedCode = $this->classGenerator->generate($mergedSchema, $apiType);
-                $filePath = $this->writeResourceFile($resourceName, $apiType, $generatedCode);
-
+        foreach ($this->generateResourceFiles($validationResult->getValidatedSchemas(), $apiType) as $result) {
+            if ($result['status'] === 'generated') {
                 $generatedCount++;
-
-                $className = sprintf('%s%sResource', $resourceName, $apiType);
-                $sourceFiles = [];
-
-                foreach ($schemas as $schema) {
-                    if (isset($schema['sourceFile'])) {
-                        $sourceFiles[] = $schema['sourceFile'];
-                    }
-                }
-
-                yield [
-                    'status' => 'generated',
-                    'resource' => $resourceName,
-                    'file' => $filePath,
-                    'className' => $className,
-                    'sourceFiles' => $sourceFiles,
-                    'validationSourceFiles' => $mergedSchema['validationSourceFiles'] ?? [],
-                    'message' => sprintf('Generated %s%sResource', $resourceName, $apiType),
-                ];
-            } catch (Throwable $exception) {
-                yield [
-                    'status' => 'error',
-                    'message' => sprintf(
-                        'Failed to generate resource %s: %s',
-                        $resourceKey,
-                        $exception->getMessage(),
-                    ),
-                ];
-
-                continue;
             }
+
+            yield $result;
         }
 
         if ($generatedCount === 0) {
@@ -147,9 +121,10 @@ class ResourceGenerator implements ResourceGeneratorInterface
                 'message' => 'No resources were generated',
                 'diagnostics' => [
                     ...$diagnostics,
-                    'failed_schema_files' => $failedSchemaFiles,
-                    'total_files_found' => count($sourceFiles),
-                    'failed_validation_files' => $failedValidationFiles,
+                    'failed_schema_files' => $parseResult->getFailedSchemaFiles(),
+                    'failed_merges' => $mergeResult->getFailedMerges(),
+                    'failed_validations' => $validationResult->getFailedValidations(),
+                    'failed_validation_files' => $parseResult->getFailedValidationFiles(),
                     'validation_diagnostics' => $validationDiagnostics,
                 ],
                 'suggestion' => sprintf(
@@ -206,27 +181,57 @@ class ResourceGenerator implements ResourceGeneratorInterface
     }
 
     /**
-     * @param array<array{file: string, error: string}> $failedValidationFiles
-     *
-     * @return array<string, array{schema: array<string, mixed>, sourceFile: string}>
+     * @return array<\SplFileInfo>
      */
-    protected function loadAllValidationSchemas(string $apiType, array &$failedValidationFiles = []): array
+    protected function loadValidationSchemas(string $apiType): array
     {
-        $validationSchemas = [];
+        $validationFiles = [];
 
         foreach ($this->validationSchemaFinder->findAllValidationSchemas($apiType) as $file) {
+            $validationFiles[] = $file;
+        }
+
+        $this->logger->debug(sprintf(
+            "Found %d validation schema file(s) for API type '%s'",
+            count($validationFiles),
+            $apiType,
+        ));
+
+        foreach ($validationFiles as $file) {
+            $this->logger->debug(sprintf(
+                '  - %s',
+                $file->getPathname(),
+            ));
+        }
+
+        return $validationFiles;
+    }
+
+    /**
+     * @param array<\SplFileInfo> $validationFiles
+     */
+    protected function parseValidationSchemas(array $validationFiles, string $apiType): ValidationParseResult
+    {
+        $validationSchemas = [];
+        $failedFiles = [];
+
+        foreach ($validationFiles as $file) {
             try {
                 $schema = $this->validationSchemaLoader->load($file);
                 $filePath = $file->getRealPath() ?: $file->getPathname();
 
                 $key = $this->generateValidationKey($filePath, $apiType);
 
-                $validationSchemas[$key] = [
+                if (!isset($validationSchemas[$key])) {
+                    $validationSchemas[$key] = [];
+                }
+
+                $validationSchemas[$key][] = [
                     'schema' => $schema,
                     'sourceFile' => $filePath,
                 ];
             } catch (Throwable $exception) {
-                $failedValidationFiles[] = [
+                $failedFiles[] = [
                     'file' => $file->getPathname(),
                     'error' => $exception->getMessage(),
                 ];
@@ -235,7 +240,10 @@ class ResourceGenerator implements ResourceGeneratorInterface
             }
         }
 
-        return $validationSchemas;
+        return new ValidationParseResult(
+            validationSchemas: $validationSchemas,
+            failedFiles: $failedFiles,
+        );
     }
 
     protected function generateResourceKey(SplFileInfo $file): string
@@ -250,24 +258,308 @@ class ResourceGenerator implements ResourceGeneratorInterface
     {
         $apiType = ApiTypeNormalizer::normalizeForSchemaLookup($apiType);
 
-        $layer = $this->detectSourceLayer($filePath);
-
         $fileName = basename($filePath, '.validation.yml');
         $fileName = basename($fileName, '.validation.yaml');
 
-        return sprintf('%s_%s_%s', $apiType, $layer, $fileName);
+        return sprintf('%s_%s', $apiType, $fileName);
     }
 
-    protected function detectSourceLayer(string $filePath): string
+    protected function prepareGeneration(string $apiType): string
     {
-        if (str_contains($filePath, '/Spryker/')) {
-            return 'core';
+        $normalizedApiType = ApiTypeNormalizer::normalizeForGeneration($apiType);
+
+        $this->logger->debug(sprintf(
+            'Preparing generation for API type: %s (normalized: %s)',
+            $apiType,
+            $normalizedApiType,
+        ));
+
+        $this->cleanOutputDirectory($normalizedApiType);
+
+        return $normalizedApiType;
+    }
+
+    /**
+     * @return array<\SplFileInfo>
+     */
+    protected function loadResourceSchemas(string $apiType): array
+    {
+        $schemaFiles = [];
+
+        foreach ($this->schemaFinder->findSchemaFiles($apiType) as $file) {
+            $schemaFiles[] = $file;
         }
 
-        if (str_contains($filePath, '/SprykerFeature/')) {
-            return 'feature';
+        $this->logger->debug(sprintf(
+            "Found %d schema file(s) for API type '%s'",
+            count($schemaFiles),
+            $apiType,
+        ));
+
+        foreach ($schemaFiles as $file) {
+            $this->logger->debug(sprintf(
+                '  - %s',
+                $file->getPathname(),
+            ));
         }
 
-        return 'project';
+        return $schemaFiles;
+    }
+
+    protected function parseSchemas(string $apiType): ParseResult
+    {
+        $validationFiles = $this->loadValidationSchemas($apiType);
+
+        $validationParseResult = $this->parseValidationSchemas($validationFiles, $apiType);
+
+        $totalValidationFiles = count($validationFiles);
+        $totalValidationSchemas = count($validationParseResult->getValidationSchemas());
+
+        $this->logger->debug(sprintf(
+            "Parsed %d validation file(s) into %d validation schema(s) for API type '%s'",
+            $totalValidationFiles,
+            $totalValidationSchemas,
+            $apiType,
+        ));
+
+        $schemaFiles = $this->loadResourceSchemas($apiType);
+
+        $resourceParseResult = $this->parseResourceSchemas($schemaFiles, $validationParseResult->getValidationSchemas());
+
+        $this->logger->debug(sprintf(
+            'Total: %d validation schema(s), %d resource schema(s)',
+            $totalValidationSchemas,
+            count($resourceParseResult->getGroupedSchemas()),
+        ));
+
+        return new ParseResult(
+            groupedSchemas: $resourceParseResult->getGroupedSchemas(),
+            failedValidationFiles: $validationParseResult->getFailedFiles(),
+            failedSchemaFiles: $resourceParseResult->getFailedFiles(),
+        );
+    }
+
+    /**
+     * @param array<\SplFileInfo> $schemaFiles
+     * @param array<string, mixed> $validationSchemas
+     */
+    protected function parseResourceSchemas(array $schemaFiles, array $validationSchemas): ResourceParseResult
+    {
+        $resourceSchemas = [];
+        $failedFiles = [];
+
+        foreach ($schemaFiles as $file) {
+            $this->logger->debug(sprintf(
+                'Parsing schema file: %s',
+                $file->getPathname(),
+            ));
+
+            try {
+                $rawSchema = $this->loadSchema($file);
+                $parsedSchema = $this->schemaParser->parse($rawSchema, $file, $validationSchemas);
+
+                $resourceKey = $this->generateResourceKey($file);
+
+                if (!isset($resourceSchemas[$resourceKey])) {
+                    $resourceSchemas[$resourceKey] = [];
+                }
+
+                $resourceSchemas[$resourceKey][] = $parsedSchema;
+            } catch (Throwable $exception) {
+                $failedFiles[] = [
+                    'file' => $file->getPathname(),
+                    'error' => $exception->getMessage(),
+                ];
+
+                $this->logger->error(sprintf(
+                    'Failed to parse schema file %s: %s',
+                    $file->getPathname(),
+                    $exception->getMessage(),
+                ));
+            }
+        }
+
+        $totalSchemaFiles = count($schemaFiles);
+        $totalResources = count($resourceSchemas);
+
+        $this->logger->debug(sprintf(
+            'Parsed %d schema file(s) into %d resource(s)',
+            $totalSchemaFiles,
+            $totalResources,
+        ));
+
+        return new ResourceParseResult(
+            groupedSchemas: $resourceSchemas,
+            failedFiles: $failedFiles,
+        );
+    }
+
+    /**
+     * @param array<string, array<array<string, mixed>>> $groupedSchemas
+     */
+    protected function mergeResourceSchemas(array $groupedSchemas, string $apiType): MergeResult
+    {
+        $mergedSchemas = [];
+        $failedMerges = [];
+
+        foreach ($groupedSchemas as $resourceKey => $schemas) {
+            $this->logger->debug(sprintf(
+                "Merging %d schema(s) for resource '%s'",
+                count($schemas),
+                $resourceKey,
+            ));
+
+            try {
+                $mergedSchema = $this->schemaMerger->merge($schemas, $resourceKey, $apiType);
+                $mergedSchemas[$resourceKey] = $mergedSchema;
+            } catch (Throwable $exception) {
+                $failedMerges[] = [
+                    'resource' => $resourceKey,
+                    'error' => $exception->getMessage(),
+                ];
+
+                $this->logger->error(sprintf(
+                    "Failed to merge schemas for resource '%s': %s",
+                    $resourceKey,
+                    $exception->getMessage(),
+                ));
+            }
+        }
+
+        $this->logger->debug(sprintf(
+            'Successfully merged %d resource(s)',
+            count($mergedSchemas),
+        ));
+
+        return new MergeResult(
+            mergedSchemas: $mergedSchemas,
+            failedMerges: $failedMerges,
+        );
+    }
+
+    /**
+     * @param array<string, array<string, mixed>> $mergedSchemas
+     */
+    protected function validateMergedSchemas(array $mergedSchemas): ValidationResult
+    {
+        $validatedSchemas = [];
+        $failedValidations = [];
+
+        foreach ($mergedSchemas as $resourceKey => $mergedSchema) {
+            $this->logger->debug(sprintf(
+                "Validating merged schema for resource '%s'",
+                $resourceKey,
+            ));
+
+            try {
+                $this->schemaValidator->validatePostMerge($mergedSchema);
+                $validatedSchemas[$resourceKey] = $mergedSchema;
+            } catch (Throwable $exception) {
+                $failedValidations[] = [
+                    'resource' => $resourceKey,
+                    'error' => $exception->getMessage(),
+                ];
+
+                $this->logger->error(sprintf(
+                    "Schema validation failed for resource '%s': %s",
+                    $resourceKey,
+                    $exception->getMessage(),
+                ));
+            }
+        }
+
+        $this->logger->debug(sprintf(
+            'Successfully validated %d resource(s)',
+            count($validatedSchemas),
+        ));
+
+        return new ValidationResult(
+            validatedSchemas: $validatedSchemas,
+            failedValidations: $failedValidations,
+        );
+    }
+
+    /**
+     * @param array<string, array<string, mixed>> $validatedSchemas
+     *
+     * @return \Generator<array{status: string, resource?: string, file?: string, className?: string, sourceFiles?: array<string>, validationSourceFiles?: array<string>, message?: string}>
+     */
+    protected function generateResourceFiles(array $validatedSchemas, string $apiType): Generator
+    {
+        foreach ($validatedSchemas as $resourceKey => $mergedSchema) {
+            $resourceName = $mergedSchema['name'] ?? $mergedSchema['shortName'] ?? $resourceKey;
+
+            $this->logger->debug(sprintf(
+                "Generating resource file for '%s'",
+                $resourceName,
+            ));
+
+            try {
+                $generatedCode = $this->classGenerator->generate($mergedSchema, $apiType);
+                $filePath = $this->writeResourceFile($resourceName, $apiType, $generatedCode);
+
+                $className = sprintf('%s%sResource', $resourceName, $apiType);
+                $sourceFiles = $this->extractSourceFilesFromMetadata($mergedSchema);
+
+                $this->logger->info(sprintf(
+                    'Generated %s at %s',
+                    $className,
+                    $filePath,
+                ));
+
+                yield [
+                    'status' => 'generated',
+                    'resource' => $resourceName,
+                    'file' => $filePath,
+                    'className' => $className,
+                    'sourceFiles' => $sourceFiles,
+                    'validationSourceFiles' => $mergedSchema['validationSourceFiles'] ?? [],
+                    'message' => sprintf('Generated %s%sResource', $resourceName, $apiType),
+                ];
+            } catch (Throwable $exception) {
+                $this->logger->error(sprintf(
+                    "Failed to generate resource file for '%s': %s",
+                    $resourceName,
+                    $exception->getMessage(),
+                ));
+
+                yield [
+                    'status' => 'error',
+                    'message' => sprintf(
+                        'Failed to generate resource %s: %s',
+                        $resourceKey,
+                        $exception->getMessage(),
+                    ),
+                ];
+            }
+        }
+    }
+
+    /**
+     * @param array<string, mixed> $schema
+     *
+     * @return array<string>
+     */
+    protected function extractSourceFilesFromMetadata(array $schema): array
+    {
+        $sourceFiles = [];
+
+        if (!isset($schema['_metadata']['contributingSources']) || !is_array($schema['_metadata']['contributingSources'])) {
+            return $sourceFiles;
+        }
+
+        foreach ($schema['_metadata']['contributingSources'] as $source) {
+            if (isset($source['files']) && is_array($source['files'])) {
+                $sourceFiles = array_merge($sourceFiles, $source['files']);
+
+                continue;
+            }
+
+            if (isset($source['file'])) {
+                $sourceFiles[] = $source['file'];
+            }
+        }
+
+        return $sourceFiles;
     }
 }

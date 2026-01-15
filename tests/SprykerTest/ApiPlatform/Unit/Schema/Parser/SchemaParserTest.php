@@ -131,9 +131,11 @@ class SchemaParserTest extends Unit
         $rawSchema = ['resource' => ['name' => 'Customer']];
         $file = new SplFileInfo('/path/to/resources/api/backend/customers.resource.yaml');
         $validationSchemas = [
-            'backend_core_customers' => [
-                'schema' => ['post' => ['name' => ['NotBlank']]],
-                'sourceFile' => '/path/to/validation/customers.validation.yaml',
+            'backend_customers' => [
+                [
+                    'schema' => ['post' => ['name' => ['NotBlank']]],
+                    'sourceFile' => '/path/to/validation/customers.validation.yaml',
+                ],
             ],
         ];
         $parser = $this->createSchemaParser();
