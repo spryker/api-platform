@@ -303,6 +303,12 @@ class ClassGenerator implements ClassGeneratorInterface
             $uses[] = $schema['processor'];
         }
 
+        foreach ($operations as $operation) {
+            if (is_array($operation) && isset($operation['processor']) && $operation['processor'] !== '') {
+                $uses[] = $operation['processor'];
+            }
+        }
+
         return array_unique($uses);
     }
 
@@ -359,6 +365,11 @@ class ClassGenerator implements ClassGeneratorInterface
 
         if (isset($schema['paginationItemsPerPage'])) {
             $attributeParts[] = sprintf('paginationItemsPerPage: %d', $schema['paginationItemsPerPage']);
+        }
+
+        if (isset($schema['security']) && $schema['security'] !== '') {
+            $security = addslashes($schema['security']);
+            $attributeParts[] = sprintf('security: "%s"', $security);
         }
 
         if ($attributeParts === []) {

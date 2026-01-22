@@ -9,7 +9,8 @@
         "symfony/console": "Required for the APi Platform.",
         "symfony/finder": "Required for the APi Platform.",
         "symfony/http-kernel": "Required for the APi Platform.",
-        "symfony/yaml": "Required for the APi Platform."
+        "symfony/yaml": "Required for the APi Platform.",
+        "spryker/transfer": "Provides transfer objects definition with strict types."
     },
     "exclude": {
         "spryker/helper": "Bug in the Dependency Finder."

@@ -51,6 +51,7 @@ class SchemaParser implements SchemaParserInterface
             'provider' => $this->getValue($resource, 'provider', null),
             'processor' => $this->getValue($resource, 'processor', null),
             'paginationItemsPerPage' => $this->getValue($resource, 'paginationItemsPerPage', null),
+            'security' => $this->getValue($resource, 'security', null),
             'openapiContext' => $this->getValue($resource, 'openapiContext', []),
             'sourceFile' => $filePath,
             'sourceLayer' => $this->detectSourceLayer($filePath),

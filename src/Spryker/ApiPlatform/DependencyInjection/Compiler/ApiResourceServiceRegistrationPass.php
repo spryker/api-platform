@@ -177,6 +177,14 @@ class ApiResourceServiceRegistrationPass implements CompilerPassInterface
             if (isset($schema['resource']['processor']) && is_string($schema['resource']['processor'])) {
                 $services[] = $schema['resource']['processor'];
             }
+
+            if (isset($schema['resource']['operations']) && is_array($schema['resource']['operations'])) {
+                foreach ($schema['resource']['operations'] as $operation) {
+                    if (is_array($operation) && isset($operation['processor']) && is_string($operation['processor'])) {
+                        $services[] = $operation['processor'];
+                    }
+                }
+            }
         } catch (Throwable $e) {
         }
 
