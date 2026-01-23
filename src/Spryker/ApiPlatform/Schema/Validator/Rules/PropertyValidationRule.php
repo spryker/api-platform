@@ -13,7 +13,7 @@ class PropertyValidationRule implements ValidationRuleInterface
 {
     protected const string VALID_PROPERTY_NAME_PATTERN = '/^[a-zA-Z_][a-zA-Z0-9_]*$/';
 
-    protected const array VALID_PROPERTY_TYPES = ['string', 'integer', 'boolean', 'array', 'object', 'mixed'];
+    protected const array VALID_PROPERTY_TYPES = ['string', 'integer', 'number', 'boolean', 'array', 'object', 'mixed'];
 
     /**
      * @param array<string, mixed> $schema
@@ -79,13 +79,45 @@ class PropertyValidationRule implements ValidationRuleInterface
             }
 
             if (!in_array($type, static::VALID_PROPERTY_TYPES, true)) {
-                $errors[] = sprintf(
-                    'Invalid property type "%s" for property "%s" in %s. Valid types are: %s.',
+                $contributingFiles = $property['_contributingFiles'] ?? [];
+                $resourceName = $schema['name'] ?? 'unknown';
+                $codeBucket = $schema['codeBucket'] ?? null;
+
+                $errorMessage = sprintf(
+                    'Invalid property type "%s" for property "%s"',
                     $type,
                     $propertyName,
-                    $schema['sourceFile'] ?? 'unknown file',
-                    implode(', ', static::VALID_PROPERTY_TYPES),
                 );
+
+                if ($codeBucket !== null) {
+                    $errorMessage .= sprintf(' (Resource: %s, CodeBucket: %s)', $resourceName, $codeBucket);
+                } else {
+                    $errorMessage .= sprintf(' (Resource: %s)', $resourceName);
+                }
+
+                $errorMessage .= sprintf("\n  Valid types: %s", implode(', ', static::VALID_PROPERTY_TYPES));
+
+                if ($contributingFiles !== []) {
+                    $errorMessage .= "\n  Contributing files:";
+
+                    foreach ($contributingFiles as $fileInfo) {
+                        $file = $fileInfo['file'] ?? 'unknown';
+                        $layer = $fileInfo['layer'] ?? 'unknown';
+                        $fileBucket = $fileInfo['codeBucket'] ?? null;
+
+                        $fileLabel = sprintf('    [%s]', $layer);
+
+                        if ($fileBucket !== null) {
+                            $fileLabel .= sprintf(' [CodeBucket: %s]', $fileBucket);
+                        }
+
+                        $errorMessage .= sprintf("\n%s %s", $fileLabel, $file);
+                    }
+                } else {
+                    $errorMessage .= sprintf("\n  File: %s", $schema['sourceFile'] ?? 'unknown file');
+                }
+
+                $errors[] = $errorMessage;
             }
         }
 
@@ -159,6 +191,7 @@ class PropertyValidationRule implements ValidationRuleInterface
         return match ($type) {
             'string' => is_string($value),
             'integer' => is_int($value),
+            'number' => is_int($value) || is_float($value),
             'boolean' => is_bool($value),
             'array' => is_array($value),
             'object' => is_object($value) || is_array($value),

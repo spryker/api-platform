@@ -22,6 +22,7 @@ use Spryker\ApiPlatform\Schema\Validation\Finder\ValidationSchemaFinder;
 use Spryker\ApiPlatform\Schema\Validation\Loader\ValidationSchemaLoader;
 use Spryker\ApiPlatform\Schema\Validation\Mapper\ValidationGroupMapper;
 use Spryker\ApiPlatform\Schema\Validation\Merger\ValidationSchemaMerger;
+use Spryker\ApiPlatform\Schema\Validator\PreMergeValidator;
 use Spryker\ApiPlatform\Schema\Validator\Rules\MergeValidationRule;
 use Spryker\ApiPlatform\Schema\Validator\SchemaValidator;
 use SprykerTest\ApiPlatform\ApiUnitTester;
@@ -89,7 +90,7 @@ class ResourceGeneratorTest extends Unit
         return new ResourceGenerator(
             new SchemaFinder($config),
             [new YamlSchemaLoader()],
-            new SchemaParser(),
+            new SchemaParser(new PreMergeValidator()),
             new SchemaValidator([], new MergeValidationRule()),
             new SchemaMerger(new ValidationSchemaMerger()),
             new ClassGenerator(new PhpTemplateRenderer(), new ValidationGroupMapper()),

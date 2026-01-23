@@ -24,6 +24,7 @@ class ClassGenerator implements ClassGeneratorInterface
     protected const array TYPE_MAPPING = [
         'string' => 'string',
         'integer' => 'int',
+        'number' => 'float',
         'boolean' => 'bool',
         'array' => 'array',
         'object' => 'object',
@@ -70,7 +71,8 @@ class ClassGenerator implements ClassGeneratorInterface
         $apiType = ApiTypeNormalizer::normalizeForGeneration($apiType);
 
         $resourceName = $schema['name'];
-        $className = $this->generateClassName($resourceName, $apiType);
+        $codeBucket = $schema['codeBucket'] ?? null;
+        $className = $this->generateClassName($resourceName, $apiType, $codeBucket);
         $namespace = $this->generateNamespace($apiType);
 
         $this->fqcnConstraintMap = $this->collectFqcnConstraints(
@@ -91,6 +93,7 @@ class ClassGenerator implements ClassGeneratorInterface
             'uses' => $uses,
             'resourceAttribute' => $resourceAttribute,
             'properties' => $properties,
+            'codeBucket' => $codeBucket,
             'metadata' => [
                 'timestamp' => date('Y-m-d H:i:s'),
                 'sourceFiles' => $sourceFiles,
@@ -137,9 +140,13 @@ class ClassGenerator implements ClassGeneratorInterface
         return $sourceFiles;
     }
 
-    protected function generateClassName(string $resourceName, string $apiType): string
+    protected function generateClassName(string $resourceName, string $apiType, ?string $codeBucket = null): string
     {
         $resourceName = ResourceNameNormalizer::normalize($resourceName);
+
+        if ($codeBucket !== null) {
+            return sprintf('%s%s%sResource', $resourceName, $codeBucket, $apiType);
+        }
 
         return sprintf('%s%sResource', $resourceName, $apiType);
     }

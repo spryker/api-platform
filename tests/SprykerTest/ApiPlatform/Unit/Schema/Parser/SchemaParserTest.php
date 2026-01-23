@@ -13,8 +13,7 @@ use Codeception\Test\Unit;
 use SplFileInfo;
 use Spryker\ApiPlatform\Exception\ApiSchemaValidationException;
 use Spryker\ApiPlatform\Schema\Parser\SchemaParser;
-use Spryker\ApiPlatform\Schema\Validation\Finder\ValidationSchemaFinderInterface;
-use Spryker\ApiPlatform\Schema\Validation\Loader\ValidationSchemaLoaderInterface;
+use Spryker\ApiPlatform\Schema\Validator\PreMergeValidatorInterface;
 use SprykerTest\ApiPlatform\ApiUnitTester;
 
 /**
@@ -152,9 +151,8 @@ class SchemaParserTest extends Unit
 
     protected function createSchemaParser(): SchemaParser
     {
-        $validationSchemaFinder = $this->makeEmpty(ValidationSchemaFinderInterface::class);
-        $validationSchemaLoader = $this->makeEmpty(ValidationSchemaLoaderInterface::class);
+        $preMergeValidator = $this->makeEmpty(PreMergeValidatorInterface::class);
 
-        return new SchemaParser($validationSchemaFinder, $validationSchemaLoader);
+        return new SchemaParser($preMergeValidator);
     }
 }

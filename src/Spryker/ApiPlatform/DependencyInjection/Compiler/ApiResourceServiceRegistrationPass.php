@@ -147,15 +147,6 @@ class ApiResourceServiceRegistrationPass implements CompilerPassInterface
         return $directories;
     }
 
-    protected function makeAbsolutePath(string $path, string $projectPath): string
-    {
-        if ($path === '' || $path[0] === '/') {
-            return $path;
-        }
-
-        return rtrim($projectPath, '/') . '/' . ltrim($path, '/');
-    }
-
     /**
      * @return array<string>
      */

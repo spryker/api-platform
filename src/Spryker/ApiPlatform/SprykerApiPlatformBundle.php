@@ -9,6 +9,7 @@ declare(strict_types=1);
 
 namespace Spryker\ApiPlatform;
 
+use Spryker\ApiPlatform\DependencyInjection\Compiler\ApiPlatformDecoratorPass;
 use Spryker\ApiPlatform\DependencyInjection\Compiler\ApiResourceServiceRegistrationPass;
 use Symfony\Component\DependencyInjection\Compiler\PassConfig;
 use Symfony\Component\DependencyInjection\ContainerBuilder;
@@ -36,6 +37,12 @@ class SprykerApiPlatformBundle extends Bundle
 
         $container->addCompilerPass(
             new ApiResourceServiceRegistrationPass(),
+            PassConfig::TYPE_BEFORE_OPTIMIZATION,
+            50,
+        );
+
+        $container->addCompilerPass(
+            new ApiPlatformDecoratorPass(),
             PassConfig::TYPE_BEFORE_OPTIMIZATION,
             50,
         );

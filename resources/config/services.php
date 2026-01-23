@@ -35,6 +35,8 @@ use Spryker\ApiPlatform\Schema\Validation\Mapper\ValidationGroupMapper;
 use Spryker\ApiPlatform\Schema\Validation\Mapper\ValidationGroupMapperInterface;
 use Spryker\ApiPlatform\Schema\Validation\Merger\ValidationSchemaMerger;
 use Spryker\ApiPlatform\Schema\Validation\Merger\ValidationSchemaMergerInterface;
+use Spryker\ApiPlatform\Schema\Validator\PreMergeValidator;
+use Spryker\ApiPlatform\Schema\Validator\PreMergeValidatorInterface;
 use Spryker\ApiPlatform\Schema\Validator\Rules\MergeValidationRule;
 use Spryker\ApiPlatform\Schema\Validator\Rules\OperationValidationRule;
 use Spryker\ApiPlatform\Schema\Validator\Rules\PaginationValidationRule;
@@ -80,6 +82,9 @@ return static function (ContainerConfigurator $container): void {
     $services->set(ValidationSchemaMergerInterface::class, ValidationSchemaMerger::class);
 
     $services->set(ValidationGroupMapperInterface::class, ValidationGroupMapper::class);
+
+    // Schema Parser PreMergeValidator
+    $services->set(PreMergeValidatorInterface::class, PreMergeValidator::class);
 
     // Schema Parser
     $services->set(SchemaParserInterface::class, SchemaParser::class);

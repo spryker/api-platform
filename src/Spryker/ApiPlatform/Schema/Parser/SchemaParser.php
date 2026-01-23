@@ -11,9 +11,15 @@ namespace Spryker\ApiPlatform\Schema\Parser;
 
 use SplFileInfo;
 use Spryker\ApiPlatform\Exception\ApiSchemaValidationException;
+use Spryker\ApiPlatform\Schema\Validator\PreMergeValidatorInterface;
 
 class SchemaParser implements SchemaParserInterface
 {
+    public function __construct(
+        protected readonly PreMergeValidatorInterface $preMergeValidator,
+    ) {
+    }
+
     /**
      * @param array<string, mixed> $rawSchema
      * @param array<string, mixed> $validationSchemas
@@ -45,6 +51,7 @@ class SchemaParser implements SchemaParserInterface
         $parsedSchema = [
             'name' => $this->getValue($resource, 'name', null),
             'shortName' => $this->getValue($resource, 'shortName', $this->getValue($resource, 'name', null)),
+            'codeBucket' => $this->getValue($resource, 'codeBucket', null),
             'description' => $this->getValue($resource, 'description', ''),
             'operations' => $this->normalizeOperations($resource, $filePath),
             'properties' => $this->normalizeProperties($resource, $filePath),
@@ -76,6 +83,8 @@ class SchemaParser implements SchemaParserInterface
                 $parsedSchema['validationSourceFiles'] = $validationSourceFiles;
             }
         }
+
+        $this->preMergeValidator->validate($parsedSchema, $filePath);
 
         return $parsedSchema;
     }
@@ -209,12 +218,12 @@ class SchemaParser implements SchemaParserInterface
 
         $normalized = strtolower(trim($type));
 
-        // Map common type aliases to standard types
         return match ($normalized) {
             'int' => 'integer',
             'bool' => 'boolean',
             'str' => 'string',
             'arr' => 'array',
+            'float', 'double' => 'number',
             default => $normalized,
         };
     }

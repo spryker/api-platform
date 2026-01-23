@@ -1,18 +1,15 @@
 {
     "include": {
-        "api-platform/api-pack": "Required for the APi Platform.",
-        "api-platform/hal": "Required for the APi Platform.",
-        "api-platform/json-api": "Required for the APi Platform.",
-        "api-platform/metadata": "Required for the APi Platform.",
-        "api-platform/state": "Required for the APi Platform.",
-        "symfony/config": "Required for the APi Platform.",
-        "symfony/console": "Required for the APi Platform.",
-        "symfony/finder": "Required for the APi Platform.",
-        "symfony/http-kernel": "Required for the APi Platform.",
-        "symfony/yaml": "Required for the APi Platform.",
-        "spryker/transfer": "Provides transfer objects definition with strict types."
-    },
-    "exclude": {
-        "spryker/helper": "Bug in the Dependency Finder."
+        "api-platform/api-pack": "Required for the ApiPlatform.",
+        "api-platform/hal": "Required for the ApiPlatform.",
+        "api-platform/json-api": "Required for the ApiPlatform.",
+        "api-platform/metadata": "Required for the ApiPlatform.",
+        "api-platform/state": "Required for the ApiPlatform.",
+        "spryker/kernel": "Required for CodeBucket support.",
+        "symfony/config": "Required for the ApiPlatform.",
+        "symfony/console": "Required for the ApiPlatform.",
+        "symfony/finder": "Required for the ApiPlatform.",
+        "symfony/http-kernel": "Required for the ApiPlatform.",
+        "symfony/yaml": "Required for the ApiPlatform."
     }
 }

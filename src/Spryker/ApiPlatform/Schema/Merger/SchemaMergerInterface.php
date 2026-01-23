@@ -20,4 +20,17 @@ interface SchemaMergerInterface
      * @return array<string, mixed>
      */
     public function merge(array $schemas, string $resourceName, string $apiType): array;
+
+    /**
+     * @param array<array<string, mixed>> $codeBucketSchemas
+     * @param array<string, mixed> $baseSchema
+     *
+     * @return array<string, mixed>
+     */
+    public function mergeWithCodeBucketInheritance(
+        array $codeBucketSchemas,
+        array $baseSchema,
+        string $resourceName,
+        string $apiType,
+    ): array;
 }

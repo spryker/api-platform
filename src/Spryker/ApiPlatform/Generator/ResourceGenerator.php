@@ -166,12 +166,22 @@ class ResourceGenerator implements ResourceGeneratorInterface
         $this->filesystem->remove($outputDir);
     }
 
-    protected function writeResourceFile(string $resourceName, string $apiType, string $generatedCode): string
+    protected function writeResourceFile(string $resourceName, string $apiType, string $generatedCode, ?string $codeBucket = null): string
     {
         $apiType = ApiTypeNormalizer::normalizeForGeneration($apiType);
         $resourceName = ResourceNameNormalizer::normalize($resourceName);
 
         $outputDir = $this->config->getApiResourceDirectory($apiType);
+
+        if ($codeBucket !== null) {
+            $fileName = sprintf('%s%s%sResource.php', $resourceName, $codeBucket, $apiType);
+            $filePath = sprintf('%s/%s', $outputDir, $fileName);
+
+            $this->filesystem->dumpFile($filePath, $generatedCode);
+
+            return $filePath;
+        }
+
         $fileName = sprintf('%s%sResource.php', $resourceName, $apiType);
         $filePath = sprintf('%s/%s', $outputDir, $fileName);
 
@@ -220,7 +230,13 @@ class ResourceGenerator implements ResourceGeneratorInterface
                 $schema = $this->validationSchemaLoader->load($file);
                 $filePath = $file->getRealPath() ?: $file->getPathname();
 
-                $key = $this->generateValidationKey($filePath, $apiType);
+                $codeBucket = null;
+
+                if (is_array($schema) && isset($schema['codeBucket'])) {
+                    $codeBucket = $schema['codeBucket'];
+                }
+
+                $key = $this->generateValidationKey($filePath, $apiType, $codeBucket);
 
                 if (!isset($validationSchemas[$key])) {
                     $validationSchemas[$key] = [];
@@ -254,14 +270,32 @@ class ResourceGenerator implements ResourceGeneratorInterface
         return $fileName;
     }
 
-    protected function generateValidationKey(string $filePath, string $apiType): string
+    /**
+     * @param array<string, mixed> $schema
+     */
+    protected function generateGroupKey(array $schema, string $resourceName): string
+    {
+        if (isset($schema['codeBucket']) && $schema['codeBucket'] !== null) {
+            return sprintf('%s#%s', $resourceName, $schema['codeBucket']);
+        }
+
+        return $resourceName;
+    }
+
+    protected function generateValidationKey(string $filePath, string $apiType, ?string $codeBucket = null): string
     {
         $apiType = ApiTypeNormalizer::normalizeForSchemaLookup($apiType);
 
         $fileName = basename($filePath, '.validation.yml');
         $fileName = basename($fileName, '.validation.yaml');
 
-        return sprintf('%s_%s', $apiType, $fileName);
+        $key = sprintf('%s_%s', $apiType, $fileName);
+
+        if ($codeBucket !== null) {
+            $key .= sprintf('#%s', $codeBucket);
+        }
+
+        return $key;
     }
 
     protected function prepareGeneration(string $apiType): string
@@ -358,13 +392,14 @@ class ResourceGenerator implements ResourceGeneratorInterface
                 $rawSchema = $this->loadSchema($file);
                 $parsedSchema = $this->schemaParser->parse($rawSchema, $file, $validationSchemas);
 
-                $resourceKey = $this->generateResourceKey($file);
+                $resourceName = $this->generateResourceKey($file);
+                $groupKey = $this->generateGroupKey($parsedSchema, $resourceName);
 
-                if (!isset($resourceSchemas[$resourceKey])) {
-                    $resourceSchemas[$resourceKey] = [];
+                if (!isset($resourceSchemas[$groupKey])) {
+                    $resourceSchemas[$groupKey] = [];
                 }
 
-                $resourceSchemas[$resourceKey][] = $parsedSchema;
+                $resourceSchemas[$groupKey][] = $parsedSchema;
             } catch (Throwable $exception) {
                 $failedFiles[] = [
                     'file' => $file->getPathname(),
@@ -402,9 +437,20 @@ class ResourceGenerator implements ResourceGeneratorInterface
         $mergedSchemas = [];
         $failedMerges = [];
 
-        foreach ($groupedSchemas as $resourceKey => $schemas) {
+        $baseGroups = [];
+        $codeBucketGroups = [];
+
+        foreach ($groupedSchemas as $groupKey => $schemas) {
+            if (str_contains($groupKey, '#')) {
+                $codeBucketGroups[$groupKey] = $schemas;
+            } else {
+                $baseGroups[$groupKey] = $schemas;
+            }
+        }
+
+        foreach ($baseGroups as $resourceKey => $schemas) {
             $this->logger->debug(sprintf(
-                "Merging %d schema(s) for resource '%s'",
+                "Merging %d base schema(s) for resource '%s'",
                 count($schemas),
                 $resourceKey,
             ));
@@ -419,8 +465,55 @@ class ResourceGenerator implements ResourceGeneratorInterface
                 ];
 
                 $this->logger->error(sprintf(
-                    "Failed to merge schemas for resource '%s': %s",
+                    "Failed to merge base schemas for resource '%s': %s",
                     $resourceKey,
+                    $exception->getMessage(),
+                ));
+            }
+        }
+
+        foreach ($codeBucketGroups as $groupKey => $schemas) {
+            [$resourceName, $codeBucket] = explode('#', $groupKey, 2);
+
+            $this->logger->debug(sprintf(
+                "Merging %d CodeBucket schema(s) for resource '%s' (CodeBucket: %s)",
+                count($schemas),
+                $resourceName,
+                $codeBucket,
+            ));
+
+            try {
+                $baseSchema = $mergedSchemas[$resourceName] ?? [];
+
+                if ($baseSchema === []) {
+                    $this->logger->warning(sprintf(
+                        "No base schema found for CodeBucket resource '%s', generating standalone",
+                        $groupKey,
+                    ));
+
+                    $mergedSchema = $this->schemaMerger->merge($schemas, $groupKey, $apiType);
+                    $mergedSchemas[$groupKey] = $mergedSchema;
+
+                    continue;
+                }
+
+                $mergedSchema = $this->schemaMerger->mergeWithCodeBucketInheritance(
+                    $schemas,
+                    $baseSchema,
+                    $groupKey,
+                    $apiType,
+                );
+
+                $mergedSchemas[$groupKey] = $mergedSchema;
+            } catch (Throwable $exception) {
+                $failedMerges[] = [
+                    'resource' => $groupKey,
+                    'error' => $exception->getMessage(),
+                ];
+
+                $this->logger->error(sprintf(
+                    "Failed to merge CodeBucket schemas for resource '%s': %s",
+                    $groupKey,
                     $exception->getMessage(),
                 ));
             }
@@ -488,6 +581,7 @@ class ResourceGenerator implements ResourceGeneratorInterface
     {
         foreach ($validatedSchemas as $resourceKey => $mergedSchema) {
             $resourceName = $mergedSchema['name'] ?? $mergedSchema['shortName'] ?? $resourceKey;
+            $codeBucket = $mergedSchema['codeBucket'] ?? null;
 
             $this->logger->debug(sprintf(
                 "Generating resource file for '%s'",
@@ -496,9 +590,14 @@ class ResourceGenerator implements ResourceGeneratorInterface
 
             try {
                 $generatedCode = $this->classGenerator->generate($mergedSchema, $apiType);
-                $filePath = $this->writeResourceFile($resourceName, $apiType, $generatedCode);
+                $filePath = $this->writeResourceFile($resourceName, $apiType, $generatedCode, $codeBucket);
 
                 $className = sprintf('%s%sResource', $resourceName, $apiType);
+
+                if ($codeBucket !== null) {
+                    $className = sprintf('%s%s%sResource', $resourceName, $codeBucket, $apiType);
+                }
+
                 $sourceFiles = $this->extractSourceFilesFromMetadata($mergedSchema);
 
                 $this->logger->info(sprintf(

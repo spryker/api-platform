@@ -99,6 +99,58 @@ class SchemaMerger implements SchemaMergerInterface
     }
 
     /**
+     * @param array<array<string, mixed>> $codeBucketSchemas
+     * @param array<string, mixed> $baseSchema
+     *
+     * @return array<string, mixed>
+     */
+    public function mergeWithCodeBucketInheritance(
+        array $codeBucketSchemas,
+        array $baseSchema,
+        string $resourceName,
+        string $apiType,
+    ): array {
+        $result = $this->deepCopy($baseSchema);
+
+        $grouped = $this->groupByLayer($codeBucketSchemas);
+        $contributingSources = $baseSchema['_metadata']['contributingSources'] ?? [];
+
+        if (isset($grouped['core'])) {
+            $result = $this->deepMerge($result, $grouped['core']);
+            $contributingSources[] = $this->createSourceInfo($grouped['core']);
+
+            $this->logger->info('Merged CodeBucket core schema', [
+                'resource' => $resourceName,
+                'file' => $grouped['core']['sourceFile'] ?? 'unknown',
+            ]);
+        }
+
+        if (isset($grouped['feature'])) {
+            $result = $this->deepMerge($result, $grouped['feature']);
+            $contributingSources[] = $this->createSourceInfo($grouped['feature']);
+
+            $this->logger->info('Merged CodeBucket feature schema', [
+                'resource' => $resourceName,
+                'file' => $grouped['feature']['sourceFile'] ?? 'unknown',
+            ]);
+        }
+
+        if (isset($grouped['project'])) {
+            $result = $this->deepMerge($result, $grouped['project']);
+            $contributingSources[] = $this->createSourceInfo($grouped['project']);
+
+            $this->logger->info('Merged CodeBucket project schema', [
+                'resource' => $resourceName,
+                'file' => $grouped['project']['sourceFile'] ?? 'unknown',
+            ]);
+        }
+
+        $result = $this->mergeValidationSchemas($result, $codeBucketSchemas);
+
+        return $this->enrichWithMetadata($result, $contributingSources);
+    }
+
+    /**
      * @param array<array<string, mixed>> $schemas
      *
      * @return array<string, array<string, mixed>>
@@ -162,7 +214,7 @@ class SchemaMerger implements SchemaMergerInterface
             // Properties merge deeply - individual properties from higher layers override lower layers
             // This provides flexibility while maintaining consistency
             if ($key === 'properties' && is_array($value) && is_array($result[$key])) {
-                $result[$key] = $this->mergeProperties($result[$key], $value);
+                $result[$key] = $this->mergeProperties($result[$key], $value, $override);
 
                 continue;
             }
@@ -189,16 +241,27 @@ class SchemaMerger implements SchemaMergerInterface
     /**
      * @param array<string, mixed> $baseProperties
      * @param array<string, mixed> $overrideProperties
+     * @param array<string, mixed> $overrideSchema
      *
      * @return array<string, mixed>
      */
-    protected function mergeProperties(array $baseProperties, array $overrideProperties): array
+    protected function mergeProperties(array $baseProperties, array $overrideProperties, array $overrideSchema): array
     {
         $result = $baseProperties;
 
         foreach ($overrideProperties as $propertyName => $overrideProperty) {
             if (!isset($result[$propertyName])) {
                 $result[$propertyName] = $overrideProperty;
+
+                if (is_array($result[$propertyName])) {
+                    $result[$propertyName]['_contributingFiles'] = [
+                        [
+                            'file' => $overrideSchema['sourceFile'] ?? 'unknown',
+                            'layer' => $overrideSchema['sourceLayer'] ?? 'unknown',
+                            'codeBucket' => $overrideSchema['codeBucket'] ?? null,
+                        ],
+                    ];
+                }
 
                 continue;
             }
@@ -207,7 +270,17 @@ class SchemaMerger implements SchemaMergerInterface
                 continue;
             }
 
+            $existingFiles = $result[$propertyName]['_contributingFiles'] ?? [];
+
             $result[$propertyName] = array_merge($result[$propertyName], $overrideProperty);
+
+            $result[$propertyName]['_contributingFiles'] = array_merge($existingFiles, [
+                [
+                    'file' => $overrideSchema['sourceFile'] ?? 'unknown',
+                    'layer' => $overrideSchema['sourceLayer'] ?? 'unknown',
+                    'codeBucket' => $overrideSchema['codeBucket'] ?? null,
+                ],
+            ]);
         }
 
         return $result;

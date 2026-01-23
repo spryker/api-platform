@@ -12,7 +12,7 @@ namespace Spryker\ApiPlatform\Generator\Template;
 class PhpTemplateRenderer implements TemplateRendererInterface
 {
     /**
-     * @param array{className: string, namespace: string, uses: array<string>, resourceAttribute: string, properties: array<array{name: string, type: string, phpType: string, attributes: string, description: string}>, metadata: array{timestamp: string, sourceFiles: array<string>, validationSourceFiles: array<string>}}|array $templateData
+     * @param array{className: string, namespace: string, uses: array<string>, resourceAttribute: string, properties: array<array{name: string, type: string, phpType: string, attributes: string, description: string}>, codeBucket: ?string, metadata: array{timestamp: string, sourceFiles: array<string>, validationSourceFiles: array<string>}}|array $templateData
      *
      * @return string
      */
@@ -22,6 +22,7 @@ class PhpTemplateRenderer implements TemplateRendererInterface
         $output .= $this->renderNamespace($templateData['namespace']);
         $output .= $this->renderUseStatements($templateData['uses']);
         $output .= $this->renderClassDeclaration($templateData['className'], $templateData['resourceAttribute']);
+        $output .= $this->renderCodeBucketConstant($templateData['codeBucket'] ?? null);
 
         $properties = $this->renderProperties($templateData['properties']);
 
@@ -107,6 +108,15 @@ PHP;
 final class {$className}
 {
 PHP;
+    }
+
+    protected function renderCodeBucketConstant(?string $codeBucket): string
+    {
+        if ($codeBucket === null) {
+            return '';
+        }
+
+        return "\n    public const string CODE_BUCKET = '{$codeBucket}';";
     }
 
     /**
