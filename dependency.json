@@ -6,6 +6,7 @@
         "api-platform/metadata": "Required for the ApiPlatform.",
         "api-platform/state": "Required for the ApiPlatform.",
         "spryker/kernel": "Required for CodeBucket support.",
+        "spryker/transfer": "Required for strict transfer properties.",
         "symfony/config": "Required for the ApiPlatform.",
         "symfony/console": "Required for the ApiPlatform.",
         "symfony/finder": "Required for the ApiPlatform.",
