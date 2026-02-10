@@ -19,7 +19,6 @@ The API Platform module provides schema-based API resource generation and integr
 
 **Cache Management**
 - @src/Spryker/ApiPlatform/src/Spryker/ApiPlatform/Cache/ApiResourceCacheWarmer.php - Warms API resource cache
-- @src/Spryker/ApiPlatform/src/Spryker/ApiPlatform/Cache/ApiResourceCacheClearer.php - Clears API resource cache
 
 ### Console Commands
 

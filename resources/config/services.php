@@ -9,7 +9,6 @@ declare(strict_types=1);
 
 namespace Symfony\Component\DependencyInjection\Loader\Configurator;
 
-use Spryker\ApiPlatform\Cache\ApiResourceCacheClearer;
 use Spryker\ApiPlatform\Cache\ApiResourceCacheWarmer;
 use Spryker\ApiPlatform\Command\ApiDebugCommand;
 use Spryker\ApiPlatform\Command\ApiGenerateCommand;
@@ -141,10 +140,6 @@ return static function (ContainerConfigurator $container): void {
     // Generator: Resource Generator
     $services->set(ResourceGeneratorInterface::class, ResourceGenerator::class)
         ->arg('$loaders', tagged_iterator('spryker_api_platform.schema_loader'));
-
-    // Cache Clearer
-    $services->set(ApiResourceCacheClearer::class)
-        ->tag('kernel.cache_clearer');
 
     // Cache Warmer
     $services->set(ApiResourceCacheWarmer::class)
