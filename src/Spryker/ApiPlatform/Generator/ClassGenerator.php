@@ -943,7 +943,10 @@ class ClassGenerator implements ClassGeneratorInterface
     protected function resolveVendorCollisionAliases(array $vendorFqcns, string $vendor, string $shortName, array &$fqcnConstraints): void
     {
         foreach ($vendorFqcns as $fqcn) {
-            /** @phpstan-ignore offsetAccess.notFound */
+            if (!isset($fqcnConstraints[$fqcn]['namespaceParts'])) {
+                continue;
+            }
+
             $namespaceParts = $fqcnConstraints[$fqcn]['namespaceParts'];
             $disambiguatingPart = $this->extractDisambiguatingPart($namespaceParts);
 

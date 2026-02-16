@@ -276,8 +276,7 @@ class ResourceGenerator implements ResourceGeneratorInterface
      */
     protected function generateGroupKey(array $schema, string $resourceName): string
     {
-        /** @phpstan-ignore notIdentical.alwaysTrue */
-        if (isset($schema['codeBucket']) && $schema['codeBucket'] !== null) {
+        if (isset($schema['codeBucket'])) {
             return sprintf('%s#%s', $resourceName, $schema['codeBucket']);
         }
 

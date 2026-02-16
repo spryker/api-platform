@@ -66,8 +66,7 @@ class ApiSchemaValidationException extends ApiSchemaException
         if ($this->filePath !== null) {
             $location = sprintf('File: %s', $this->filePath);
 
-            /** @phpstan-ignore notIdentical.alwaysTrue */
-            if ($this->line !== null) {
+            if ($this->line !== 0) {
                 $location .= sprintf(' (line %d)', $this->line);
             }
             $parts[] = $location;
