@@ -74,6 +74,7 @@ class PreMergeValidator implements PreMergeValidatorInterface
             if (!in_array($type, static::VALID_TYPES, true)) {
                 $codeBucketContext = '';
 
+                /** @phpstan-ignore notIdentical.alwaysTrue */
                 if (isset($schema['codeBucket']) && $schema['codeBucket'] !== null) {
                     $codeBucketContext = sprintf(' (CodeBucket: %s)', $schema['codeBucket']);
                 }

@@ -810,7 +810,7 @@ class ClassGenerator implements ClassGeneratorInterface
     }
 
     /**
-     * @param array<string, array{fqcn: string, shortName: string, alias: string}> $fqcnConstraints
+     * @param array<string, array{fqcn: string, shortName: string, alias: string, namespaceParts: array<string>}> $fqcnConstraints
      */
     protected function extractFqcnFromConstraint(mixed $constraint, array &$fqcnConstraints): void
     {
@@ -943,8 +943,11 @@ class ClassGenerator implements ClassGeneratorInterface
     protected function resolveVendorCollisionAliases(array $vendorFqcns, string $vendor, string $shortName, array &$fqcnConstraints): void
     {
         foreach ($vendorFqcns as $fqcn) {
+            /** @phpstan-ignore offsetAccess.notFound */
             $namespaceParts = $fqcnConstraints[$fqcn]['namespaceParts'];
             $disambiguatingPart = $this->extractDisambiguatingPart($namespaceParts);
+
+            /** @phpstan-ignore parameterByRef.type */
             $fqcnConstraints[$fqcn]['alias'] = sprintf('%s%s%s', $vendor, $disambiguatingPart, $shortName);
         }
     }

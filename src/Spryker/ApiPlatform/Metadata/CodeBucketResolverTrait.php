@@ -100,6 +100,7 @@ trait CodeBucketResolverTrait
 
         $codeBucket = APPLICATION_CODE_BUCKET;
 
+        /** @phpstan-ignore function.alreadyNarrowedType */
         if (!is_string($codeBucket) || $codeBucket === '') {
             return '';
         }

@@ -232,6 +232,7 @@ class ResourceGenerator implements ResourceGeneratorInterface
 
                 $codeBucket = null;
 
+                /** @phpstan-ignore function.alreadyNarrowedType */
                 if (is_array($schema) && isset($schema['codeBucket'])) {
                     $codeBucket = $schema['codeBucket'];
                 }
@@ -275,6 +276,7 @@ class ResourceGenerator implements ResourceGeneratorInterface
      */
     protected function generateGroupKey(array $schema, string $resourceName): string
     {
+        /** @phpstan-ignore notIdentical.alwaysTrue */
         if (isset($schema['codeBucket']) && $schema['codeBucket'] !== null) {
             return sprintf('%s#%s', $resourceName, $schema['codeBucket']);
         }
