@@ -950,7 +950,6 @@ class ClassGenerator implements ClassGeneratorInterface
             $namespaceParts = $fqcnConstraints[$fqcn]['namespaceParts'];
             $disambiguatingPart = $this->extractDisambiguatingPart($namespaceParts);
 
-            /** @phpstan-ignore parameterByRef.type */
             $fqcnConstraints[$fqcn]['alias'] = sprintf('%s%s%s', $vendor, $disambiguatingPart, $shortName);
         }
     }
