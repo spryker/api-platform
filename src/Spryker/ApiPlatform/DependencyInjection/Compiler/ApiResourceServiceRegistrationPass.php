@@ -33,6 +33,11 @@ use Throwable;
 class ApiResourceServiceRegistrationPass implements CompilerPassInterface
 {
     /**
+     * @var array<string>
+     */
+    protected array $registeredServices = [];
+
+    /**
      * @param \Symfony\Component\DependencyInjection\ContainerBuilder $container
      */
     public function process(ContainerBuilder $container): void
@@ -53,8 +58,6 @@ class ApiResourceServiceRegistrationPass implements CompilerPassInterface
             return;
         }
 
-        $registeredServices = [];
-
         foreach ($apiTypes as $apiType) {
             $schemaFiles = $this->findSchemaFiles($sourceDirectories, $apiType);
 
@@ -62,7 +65,7 @@ class ApiResourceServiceRegistrationPass implements CompilerPassInterface
                 $services = $this->extractServicesFromSchema($schemaFile);
 
                 foreach ($services as $serviceClass) {
-                    if ($this->shouldRegisterService($container, $serviceClass, $registeredServices)) {
+                    if ($this->shouldRegisterService($container, $serviceClass)) {
                         $this->registerService($container, $serviceClass);
                     }
                 }
@@ -182,15 +185,11 @@ class ApiResourceServiceRegistrationPass implements CompilerPassInterface
         return $services;
     }
 
-    /**
-     * @param array<string> $registeredServices
-     */
     protected function shouldRegisterService(
         ContainerBuilder $container,
         string $serviceClass,
-        array $registeredServices,
     ): bool {
-        if (in_array($serviceClass, $registeredServices, true)) {
+        if (in_array($serviceClass, $this->registeredServices, true)) {
             return false;
         }
 
@@ -222,5 +221,6 @@ class ApiResourceServiceRegistrationPass implements CompilerPassInterface
         }
 
         $container->setDefinition($serviceClass, $definition);
+        $this->registeredServices[] = $serviceClass;
     }
 }

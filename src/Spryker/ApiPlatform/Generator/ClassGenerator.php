@@ -398,17 +398,26 @@ class ClassGenerator implements ClassGeneratorInterface
      */
     protected function generateOperationAttribute(string $type, array $operation): string
     {
-        if (!isset($operation['validationGroups']) || !is_array($operation['validationGroups'])) {
+        $params = [];
+
+        if (!empty($operation['processor'])) {
+            $processorShortName = $this->extractShortClassName($operation['processor']);
+            $params[] = sprintf('processor: %s::class', $processorShortName);
+        }
+
+        if (!empty($operation['validationGroups']) && is_array($operation['validationGroups'])) {
+            $groupsString = "['" . implode("', '", $operation['validationGroups']) . "']";
+            $params[] = sprintf('validationContext: [\'groups\' => %s]', $groupsString);
+        }
+
+        if ($params === []) {
             return sprintf('new %s()', $type);
         }
 
-        $validationGroups = $operation['validationGroups'];
-        $groupsString = "['" . implode("', '", $validationGroups) . "']";
-
         return sprintf(
-            'new %s(validationContext: [\'groups\' => %s])',
+            'new %s(%s)',
             $type,
-            $groupsString,
+            implode(', ', $params),
         );
     }
 
