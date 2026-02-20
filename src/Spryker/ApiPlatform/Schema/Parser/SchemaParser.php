@@ -130,6 +130,10 @@ class SchemaParser implements SchemaParserInterface
 
             $normalizedOperation = ['type' => $operationType];
 
+            if (isset($operation['processor'])) {
+                $normalizedOperation['processor'] = $operation['processor'];
+            }
+
             if (isset($operation['validationGroups']) && is_array($operation['validationGroups'])) {
                 $normalizedOperation['validationGroups'] = $operation['validationGroups'];
             }
