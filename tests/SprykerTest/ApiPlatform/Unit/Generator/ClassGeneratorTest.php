@@ -12,7 +12,6 @@ namespace SprykerTest\ApiPlatform\Unit\Generator;
 use Codeception\Test\Unit;
 use Spryker\ApiPlatform\Exception\ApiSchemaGenerationException;
 use Spryker\ApiPlatform\Generator\ClassGenerator;
-use Spryker\ApiPlatform\Generator\Template\PhpTemplateRenderer;
 use Spryker\ApiPlatform\Schema\Validation\Mapper\ValidationGroupMapperInterface;
 use SprykerTest\ApiPlatform\ApiUnitTester;
 
@@ -234,7 +233,7 @@ class ClassGeneratorTest extends Unit
             'operations' => ['post' => []],
         ];
         $validationGroupMapper = $this->createValidationGroupMapper('post');
-        $generator = new ClassGenerator(new PhpTemplateRenderer(), $validationGroupMapper);
+        $generator = $this->createClassGeneratorWithMapper($validationGroupMapper);
 
         // Act
         $result = $generator->generate($schema, 'Backend');
@@ -260,7 +259,7 @@ class ClassGeneratorTest extends Unit
             'operations' => ['Post' => []],
         ];
         $validationGroupMapper = $this->createValidationGroupMapper('post');
-        $generator = new ClassGenerator(new PhpTemplateRenderer(), $validationGroupMapper);
+        $generator = $this->createClassGeneratorWithMapper($validationGroupMapper);
 
         // Act
         $result = $generator->generate($schema, 'Backend');
@@ -287,7 +286,7 @@ class ClassGeneratorTest extends Unit
             'operations' => ['Post' => []],
         ];
         $validationGroupMapper = $this->createValidationGroupMapper('post');
-        $generator = new ClassGenerator(new PhpTemplateRenderer(), $validationGroupMapper);
+        $generator = $this->createClassGeneratorWithMapper($validationGroupMapper);
 
         // Act
         $result = $generator->generate($schema, 'Backend');
@@ -316,7 +315,7 @@ class ClassGeneratorTest extends Unit
             'operations' => ['Post' => []],
         ];
         $validationGroupMapper = $this->createValidationGroupMapper('post');
-        $generator = new ClassGenerator(new PhpTemplateRenderer(), $validationGroupMapper);
+        $generator = $this->createClassGeneratorWithMapper($validationGroupMapper);
 
         // Act
         $result = $generator->generate($schema, 'Backend');
@@ -348,7 +347,7 @@ class ClassGeneratorTest extends Unit
             'operations' => ['Post' => []],
         ];
         $validationGroupMapper = $this->createValidationGroupMapper('post');
-        $generator = new ClassGenerator(new PhpTemplateRenderer(), $validationGroupMapper);
+        $generator = $this->createClassGeneratorWithMapper($validationGroupMapper);
 
         // Act
         $result = $generator->generate($schema, 'Backend');
@@ -375,7 +374,7 @@ class ClassGeneratorTest extends Unit
             'operations' => ['Post' => []],
         ];
         $validationGroupMapper = $this->createValidationGroupMapper('post');
-        $generator = new ClassGenerator(new PhpTemplateRenderer(), $validationGroupMapper);
+        $generator = $this->createClassGeneratorWithMapper($validationGroupMapper);
 
         // Act
         $result = $generator->generate($schema, 'Backend');
@@ -400,6 +399,66 @@ class ClassGeneratorTest extends Unit
     {
         $validationGroupMapper = $this->makeEmpty(ValidationGroupMapperInterface::class);
 
-        return new ClassGenerator(new PhpTemplateRenderer(), $validationGroupMapper);
+        return $this->createClassGeneratorWithMapper($validationGroupMapper);
+    }
+
+    protected function createClassGeneratorWithMapper(ValidationGroupMapperInterface $validationGroupMapper): ClassGenerator
+    {
+        $this->tester->getContainer()->set(ValidationGroupMapperInterface::class, $validationGroupMapper);
+
+        return $this->tester->getContainer()->get(ClassGenerator::class);
+    }
+
+    public function testGivenResourceTypePropertyWhenGeneratingThenUsesResourceClassAsPhpType(): void
+    {
+        // Arrange
+        $schema = [
+            'name' => 'CustomerAddress',
+            'shortName' => 'customer-address',
+            'properties' => [
+                'customer' => [
+                    'type' => 'CustomersStorefrontResource',
+                    'writable' => false,
+                    'readable' => true,
+                    'description' => 'The customer who owns this address',
+                ],
+            ],
+        ];
+        $generator = $this->createClassGenerator();
+
+        // Act
+        $result = $generator->generate($schema, 'Storefront');
+
+        // Assert
+        $this->assertStringContainsString('public ?CustomersStorefrontResource $customer = null;', $result);
+        $this->assertStringContainsString('public function setCustomer(?CustomersStorefrontResource $customer): self', $result);
+        $this->assertStringContainsString('public function getCustomer(): ?CustomersStorefrontResource', $result);
+    }
+
+    public function testGivenStandardPhpTypePropertyWhenGeneratingThenUsesMappedPhpType(): void
+    {
+        // Arrange
+        $schema = [
+            'name' => 'Test',
+            'shortName' => 'test',
+            'properties' => [
+                'name' => ['type' => 'string'],
+                'count' => ['type' => 'integer'],
+                'price' => ['type' => 'number'],
+                'active' => ['type' => 'boolean'],
+                'tags' => ['type' => 'array'],
+            ],
+        ];
+        $generator = $this->createClassGenerator();
+
+        // Act
+        $result = $generator->generate($schema, 'Storefront');
+
+        // Assert
+        $this->assertStringContainsString('public ?string $name = null;', $result);
+        $this->assertStringContainsString('public ?int $count = null;', $result);
+        $this->assertStringContainsString('public ?float $price = null;', $result);
+        $this->assertStringContainsString('public ?bool $active = null;', $result);
+        $this->assertStringContainsString('public array $tags = [];', $result);
     }
 }

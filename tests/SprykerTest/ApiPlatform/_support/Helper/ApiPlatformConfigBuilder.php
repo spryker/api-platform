@@ -32,8 +32,8 @@ class ApiPlatformConfigBuilder
         $this->moduleRoot = $this->detectModuleRoot();
 
         $this->sourceDir = sprintf('%s/resources', $this->moduleRoot);
-        $this->cacheDir = sprintf('%s/tests/_data/cache', $this->moduleRoot);
-        $this->generatedDir = sprintf('%s/tests/_data/Api', $this->moduleRoot);
+        $this->cacheDir = codecept_data_dir('cache');
+        $this->generatedDir = codecept_data_dir('Api');
         $this->apiTypes = static::DEFAULT_API_TYPES;
         $this->debug = true;
     }
@@ -42,8 +42,8 @@ class ApiPlatformConfigBuilder
     {
         $this->moduleRoot = $moduleRoot;
         $this->sourceDir = sprintf('%s/resources', $moduleRoot);
-        $this->cacheDir = sprintf('%s/tests/_data/cache', $moduleRoot);
-        $this->generatedDir = sprintf('%s/tests/_data/Api', $moduleRoot);
+        $this->cacheDir = codecept_data_dir('cache');
+        $this->generatedDir = codecept_data_dir('Api');
 
         return $this;
     }
@@ -52,7 +52,7 @@ class ApiPlatformConfigBuilder
     {
         $dataDir = rtrim(codecept_data_dir(), DIRECTORY_SEPARATOR);
 
-        return dirname($dataDir, 2);
+        return dirname($dataDir, 4);
     }
 
     public function build(): ApiPlatformConfig

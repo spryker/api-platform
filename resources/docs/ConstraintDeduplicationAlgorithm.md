@@ -234,25 +234,25 @@ post:
 ## Actual Implementation
 
 ### Implementation Location
-The constraint deduplication is implemented in `ClassGenerator` (@src/Spryker/ApiPlatform/src/Spryker/ApiPlatform/Generator/ClassGenerator.php:372-428), not in `ValidationSchemaMerger`.
+The constraint deduplication is implemented in `ValidationAttributeGenerator` (@src/Spryker/ApiPlatform/src/Spryker/ApiPlatform/Generator/ValidationAttributeGenerator.php), not in `ValidationSchemaMerger`.
 
 ### How It Works
 
 **Phase 1: Collect Constraints with Groups**
-- Method: `generateValidationAttributes()`
+- Method: `ValidationAttributeGenerator::generate()`
 - Collects all constraints from validation schemas for each operation (GET, POST, etc.)
 - Each constraint is paired with its validation group (e.g., "post", "patch")
 - Structure: `[{constraint: mixed, group: string}, ...]`
 
 **Phase 2: Deduplicate by Signature**
-- Method: `deduplicateConstraintsByGroups()`
+- Method: `ValidationAttributeGenerator::deduplicateConstraintsByGroups()`
 - Groups constraints by unique signature using `generateConstraintKey()`
 - Multiple occurrences of the same constraint across different validation groups are merged
 - Validation groups are collected and deduplicated per constraint
 - Structure: `[{constraint: mixed, groups: [string, ...]}, ...]`
 
 **Phase 3: Generate Attributes**
-- Method: `generateConstraintAttribute()`
+- Method: `ConstraintFormatter::generateConstraintAttribute()`
 - Generates PHP attributes with all validation groups
 - Example: `#[Assert\NotBlank(groups: ['post', 'patch'])]`
 
@@ -308,11 +308,11 @@ The signature must be deterministic and consistent:
 - Uses PHP's `serialize()` and `md5()` for hashing
 
 ### Testing Strategy
-1. Unit tests for `deduplicateConstraintsByGroups()` with various input combinations
+1. Unit tests for `ValidationAttributeGenerator::deduplicateConstraintsByGroups()` with various input combinations
 2. Test exact duplicates (same type, same parameters)
 3. Test different constraints (same type, different parameters)
 4. Test validation group merging and sorting
-5. Integration test with full ClassGenerator
+5. Integration test with full ClassGenerator pipeline
 
 ### Edge Cases
 - Empty constraint arrays

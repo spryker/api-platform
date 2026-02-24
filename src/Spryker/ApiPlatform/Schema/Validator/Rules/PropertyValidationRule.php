@@ -78,7 +78,7 @@ class PropertyValidationRule implements ValidationRuleInterface
                 continue;
             }
 
-            if (!in_array($type, static::VALID_PROPERTY_TYPES, true)) {
+            if (!$this->isValidPropertyType($type)) {
                 $contributingFiles = $property['_contributingFiles'] ?? [];
                 $resourceName = $schema['name'] ?? 'unknown';
                 $codeBucket = $schema['codeBucket'] ?? null;
@@ -95,7 +95,7 @@ class PropertyValidationRule implements ValidationRuleInterface
                     $errorMessage .= sprintf(' (Resource: %s)', $resourceName);
                 }
 
-                $errorMessage .= sprintf("\n  Valid types: %s", implode(', ', static::VALID_PROPERTY_TYPES));
+                $errorMessage .= sprintf("\n  Valid types: %s or resource class names (e.g., CustomersStorefrontResource)", implode(', ', static::VALID_PROPERTY_TYPES));
 
                 if ($contributingFiles !== []) {
                     $errorMessage .= "\n  Contributing files:";
@@ -122,6 +122,20 @@ class PropertyValidationRule implements ValidationRuleInterface
         }
 
         return $errors;
+    }
+
+    protected function isValidPropertyType(string $type): bool
+    {
+        if (in_array($type, static::VALID_PROPERTY_TYPES, true)) {
+            return true;
+        }
+
+        return $this->isResourceClassName($type);
+    }
+
+    protected function isResourceClassName(string $type): bool
+    {
+        return str_ends_with($type, 'StorefrontResource') || str_ends_with($type, 'BackendResource');
     }
 
     /**
@@ -188,6 +202,10 @@ class PropertyValidationRule implements ValidationRuleInterface
 
     protected function isTypeCompatible(mixed $value, string $type): bool
     {
+        if ($this->isResourceClassName($type)) {
+            return true;
+        }
+
         return match ($type) {
             'string' => is_string($value),
             'integer' => is_int($value),

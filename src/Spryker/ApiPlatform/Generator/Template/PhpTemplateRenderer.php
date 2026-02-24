@@ -9,10 +9,45 @@ declare(strict_types=1);
 
 namespace Spryker\ApiPlatform\Generator\Template;
 
-class PhpTemplateRenderer implements TemplateRendererInterface
+/**
+ * Renders complete PHP resource class files from template data.
+ *
+ * Generates fully-formed PHP files including file header, namespace, use statements,
+ * class declaration with attributes, properties, getters/setters, and serialization methods.
+ *
+ * Input template data structure:
+ * ```
+ * [
+ *     'className' => 'CustomersStorefrontResource',
+ *     'namespace' => 'Generated\Api\Storefront',
+ *     'uses' => ['ApiPlatform\Metadata\ApiResource', ...],
+ *     'resourceAttribute' => '#[ApiResource(operations: [...])]',
+ *     'properties' => [
+ *         ['name' => 'email', 'phpType' => 'string', 'attributes' => '#[ApiProperty(...)]'],
+ *     ],
+ *     'codeBucket' => null,
+ *     'metadata' => ['timestamp' => '2026-01-21 10:00:00', 'sourceFiles' => [...]],
+ * ]
+ * ```
+ *
+ * Generated output structure contains:
+ * - File header with copyright, generation timestamp, and source file references
+ * - Namespace declaration (Generated\Api\{ApiType})
+ * - Use statements for API Platform, Symfony validation, and custom classes
+ * - Class declaration with ApiResource attribute
+ * - Public properties with ApiProperty and validation attributes
+ * - Getters and setters for all properties
+ * - toArray() method for serialization
+ * - fromArray() static factory method for deserialization
+ *
+ * Special handling:
+ * - Array properties get empty array default instead of null
+ * - CodeBucket constant generated when codeBucket is present
+ */
+class PhpTemplateRenderer
 {
     /**
-     * @param array{className: string, namespace: string, uses: array<string>, resourceAttribute: string, properties: array<array{name: string, type: string, phpType: string, attributes: string, description: string}>, codeBucket: ?string, metadata: array{timestamp: string, sourceFiles: array<string>, validationSourceFiles: array<string>}}|array $templateData
+     * @param array{className: string, namespace: string, uses: array<string>, resourceAttribute: string, properties: array<array{name: string, type: string, phpType: string, attributes: string, description: string, phpDoc: string}>, codeBucket: ?string, metadata: array{timestamp: string, sourceFiles: array<string>, validationSourceFiles: array<string>}}|array $templateData
      *
      * @return string
      */
@@ -120,7 +155,7 @@ PHP;
     }
 
     /**
-     * @param array<array{name: string, type: string, phpType: string, attributes: string, description: string}> $properties
+     * @param array<array{name: string, type: string, phpType: string, attributes: string, description: string, phpDoc: string}> $properties
      */
     protected function renderProperties(array $properties): string
     {
@@ -132,6 +167,12 @@ PHP;
 
         foreach ($properties as $property) {
             $propertyLines = [];
+
+            if ($property['phpDoc'] !== '') {
+                $propertyLines[] = '    /**';
+                $propertyLines[] = "     * {$property['phpDoc']}";
+                $propertyLines[] = '     */';
+            }
 
             if ($property['attributes'] !== '') {
                 $propertyLines[] = "    {$property['attributes']}";
@@ -153,7 +194,7 @@ PHP;
     }
 
     /**
-     * @param array<array{name: string, type: string, phpType: string, attributes: string, description: string}> $properties
+     * @param array<array{name: string, type: string, phpType: string, attributes: string, description: string, phpDoc: string}> $properties
      */
     protected function renderGettersAndSetters(array $properties): string
     {
@@ -186,7 +227,7 @@ PHP;
     }
 
     /**
-     * @param array<array{name: string, type: string, phpType: string, attributes: string, description: string}> $properties
+     * @param array<array{name: string, type: string, phpType: string, attributes: string, description: string, phpDoc: string}> $properties
      */
     protected function renderToArray(array $properties): string
     {
@@ -217,7 +258,7 @@ PHP;
     }
 
     /**
-     * @param array<array{name: string, type: string, phpType: string, attributes: string, description: string}> $properties
+     * @param array<array{name: string, type: string, phpType: string, attributes: string, description: string, phpDoc: string}> $properties
      */
     protected function renderFromArray(string $className, array $properties): string
     {

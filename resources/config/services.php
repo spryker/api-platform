@@ -9,16 +9,34 @@ declare(strict_types=1);
 
 namespace Symfony\Component\DependencyInjection\Loader\Configurator;
 
+use ApiPlatform\JsonApi\State\JsonApiProvider;
+use ApiPlatform\State\ErrorProvider;
 use Spryker\ApiPlatform\Cache\ApiResourceCacheWarmer;
 use Spryker\ApiPlatform\Command\ApiDebugCommand;
 use Spryker\ApiPlatform\Command\ApiGenerateCommand;
 use Spryker\ApiPlatform\Configuration\ApiPlatformConfig;
 use Spryker\ApiPlatform\Generator\ClassGenerator;
-use Spryker\ApiPlatform\Generator\ClassGeneratorInterface;
+use Spryker\ApiPlatform\Generator\ConstraintFormatter;
+use Spryker\ApiPlatform\Generator\FqcnConstraintResolver;
+use Spryker\ApiPlatform\Generator\MediaType\MediaTypeFormatterRegistry;
+use Spryker\ApiPlatform\Generator\OpenApiOperationBuilder;
+use Spryker\ApiPlatform\Generator\PropertyAttributeGenerator;
+use Spryker\ApiPlatform\Generator\RelationshipPhpDocGenerator;
+use Spryker\ApiPlatform\Generator\ResourceAttributeGenerator;
 use Spryker\ApiPlatform\Generator\ResourceGenerator;
 use Spryker\ApiPlatform\Generator\ResourceGeneratorInterface;
+use Spryker\ApiPlatform\Generator\ResourceNameTagGenerator;
 use Spryker\ApiPlatform\Generator\Template\PhpTemplateRenderer;
-use Spryker\ApiPlatform\Generator\Template\TemplateRendererInterface;
+use Spryker\ApiPlatform\Generator\UseStatementCollector;
+use Spryker\ApiPlatform\Generator\ValidationAttributeGenerator;
+use Spryker\ApiPlatform\OpenApi\FormatTransformer\JsonApiFormatTransformer;
+use Spryker\ApiPlatform\OpenApi\Normalizer\EmptyRelationshipNormalizer;
+use Spryker\ApiPlatform\OpenApi\Normalizer\IdNormalizer;
+use Spryker\ApiPlatform\OpenApi\Normalizer\LinksPositionNormalizer;
+use Spryker\ApiPlatform\OpenApi\Normalizer\SelfLinkNormalizer;
+use Spryker\ApiPlatform\Provider\RelationshipProvider;
+use Spryker\ApiPlatform\Relationship\ApiPlatformRelationshipResolver;
+use Spryker\ApiPlatform\Relationship\ApiPlatformRelationshipResolverInterface;
 use Spryker\ApiPlatform\Schema\Finder\SchemaFinder;
 use Spryker\ApiPlatform\Schema\Finder\SchemaFinderInterface;
 use Spryker\ApiPlatform\Schema\Loader\YamlSchemaLoader;
@@ -42,6 +60,7 @@ use Spryker\ApiPlatform\Schema\Validator\Rules\PaginationValidationRule;
 use Spryker\ApiPlatform\Schema\Validator\Rules\ProcessorValidationRule;
 use Spryker\ApiPlatform\Schema\Validator\Rules\PropertyValidationRule;
 use Spryker\ApiPlatform\Schema\Validator\Rules\ProviderValidationRule;
+use Spryker\ApiPlatform\Schema\Validator\Rules\RelationshipValidationRule;
 use Spryker\ApiPlatform\Schema\Validator\Rules\ResourceNameValidationRule;
 use Spryker\ApiPlatform\Schema\Validator\Rules\ResourceNamingValidationRule;
 use Spryker\ApiPlatform\Schema\Validator\Rules\SecurityExpressionValidationRule;
@@ -85,6 +104,9 @@ return static function (ContainerConfigurator $container): void {
     // Schema Parser PreMergeValidator
     $services->set(PreMergeValidatorInterface::class, PreMergeValidator::class);
 
+    // Generator: Tag Generator
+    $services->set(ResourceNameTagGenerator::class);
+
     // Schema Parser
     $services->set(SchemaParserInterface::class, SchemaParser::class);
 
@@ -113,6 +135,9 @@ return static function (ContainerConfigurator $container): void {
     $services->set(SecurityExpressionValidationRule::class)
         ->tag('spryker_api_platform.validation_rule.post_merge');
 
+    $services->set(RelationshipValidationRule::class)
+        ->tag('spryker_api_platform.validation_rule.post_merge');
+
     $services->set(MergeValidationRule::class);
 
     // Dependencies
@@ -132,18 +157,55 @@ return static function (ContainerConfigurator $container): void {
     $services->set(SchemaMergerInterface::class, SchemaMerger::class);
 
     // Generator: Template Renderer
-    $services->set(TemplateRendererInterface::class, PhpTemplateRenderer::class);
+    $services->set(PhpTemplateRenderer::class);
+
+    // Generator: Property Attribute Generator
+    $services->set(PropertyAttributeGenerator::class);
+
+    // Generator: Constraint Formatter
+    $services->set(ConstraintFormatter::class);
+
+    // Generator: Fully qualified class name Constraint Resolver
+    $services->set(FqcnConstraintResolver::class);
+
+    // Generator: Validation Attribute Generator
+    $services->set(ValidationAttributeGenerator::class);
+
+    // Generator: Media Type Formatter Registry
+    // Those can be used to manipulate a specific media type output e.g. change the formatting of `application/vnd.ai+json`
+    $services->set(MediaTypeFormatterRegistry::class)
+        ->arg('$formatters', tagged_iterator('spryker_api_platform.media_type_formatter'));
+
+    // Generator: OpenApi Operation Builder
+    $services->set(OpenApiOperationBuilder::class)
+        ->arg('$formatterRegistry', service(MediaTypeFormatterRegistry::class))
+        ->arg('$apiPlatformFormats', param('api_platform.formats'));
+
+    // Generator: Resource Attribute Generator
+    $services->set(ResourceAttributeGenerator::class);
+
+    // Generator: Use Statement Collector
+    $services->set(UseStatementCollector::class);
+
+    // Generator: Relationship PHPDoc Generator
+    $services->set(RelationshipPhpDocGenerator::class);
 
     // Generator: Class Generator
-    $services->set(ClassGeneratorInterface::class, ClassGenerator::class);
+    $services->set(ClassGenerator::class);
 
     // Generator: Resource Generator
-    $services->set(ResourceGeneratorInterface::class, ResourceGenerator::class)
+    $services->set(ResourceGenerator::class)
         ->arg('$loaders', tagged_iterator('spryker_api_platform.schema_loader'));
+
+    $services->alias(ResourceGeneratorInterface::class, ResourceGenerator::class);
 
     // Cache Warmer
     $services->set(ApiResourceCacheWarmer::class)
         ->tag('kernel.cache_warmer');
+
+    // OpenAPI Format Transformers
+    $services->set(JsonApiFormatTransformer::class)
+        ->tag('spryker_api_platform.format_transformer');
 
     // Console Commands
     $services->set(ApiGenerateCommand::class)
@@ -160,4 +222,68 @@ return static function (ContainerConfigurator $container): void {
 
     $services->alias('console.command.api_debug', ApiDebugCommand::class)
         ->public();
+
+    // Override error provider to enable debug mode in development environment
+    // This shows full exception messages instead of "Internal Server Error"
+    if (APPLICATION_ENV === 'docker.dev') {
+        $services->set('api_platform.state.error_provider', ErrorProvider::class)
+            ->arg('$debug', true)
+            ->arg('$resourceClassResolver', service('api_platform.resource_class_resolver'))
+            ->arg('$resourceMetadataCollectionFactory', service('api_platform.metadata.resource.metadata_collection_factory'))
+            ->tag('api_platform.state_provider', ['key' => 'api_platform.state.error_provider']);
+    }
+
+    // Relationship system (?include)
+    // Note: api_platform.relationships parameter is populated by RelationshipConfigurationPass compiler pass
+    $services->set(ApiPlatformRelationshipResolver::class)
+        ->arg('$relationships', param('api_platform.relationships'))
+        ->arg('$providerLocator', service('service_container'));
+
+    $services->alias(ApiPlatformRelationshipResolverInterface::class, ApiPlatformRelationshipResolver::class);
+
+    // Enable API Platform's JsonApiProvider to parse ?include= parameter
+    $services->set(JsonApiProvider::class)
+        ->decorate('api_platform.state_provider.locator')
+        ->arg('$decorated', service('.inner'))
+        ->arg('$orderParameterName', 'order');
+
+    $services->set(RelationshipProvider::class)
+        ->autoconfigure(false)
+        ->decorate(JsonApiProvider::class)
+        ->arg('$decorated', service('.inner'))
+        ->arg('$relationshipResolver', service(ApiPlatformRelationshipResolverInterface::class))
+        ->arg('$requestStack', service('request_stack'));
+
+    /**
+     * We want a specific format for the JSON:API response.
+     *
+     * All normalizer will be executed and each one ensures it can only be executed once.
+     */
+
+    /**
+     * This normalizer ensures that we have the identifier in the id field and not the IRI for backwards compatibility reasons.
+     * The order (priority) is important!
+     */
+    $services->set(IdNormalizer::class)
+        ->arg('$identifiersExtractor', service('api_platform.api.identifiers_extractor'))
+        ->tag('serializer.normalizer', ['priority' => 64]);
+
+    /**
+     * This normalizer ensures that we always have a link to the resource as self link available.
+     * The order (priority) is important!
+     */
+    $services->set(SelfLinkNormalizer::class)
+        ->tag('serializer.normalizer', ['priority' => 63]);
+
+    /**
+     * This normalizer ensures that we do not have empty relations kept.
+     */
+    $services->set(EmptyRelationshipNormalizer::class)
+        ->tag('serializer.normalizer');
+
+    /**
+     * This normalizer ensures that links of other related resources are at the end.
+     */
+    $services->set(LinksPositionNormalizer::class)
+        ->tag('serializer.normalizer');
 };

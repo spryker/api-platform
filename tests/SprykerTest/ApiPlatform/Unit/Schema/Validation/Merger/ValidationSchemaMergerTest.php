@@ -10,7 +10,7 @@ declare(strict_types=1);
 namespace SprykerTest\ApiPlatform\Unit\Schema\Validation\Merger;
 
 use Codeception\Test\Unit;
-use Spryker\ApiPlatform\Schema\Validation\Merger\ValidationSchemaMerger;
+use Spryker\ApiPlatform\Schema\Validation\Merger\ValidationSchemaMergerInterface;
 use SprykerTest\ApiPlatform\ApiUnitTester;
 
 /**
@@ -32,7 +32,7 @@ class ValidationSchemaMergerTest extends Unit
     public function testGivenEmptySchemasWhenMergingThenReturnsEmpty(): void
     {
         // Arrange
-        $merger = new ValidationSchemaMerger();
+        $merger = $this->tester->getContainer()->get(ValidationSchemaMergerInterface::class);
 
         // Act
         $result = $merger->merge([]);
@@ -49,7 +49,7 @@ class ValidationSchemaMergerTest extends Unit
                 'email' => ['NotBlank', 'Email'],
             ],
         ];
-        $merger = new ValidationSchemaMerger();
+        $merger = $this->tester->getContainer()->get(ValidationSchemaMergerInterface::class);
 
         // Act
         $result = $merger->merge([$schema]);
@@ -71,7 +71,7 @@ class ValidationSchemaMergerTest extends Unit
                 'name' => ['NotBlank'],
             ],
         ];
-        $merger = new ValidationSchemaMerger();
+        $merger = $this->tester->getContainer()->get(ValidationSchemaMergerInterface::class);
 
         // Act
         $result = $merger->merge([$schema1, $schema2]);
@@ -96,7 +96,7 @@ class ValidationSchemaMergerTest extends Unit
                 'email' => ['NotBlank', 'Email'],
             ],
         ];
-        $merger = new ValidationSchemaMerger();
+        $merger = $this->tester->getContainer()->get(ValidationSchemaMergerInterface::class);
 
         // Act
         $result = $merger->merge([$schema1, $schema2]);
@@ -126,7 +126,7 @@ class ValidationSchemaMergerTest extends Unit
                 ],
             ],
         ];
-        $merger = new ValidationSchemaMerger();
+        $merger = $this->tester->getContainer()->get(ValidationSchemaMergerInterface::class);
 
         // Act
         $result = $merger->merge([$schema1, $schema2]);
@@ -156,7 +156,7 @@ class ValidationSchemaMergerTest extends Unit
                 ],
             ],
         ];
-        $merger = new ValidationSchemaMerger();
+        $merger = $this->tester->getContainer()->get(ValidationSchemaMergerInterface::class);
 
         // Act
         $result = $merger->merge([$schema1, $schema2]);
@@ -185,7 +185,7 @@ class ValidationSchemaMergerTest extends Unit
                 ],
             ],
         ];
-        $merger = new ValidationSchemaMerger();
+        $merger = $this->tester->getContainer()->get(ValidationSchemaMergerInterface::class);
 
         // Act
         $result = $merger->merge([$schema1, $schema2]);
@@ -214,7 +214,7 @@ class ValidationSchemaMergerTest extends Unit
                 'email' => ['Email', 'NotBlank'],
             ],
         ];
-        $merger = new ValidationSchemaMerger();
+        $merger = $this->tester->getContainer()->get(ValidationSchemaMergerInterface::class);
 
         // Act
         $result = $merger->merge([$schema1, $schema2]);
@@ -246,7 +246,7 @@ class ValidationSchemaMergerTest extends Unit
                 'name' => ['NotBlank', ['Length' => ['max' => 500]], ['Regex' => ['pattern' => '/^[a-zA-Z]+$/']]],
             ],
         ];
-        $merger = new ValidationSchemaMerger();
+        $merger = $this->tester->getContainer()->get(ValidationSchemaMergerInterface::class);
 
         // Act
         $result = $merger->merge([$core, $feature, $project]);
@@ -275,7 +275,7 @@ class ValidationSchemaMergerTest extends Unit
                 ],
             ],
         ];
-        $merger = new ValidationSchemaMerger();
+        $merger = $this->tester->getContainer()->get(ValidationSchemaMergerInterface::class);
 
         // Act
         $result = $merger->merge([$schema1, $schema2]);
@@ -305,7 +305,7 @@ class ValidationSchemaMergerTest extends Unit
                 ],
             ],
         ];
-        $merger = new ValidationSchemaMerger();
+        $merger = $this->tester->getContainer()->get(ValidationSchemaMergerInterface::class);
 
         // Act
         $result = $merger->merge([$schema1, $schema2]);
@@ -334,7 +334,7 @@ class ValidationSchemaMergerTest extends Unit
                 ],
             ],
         ];
-        $merger = new ValidationSchemaMerger();
+        $merger = $this->tester->getContainer()->get(ValidationSchemaMergerInterface::class);
 
         // Act
         $result = $merger->merge([$schema1, $schema2]);
@@ -364,7 +364,7 @@ class ValidationSchemaMergerTest extends Unit
                 ],
             ],
         ];
-        $merger = new ValidationSchemaMerger();
+        $merger = $this->tester->getContainer()->get(ValidationSchemaMergerInterface::class);
 
         // Act
         $result = $merger->merge([$core, $project]);
@@ -392,7 +392,7 @@ class ValidationSchemaMergerTest extends Unit
                 'email' => [['Length' => ['max' => 255]]],
             ],
         ];
-        $merger = new ValidationSchemaMerger();
+        $merger = $this->tester->getContainer()->get(ValidationSchemaMergerInterface::class);
 
         // Act
         $result = $merger->merge([$schema1, $schema2, $schema3]);
@@ -422,7 +422,7 @@ class ValidationSchemaMergerTest extends Unit
                 'title' => ['NotBlank', ['Length' => ['max' => 500]]],
             ],
         ];
-        $merger = new ValidationSchemaMerger();
+        $merger = $this->tester->getContainer()->get(ValidationSchemaMergerInterface::class);
 
         // Act
         $result = $merger->merge([$core, $feature, $project]);

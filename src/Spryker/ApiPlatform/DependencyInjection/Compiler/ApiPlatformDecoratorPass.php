@@ -11,19 +11,23 @@ namespace Spryker\ApiPlatform\DependencyInjection\Compiler;
 
 use Spryker\ApiPlatform\Metadata\CodeBucketResourceClassResolver;
 use Spryker\ApiPlatform\Metadata\CodeBucketResourceNameCollectionFactory;
+use Spryker\ApiPlatform\OpenApi\Decorator\OpenApiDecorator;
+use Symfony\Component\DependencyInjection\Argument\TaggedIteratorArgument;
 use Symfony\Component\DependencyInjection\Compiler\CompilerPassInterface;
 use Symfony\Component\DependencyInjection\ContainerBuilder;
 use Symfony\Component\DependencyInjection\Reference;
 
 /**
- * Automatically registers processor and provider services from API resource schemas.
+ * Registers decorators for API Platform services with existence checks.
  *
- * This compiler pass scans all resource schema files (*.resource.yml/yaml) across
- * configured API types and automatically registers any processor or provider classes
- * as public services in the DI container.
+ * This compiler pass conditionally decorates API Platform services only if they exist
+ * in the container. This allows the bundle to work in testing environments where
+ * API Platform might not be fully loaded.
  *
- * This eliminates the need for manual service registration in project-level
- * configuration files (e.g., config/GlueBackend/ApplicationServices.php).
+ * Decorators registered:
+ * - CodeBucketResourceClassResolver: Adds CodeBucket support to resource class resolution
+ * - CodeBucketResourceNameCollectionFactory: Adds CodeBucket support to resource name collection
+ * - OpenApiDecorator: Applies format-specific transformations to OpenAPI documentation
  */
 class ApiPlatformDecoratorPass implements CompilerPassInterface
 {
@@ -44,6 +48,15 @@ class ApiPlatformDecoratorPass implements CompilerPassInterface
             $container->register(CodeBucketResourceNameCollectionFactory::class, CodeBucketResourceNameCollectionFactory::class)
                 ->setDecoratedService('api_platform.metadata.resource.name_collection_factory.cached')
                 ->setArguments([new Reference('.inner')]);
+        }
+
+        if ($container->has('api_platform.openapi.factory')) {
+            $container->register(OpenApiDecorator::class, OpenApiDecorator::class)
+                ->setDecoratedService('api_platform.openapi.factory')
+                ->setArguments([
+                    new Reference('.inner'),
+                    new TaggedIteratorArgument('spryker_api_platform.format_transformer'),
+                ]);
         }
     }
 }

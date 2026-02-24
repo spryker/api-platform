@@ -11,6 +11,7 @@ namespace Spryker\ApiPlatform;
 
 use Spryker\ApiPlatform\DependencyInjection\Compiler\ApiPlatformDecoratorPass;
 use Spryker\ApiPlatform\DependencyInjection\Compiler\ApiResourceServiceRegistrationPass;
+use Spryker\ApiPlatform\DependencyInjection\Compiler\RelationshipConfigurationPass;
 use Symfony\Component\DependencyInjection\Compiler\PassConfig;
 use Symfony\Component\DependencyInjection\ContainerBuilder;
 use Symfony\Component\HttpKernel\Bundle\Bundle;
@@ -46,5 +47,16 @@ class SprykerApiPlatformBundle extends Bundle
             PassConfig::TYPE_BEFORE_OPTIMIZATION,
             50,
         );
+
+        $container->addCompilerPass(
+            new RelationshipConfigurationPass(),
+            PassConfig::TYPE_BEFORE_OPTIMIZATION,
+            45,
+        );
+    }
+
+    public function getPath(): string
+    {
+        return dirname(__DIR__, 3);
     }
 }

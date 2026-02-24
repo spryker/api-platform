@@ -11,6 +11,7 @@ namespace SprykerTest\ApiPlatform\Unit\Schema\Merger;
 
 use Codeception\Test\Unit;
 use Spryker\ApiPlatform\Schema\Merger\SchemaMerger;
+use Spryker\ApiPlatform\Schema\Merger\SchemaMergerInterface;
 use Spryker\ApiPlatform\Schema\Validation\Merger\ValidationSchemaMergerInterface;
 use SprykerTest\ApiPlatform\ApiUnitTester;
 
@@ -203,6 +204,8 @@ class SchemaMergerTest extends Unit
             'merge' => [],
         ]);
 
-        return new SchemaMerger($validationSchemaMerger);
+        $this->tester->getContainer()->set(ValidationSchemaMergerInterface::class, $validationSchemaMerger);
+
+        return $this->tester->getContainer()->get(SchemaMergerInterface::class);
     }
 }

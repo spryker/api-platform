@@ -20,6 +20,7 @@ This module provides a developer-friendly way to define API Platform resources t
 - ✅ **Comprehensive Validation**: Post-merge validation with helpful errors
 - 🚀 **Efficient Generation**: Generator-based file discovery for memory efficiency
 - 💾 **Smart Caching**: Automatic cache invalidation based on file changes
+- 🔗 **Relationship System**: Include related resources via `?include=` parameter with JSON:API compliance
 
 ## Installation
 
@@ -53,3 +54,37 @@ docker/sdk glue api:generate Storefront
 # Debug a resource
 docker/sdk glue api:debug Customer --api-type=Storefront
 ```
+
+## Relationships
+
+Enable resources to include related resources via the `?include=` query parameter with JSON:API compliance.
+
+### Quick Example
+
+```yaml
+# Define relationship in parent resource
+includes:
+  - relationshipName: addresses
+    targetResource: CustomersAddresses
+    uriVariableMappings:
+      customerReference: customerReference
+
+# Define reverse relationship in child resource
+includableIn:
+  - resource: Customers
+    relationshipName: addresses
+```
+
+**Request:**
+```
+GET /customers/customer--35?include=addresses
+```
+
+**Key Features:**
+- ✅ Declarative YAML configuration
+- ✅ Zero provider changes needed
+- ✅ Automatic validation
+- ✅ Format agnostic (JSON:API, JSON-LD, XML)
+- ✅ Performance optimized (compiled configuration)
+
+For comprehensive documentation, see [Relationships Guide](resources/docs/Relationships.md).

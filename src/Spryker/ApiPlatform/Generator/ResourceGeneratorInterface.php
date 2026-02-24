@@ -12,23 +12,12 @@ namespace Spryker\ApiPlatform\Generator;
 use Generator;
 use Psr\Log\LoggerInterface;
 
-/**
- * Main orchestrator for the complete resource generation pipeline.
- *
- * Coordinates: Find → Load → Parse → Merge → Validate → Generate
- */
 interface ResourceGeneratorInterface
 {
+    public function setLogger(LoggerInterface $logger): void;
+
     /**
-     * Generate resources for the given ApiType.
-     *
-     * Yields progress updates during generation:
-     * - ['status' => 'generated', 'resource' => '...', 'file' => '...', 'className' => '...', 'sourceFiles' => [...], 'validationSourceFiles' => [...]] for each generated resource
-     * - ['status' => 'error', 'message' => '...'] on errors
-     *
      * @return \Generator<array{status: string, resource?: string, file?: string, className?: string, sourceFiles?: array<string>, validationSourceFiles?: array<string>, message?: string, diagnostics?: array<string, mixed>, suggestion?: string}>
      */
     public function generateResources(string $apiType): Generator;
-
-    public function setLogger(LoggerInterface $logger): void;
 }

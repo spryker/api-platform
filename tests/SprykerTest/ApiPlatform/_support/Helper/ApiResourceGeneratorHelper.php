@@ -9,6 +9,7 @@ declare(strict_types=1);
 
 namespace SprykerTest\ApiPlatform\Helper;
 
+use ApiPlatform\Symfony\Bundle\ApiPlatformBundle;
 use RuntimeException;
 use Spryker\ApiPlatform\Generator\ResourceGeneratorInterface;
 use Spryker\ApiPlatform\SprykerApiPlatformBundle;
@@ -129,11 +130,21 @@ class ApiResourceGeneratorHelper
         // instead of constructing everything manually.
         $kernel->addBundles([
             FrameworkBundle::class,
+            ApiPlatformBundle::class,
             SprykerApiPlatformBundle::class,
         ]);
 
         $kernel->setResourcePaths($resourcePaths);
         $kernel->setApiType($apiType);
+
+        $kernel->addBundleConfigurations([
+            'api_platform' => [
+                'doctrine' => ['enabled' => false],
+                'doctrine_mongodb_odm' => ['enabled' => false],
+                'mapping' => ['paths' => $resourcePaths],
+            ],
+        ]);
+
         $kernel->boot();
 
         return $kernel;

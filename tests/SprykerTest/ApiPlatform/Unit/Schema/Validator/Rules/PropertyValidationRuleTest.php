@@ -33,7 +33,7 @@ class PropertyValidationRuleTest extends Unit
     {
         // Arrange
         $schema = ['properties' => ['id' => ['type' => 'integer', 'identifier' => true]]];
-        $rule = new PropertyValidationRule();
+        $rule = $this->tester->getContainer()->get(PropertyValidationRule::class);
 
         // Act
         $errors = $rule->validate($schema);
@@ -46,7 +46,7 @@ class PropertyValidationRuleTest extends Unit
     {
         // Arrange
         $schema = ['properties' => ['invalid-name' => ['type' => 'string']]];
-        $rule = new PropertyValidationRule();
+        $rule = $this->tester->getContainer()->get(PropertyValidationRule::class);
 
         // Act
         $errors = $rule->validate($schema);
@@ -59,7 +59,7 @@ class PropertyValidationRuleTest extends Unit
     {
         // Arrange
         $schema = ['properties' => ['name' => ['type' => 'invalid', 'identifier' => true]]];
-        $rule = new PropertyValidationRule();
+        $rule = $this->tester->getContainer()->get(PropertyValidationRule::class);
 
         // Act
         $errors = $rule->validate($schema);
@@ -68,13 +68,31 @@ class PropertyValidationRuleTest extends Unit
         $this->assertNotEmpty($errors);
     }
 
+    public function testGivenResourceClassNameTypeWhenValidatingThenReturnsNoErrors(): void
+    {
+        // Arrange
+        $schema = [
+            'properties' => [
+                'customer' => ['type' => 'CustomersStorefrontResource'],
+                'product' => ['type' => 'ProductsBackendResource'],
+            ],
+        ];
+        $rule = $this->tester->getContainer()->get(PropertyValidationRule::class);
+
+        // Act
+        $errors = $rule->validate($schema);
+
+        // Assert
+        $this->assertEmpty($errors);
+    }
+
     public function testGivenNoIdentifierPropertyWhenValidatingThenReturnsError(): void
     {
         $this->markTestSkipped('Identifier property is optional for now.');
 
         // Arrange
         $schema = ['properties' => ['name' => ['type' => 'string']]];
-        $rule = new PropertyValidationRule();
+        $rule = $this->tester->getContainer()->get(PropertyValidationRule::class);
 
         // Act
         $errors = $rule->validate($schema);
@@ -87,7 +105,7 @@ class PropertyValidationRuleTest extends Unit
     {
         // Arrange
         $schema = ['properties' => ['id' => ['type' => 'integer', 'identifier' => 'yes']]];
-        $rule = new PropertyValidationRule();
+        $rule = $this->tester->getContainer()->get(PropertyValidationRule::class);
 
         // Act
         $errors = $rule->validate($schema);
@@ -100,7 +118,7 @@ class PropertyValidationRuleTest extends Unit
     {
         // Arrange
         $schema = ['properties' => ['count' => ['type' => 'integer', 'default' => 'invalid', 'identifier' => true]]];
-        $rule = new PropertyValidationRule();
+        $rule = $this->tester->getContainer()->get(PropertyValidationRule::class);
 
         // Act
         $errors = $rule->validate($schema);
@@ -113,7 +131,7 @@ class PropertyValidationRuleTest extends Unit
     {
         // Arrange
         $schema = ['properties' => ['id' => ['type' => 'integer', 'openapiContext' => 'invalid', 'identifier' => true]]];
-        $rule = new PropertyValidationRule();
+        $rule = $this->tester->getContainer()->get(PropertyValidationRule::class);
 
         // Act
         $errors = $rule->validate($schema);

@@ -21,6 +21,7 @@ use Spryker\Shared\Kernel\Container\ContainerProxy;
 use SprykerTest\ApiPlatform\Helper\ApiResourceGeneratorHelper;
 use SprykerTest\Shared\Testify\Helper\BootstrapHelper;
 use Symfony\Bundle\FrameworkBundle\FrameworkBundle;
+use Symfony\Bundle\SecurityBundle\SecurityBundle;
 use Symfony\Component\DependencyInjection\ContainerInterface;
 use Symfony\Component\DependencyInjection\Exception\ServiceNotFoundException;
 use Symfony\Component\HttpKernel\KernelInterface;
@@ -54,18 +55,6 @@ abstract class AbstractApiTestCase extends Unit
 
     protected const string MEDIA_TYPE_JSON_API = 'application/vnd.api+json';
 
-    protected const string MEDIA_TYPE_JSON = 'application/json';
-
-    protected const string MEDIA_TYPE_XML = 'application/xml';
-
-    protected const string MEDIA_TYPE_TEXT_XML = 'text/xml';
-
-    protected const string MEDIA_TYPE_YAML = 'application/x-yaml';
-
-    protected const string MEDIA_TYPE_CSV = 'text/csv';
-
-    protected const string MEDIA_TYPE_JSON_HAL = 'application/hal+json';
-
     protected static ?ApiResourceGeneratorHelper $resourceHelper = null;
 
     public static function setUpBeforeClass(): void
@@ -77,6 +66,10 @@ abstract class AbstractApiTestCase extends Unit
 
             return;
         }
+
+        // Register custom autoloader BEFORE generating resources
+        // This ensures Generated\Api\* classes are always loaded from tests/_data/ instead of src/Generated/
+        static::registerTestAutoloader();
 
         static::$resourceHelper = new ApiResourceGeneratorHelper();
         $moduleRoot = static::getModuleRoot();
@@ -127,9 +120,59 @@ abstract class AbstractApiTestCase extends Unit
 
     protected static function getModuleRoot(): string
     {
-        $dataDir = realpath(rtrim(codecept_data_dir(), DIRECTORY_SEPARATOR));
+        $dataDir = rtrim(codecept_data_dir(), DIRECTORY_SEPARATOR);
+
+        // Ensure the _data directory exists before using realpath
+        if (!is_dir($dataDir)) {
+            mkdir($dataDir, 0755, true);
+        }
+
+        $dataDir = realpath($dataDir);
 
         return dirname($dataDir, 2);
+    }
+
+    /**
+     * Registers a custom autoloader that intercepts Generated\Api\* class loading.
+     *
+     * When running tests in core mode, this autoloader ensures that resource classes
+     * are always loaded from tests/_data/Api/ instead of src/Generated/Api/,
+     * preventing "Cannot redeclare class" errors when multiple test classes run
+     * in sequence within the same PHP process.
+     *
+     * The autoloader is prepended to the autoload queue (high priority) so it
+     * takes precedence over Composer's autoloader.
+     */
+    protected static function registerTestAutoloader(): void
+    {
+        $moduleRoot = static::getModuleRoot();
+        $testResourceBasePath = sprintf('%s/tests/_data/Api', $moduleRoot);
+
+        spl_autoload_register(
+            function (string $className) use ($testResourceBasePath): void {
+                // Only intercept Generated\Api\* classes
+                if (!str_starts_with($className, 'Generated\\Api\\')) {
+                    return;
+                }
+
+                // Convert class name to file path
+                // Example: Generated\Api\Storefront\TokensStorefrontResource
+                // -> tests/_data/Api/Storefront/TokensStorefrontResource.php
+                $classNameWithoutPrefix = substr($className, strlen('Generated\\Api\\'));
+                $filePath = sprintf(
+                    '%s/%s.php',
+                    $testResourceBasePath,
+                    str_replace('\\', DIRECTORY_SEPARATOR, $classNameWithoutPrefix),
+                );
+
+                // Load from test directory if file exists
+                if (file_exists($filePath)) {
+                    require_once $filePath;
+                }
+            },
+            true, // Throw exception on failure
+            true, // Prepend to autoloader queue (high priority)
+        );
     }
 
     /**
@@ -185,43 +228,6 @@ abstract class AbstractApiTestCase extends Unit
             : dirname(codecept_data_dir(), 3);
     }
 
-    /**
-     * Get all supported Accept header values.
-     *
-     * @return array<string>
-     */
-    protected function getSupportedAcceptTypes(): array
-    {
-        return [
-            static::MEDIA_TYPE_JSON_LD,
-            static::MEDIA_TYPE_JSON_API,
-            static::MEDIA_TYPE_JSON,
-            static::MEDIA_TYPE_XML,
-            static::MEDIA_TYPE_TEXT_XML,
-            static::MEDIA_TYPE_YAML,
-            static::MEDIA_TYPE_CSV,
-            static::MEDIA_TYPE_JSON_HAL,
-        ];
-    }
-
-    /**
-     * Get all supported Content-Type header values.
-     *
-     * @return array<string>
-     */
-    protected function getSupportedContentTypes(): array
-    {
-        return [
-            static::MEDIA_TYPE_JSON_LD,
-            static::MEDIA_TYPE_JSON_API,
-            static::MEDIA_TYPE_JSON,
-            static::MEDIA_TYPE_XML,
-            static::MEDIA_TYPE_YAML,
-            static::MEDIA_TYPE_CSV,
-            static::MEDIA_TYPE_JSON_HAL,
-        ];
-    }
-
     protected function bootKernel(): KernelInterface
     {
         $this->ensureKernelShutdown();
@@ -254,7 +260,9 @@ abstract class AbstractApiTestCase extends Unit
     protected function ensureKernelShutdown(): void
     {
         if ($this->kernel !== null) {
-            $this->kernel->boot();
+            if (!$this->booted) {
+                return;
+            }
 
             $container = $this->kernel->getContainer();
 
@@ -306,6 +314,7 @@ abstract class AbstractApiTestCase extends Unit
     {
         return [
             FrameworkBundle::class,
+            SecurityBundle::class,
             ApiPlatformBundle::class,
             SprykerApiPlatformBundle::class,
         ];
@@ -331,10 +340,40 @@ abstract class AbstractApiTestCase extends Unit
                     'type' => 'api_platform',
                 ],
             ],
+            'security' => [
+                'password_hashers' => [
+                    'SprykerTest\ApiPlatform\Test\Security\Customer' => 'plaintext',
+                ],
+                'providers' => [
+                    'test_customer_provider' => [
+                        'id' => 'SprykerTest\ApiPlatform\Test\Security\CustomerProvider',
+                    ],
+                ],
+                'firewalls' => [
+                    'dev' => [
+                        'pattern' => '^/(_(profiler|wdt)|css|images|js)/',
+                        'security' => false,
+                    ],
+                    'main' => [
+                        'lazy' => true,
+                        'provider' => 'test_customer_provider',
+                        'custom_authenticators' => [
+                            'SprykerTest\ApiPlatform\Test\Security\TokenAuthenticator',
+                        ],
+                    ],
+                ],
+                'access_control' => [
+                    ['path' => '^/', 'roles' => 'PUBLIC_ACCESS'],
+                ],
+            ],
             'api_platform' => [
                 'doctrine' => ['enabled' => false],
                 'doctrine_mongodb_odm' => ['enabled' => false],
                 'mapping' => ['paths' => $resourcePaths],
+                'formats' => [
+                    'jsonapi' => ['mime_types' => ['application/vnd.api+json']],
+                    'jsonld' => ['mime_types' => ['application/ld+json']],
+                ],
             ],
         ];
     }

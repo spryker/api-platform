@@ -56,6 +56,11 @@ class ApiSchemaHelper extends Module
         }
     }
 
+    public function _afterSuite(): void
+    {
+        $this->cleanupSchemaFiles();
+    }
+
     public function createTemporaryDirectory(): string
     {
         $this->tempDir = sys_get_temp_dir() . '/api-test-' . uniqid();

@@ -11,12 +11,16 @@ namespace Spryker\ApiPlatform\Schema\Parser;
 
 use SplFileInfo;
 use Spryker\ApiPlatform\Exception\ApiSchemaValidationException;
+use Spryker\ApiPlatform\Generator\ResourceNameTagGenerator;
+use Spryker\ApiPlatform\Schema\Validation\Mapper\ValidationGroupMapperInterface;
 use Spryker\ApiPlatform\Schema\Validator\PreMergeValidatorInterface;
 
 class SchemaParser implements SchemaParserInterface
 {
     public function __construct(
         protected readonly PreMergeValidatorInterface $preMergeValidator,
+        protected readonly ValidationGroupMapperInterface $validationGroupMapper,
+        protected readonly ResourceNameTagGenerator $tagGenerator,
     ) {
     }
 
@@ -48,21 +52,33 @@ class SchemaParser implements SchemaParserInterface
             );
         }
 
+        $includes = $this->normalizeIncludes($resource);
+
         $parsedSchema = [
             'name' => $this->getValue($resource, 'name', null),
             'shortName' => $this->getValue($resource, 'shortName', $this->getValue($resource, 'name', null)),
             'codeBucket' => $this->getValue($resource, 'codeBucket', null),
             'description' => $this->getValue($resource, 'description', ''),
             'operations' => $this->normalizeOperations($resource, $filePath),
-            'properties' => $this->normalizeProperties($resource, $filePath),
+            'properties' => $this->normalizeProperties($resource, $filePath, $includes),
             'provider' => $this->getValue($resource, 'provider', null),
             'processor' => $this->getValue($resource, 'processor', null),
             'paginationItemsPerPage' => $this->getValue($resource, 'paginationItemsPerPage', null),
             'security' => $this->getValue($resource, 'security', null),
             'openapiContext' => $this->getValue($resource, 'openapiContext', []),
+            'includes' => $includes,
+            'includableIn' => $this->normalizeIncludableIn($resource),
             'sourceFile' => $filePath,
             'sourceLayer' => $this->detectSourceLayer($filePath),
         ];
+
+        $shortName = $parsedSchema['shortName'];
+
+        if (isset($resource['tags']) && is_array($resource['tags'])) {
+            $parsedSchema['tags'] = $resource['tags'];
+        } elseif ($shortName !== null && $shortName !== '') {
+            $parsedSchema['tags'] = $this->tagGenerator->generateTags($shortName);
+        }
 
         $resourceName = $this->generateResourceKey($filePath);
 
@@ -76,17 +92,91 @@ class SchemaParser implements SchemaParserInterface
             }
 
             if ($validationSchemaList !== []) {
-                $parsedSchema['validation'] = count($validationSchemaList) === 1
-                    ? $validationSchemaList[0]
-                    : $validationSchemaList;
+                $parsedSchema['validation'] = $validationSchemaList;
 
                 $parsedSchema['validationSourceFiles'] = $validationSourceFiles;
             }
         }
 
+        $parsedSchema = $this->enrichOperationsWithValidationGroups($parsedSchema);
+
         $this->preMergeValidator->validate($parsedSchema, $filePath);
 
         return $parsedSchema;
+    }
+
+    /**
+     * Automatically enrich operations with validation groups based on validation schema.
+     *
+     * @param array<string, mixed> $parsedSchema
+     *
+     * @return array<string, mixed>
+     */
+    protected function enrichOperationsWithValidationGroups(array $parsedSchema): array
+    {
+        if (!isset($parsedSchema['validation']) || !is_array($parsedSchema['validation'])) {
+            return $parsedSchema;
+        }
+
+        if (!isset($parsedSchema['operations']) || !is_array($parsedSchema['operations'])) {
+            return $parsedSchema;
+        }
+
+        $resourceName = $parsedSchema['shortName'] ?? $parsedSchema['name'] ?? '';
+
+        if ($resourceName === '') {
+            return $parsedSchema;
+        }
+
+        $validation = $parsedSchema['validation'];
+        $validationOperationKeys = $this->extractValidationOperationKeys($validation);
+
+        if ($validationOperationKeys === []) {
+            return $parsedSchema;
+        }
+
+        foreach ($parsedSchema['operations'] as $operationType => $operation) {
+            if (isset($operation['validationGroups']) && is_array($operation['validationGroups'])) {
+                continue;
+            }
+
+            $validationKey = strtolower($operationType);
+
+            if (!in_array($validationKey, $validationOperationKeys, true)) {
+                continue;
+            }
+
+            $validationGroup = $this->validationGroupMapper->mapOperationToGroup($operationType, $resourceName);
+
+            $parsedSchema['operations'][$operationType]['validationGroups'] = [$validationGroup];
+        }
+
+        return $parsedSchema;
+    }
+
+    /**
+     * Extract operation keys from validation schema (post, patch, put, etc.).
+     *
+     * @param array<int, array<string, mixed>> $schemaFileGroupedOperationValidations
+     *
+     * @return array<string>
+     */
+    protected function extractValidationOperationKeys(array $schemaFileGroupedOperationValidations): array
+    {
+        $knownOperations = ['post', 'patch', 'put', 'get', 'delete', 'getcollection'];
+        $operationKeys = [];
+
+        foreach ($schemaFileGroupedOperationValidations as $schemaFileGroupedOperationValidation) {
+            foreach (array_keys($schemaFileGroupedOperationValidation) as $operationKey) {
+                $normalizedOperationKey = strtolower((string)$operationKey);
+
+                if (in_array($normalizedOperationKey, $knownOperations, true)) {
+                    $operationKeys[] = $normalizedOperationKey;
+                }
+            }
+        }
+
+        return array_values(array_unique($operationKeys));
     }
 
     /**
@@ -138,7 +228,54 @@ class SchemaParser implements SchemaParserInterface
                 $normalizedOperation['validationGroups'] = $operation['validationGroups'];
             }
 
-            // Operations are indexed by type to prevent duplicates and simplify lookup
+            if (isset($operation['openapiContext']) && is_array($operation['openapiContext'])) {
+                $normalizedOperation['openapiContext'] = $operation['openapiContext'];
+            }
+
+            if (isset($operation['uriTemplate']) && is_string($operation['uriTemplate'])) {
+                $normalizedOperation['uriTemplate'] = $operation['uriTemplate'];
+            }
+
+            if (isset($operation['uriVariables']) && is_array($operation['uriVariables'])) {
+                $normalizedOperation['uriVariables'] = $operation['uriVariables'];
+            }
+
+            if (isset($operation['security']) && is_string($operation['security'])) {
+                $normalizedOperation['security'] = $operation['security'];
+            }
+
+            if (isset($operation['securityMessage']) && is_string($operation['securityMessage'])) {
+                $normalizedOperation['securityMessage'] = $operation['securityMessage'];
+            }
+
+            if (isset($operation['description']) && is_string($operation['description'])) {
+                $normalizedOperation['description'] = $operation['description'];
+            }
+
+            if (isset($operation['securityPostDenormalize']) && is_string($operation['securityPostDenormalize'])) {
+                $normalizedOperation['securityPostDenormalize'] = $operation['securityPostDenormalize'];
+            }
+
+            if (isset($operation['securityPostDenormalizeMessage']) && is_string($operation['securityPostDenormalizeMessage'])) {
+                $normalizedOperation['securityPostDenormalizeMessage'] = $operation['securityPostDenormalizeMessage'];
+            }
+
+            if (isset($operation['securityPostValidation']) && is_string($operation['securityPostValidation'])) {
+                $normalizedOperation['securityPostValidation'] = $operation['securityPostValidation'];
+            }
+
+            if (isset($operation['securityPostValidationMessage']) && is_string($operation['securityPostValidationMessage'])) {
+                $normalizedOperation['securityPostValidationMessage'] = $operation['securityPostValidationMessage'];
+            }
+
+            if (isset($operation['tags']) && is_array($operation['tags'])) {
+                $normalizedOperation['tags'] = $operation['tags'];
+            }
+
+            if (isset($operation['output']) && is_array($operation['output'])) {
+                $normalizedOperation['output'] = $operation['output'];
+            }
+
             $normalized[$operationType] = $normalizedOperation;
         }
 
@@ -147,12 +284,13 @@ class SchemaParser implements SchemaParserInterface
 
     /**
      * @param array<string, mixed> $resource
+     * @param array<int, array<string, mixed>> $includes
      *
      * @throws \Spryker\ApiPlatform\Exception\ApiSchemaValidationException
      *
      * @return array<string, array<string, mixed>>
      */
-    protected function normalizeProperties(array $resource, string $filePath): array
+    protected function normalizeProperties(array $resource, string $filePath, array $includes = []): array
     {
         $properties = $this->getValue($resource, 'properties', []);
 
@@ -161,6 +299,37 @@ class SchemaParser implements SchemaParserInterface
                 'Properties must be an array',
                 $filePath,
             );
+        }
+
+        foreach ($includes as $include) {
+            $relationshipName = $include['relationshipName'] ?? null;
+            $targetResource = $include['targetResource'] ?? null;
+
+            if ($relationshipName === null || $targetResource === null) {
+                continue;
+            }
+
+            if (isset($properties[$relationshipName])) {
+                if (!isset($properties[$relationshipName]['uriTemplate']) && isset($include['uriTemplate']) && is_string($include['uriTemplate'])) {
+                    $properties[$relationshipName]['uriTemplate'] = $include['uriTemplate'];
+                }
+
+                continue;
+            }
+
+            $autoGeneratedProperty = [
+                'type' => 'array',
+                'writable' => false,
+                'readable' => true,
+                'required' => false,
+                'description' => sprintf('Related %s resources', $targetResource),
+            ];
+
+            if (isset($include['uriTemplate']) && is_string($include['uriTemplate'])) {
+                $autoGeneratedProperty['uriTemplate'] = $include['uriTemplate'];
+            }
+
+            $properties[$relationshipName] = $autoGeneratedProperty;
         }
 
         $normalized = [];
@@ -209,6 +378,10 @@ class SchemaParser implements SchemaParserInterface
             if (isset($property['openapiContext'])) {
                 $normalized[$propertyName]['openapiContext'] = $property['openapiContext'];
             }
+
+            if (isset($property['uriTemplate']) && is_string($property['uriTemplate'])) {
+                $normalized[$propertyName]['uriTemplate'] = $property['uriTemplate'];
+            }
         }
 
         return $normalized;
@@ -222,14 +395,119 @@ class SchemaParser implements SchemaParserInterface
 
         $normalized = strtolower(trim($type));
 
-        return match ($normalized) {
+        // Map common PHP type aliases
+        $phpTypeMap = [
             'int' => 'integer',
             'bool' => 'boolean',
             'str' => 'string',
             'arr' => 'array',
-            'float', 'double' => 'number',
-            default => $normalized,
-        };
+            'float' => 'number',
+            'double' => 'number',
+        ];
+
+        if (isset($phpTypeMap[$normalized])) {
+            return $phpTypeMap[$normalized];
+        }
+
+        // Known schema types should remain lowercase
+        $knownTypes = ['string', 'integer', 'boolean', 'array', 'number', 'object', 'mixed'];
+
+        if (in_array($normalized, $knownTypes, true)) {
+            return $normalized;
+        }
+
+        // For unknown types (resource classes), preserve original case
+        return trim($type);
+    }
+
+    /**
+     * @param array<string, mixed> $resource
+     *
+     * @return array<int, array<string, mixed>>
+     */
+    protected function normalizeIncludes(array $resource): array
+    {
+        $includes = $this->getValue($resource, 'includes', []);
+
+        if (!is_array($includes)) {
+            return [];
+        }
+
+        $normalized = [];
+
+        foreach ($includes as $include) {
+            if (!is_array($include)) {
+                continue;
+            }
+
+            $relationshipName = $include['relationshipName'] ?? null;
+            $targetResource = $include['targetResource'] ?? null;
+
+            if ($relationshipName === null || $targetResource === null) {
+                continue;
+            }
+
+            $normalizedInclude = [
+                'relationshipName' => $relationshipName,
+                'targetResource' => $targetResource,
+                'uriVariableMappings' => [],
+            ];
+
+            if (isset($include['uriVariableMappings']) && is_array($include['uriVariableMappings'])) {
+                $normalizedInclude['uriVariableMappings'] = $include['uriVariableMappings'];
+            }
+
+            if (isset($include['uriTemplate']) && is_string($include['uriTemplate'])) {
+                $normalizedInclude['uriTemplate'] = $include['uriTemplate'];
+            }
+
+            $normalized[] = $normalizedInclude;
+        }
+
+        return $normalized;
+    }
+
+    /**
+     * @param array<string, mixed> $resource
+     *
+     * @return array<int, array<string, mixed>>
+     */
+    protected function normalizeIncludableIn(array $resource): array
+    {
+        $includableIn = $this->getValue($resource, 'includableIn', []);
+
+        if (!is_array($includableIn)) {
+            return [];
+        }
+
+        $normalized = [];
+
+        foreach ($includableIn as $includable) {
+            if (!is_array($includable)) {
+                continue;
+            }
+
+            $resourceName = $includable['resource'] ?? null;
+            $relationshipName = $includable['relationshipName'] ?? null;
+
+            if ($resourceName === null || $relationshipName === null) {
+                continue;
+            }
+
+            $normalizedIncludable = [
+                'resource' => $resourceName,
+                'relationshipName' => $relationshipName,
+                'uriVariableMappings' => [],
+            ];
+
+            if (isset($includable['uriVariableMappings']) && is_array($includable['uriVariableMappings'])) {
+                $normalizedIncludable['uriVariableMappings'] = $includable['uriVariableMappings'];
+            }
+
+            $normalized[] = $normalizedIncludable;
+        }
+
+        return $normalized;
     }
 
     protected function detectSourceLayer(string $filePath): string

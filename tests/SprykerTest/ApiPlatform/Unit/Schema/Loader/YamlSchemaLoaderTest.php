@@ -34,7 +34,7 @@ class YamlSchemaLoaderTest extends Unit
     {
         // Arrange
         $filePath = $this->createYamlFile('resource: { name: Customer }');
-        $loader = new YamlSchemaLoader();
+        $loader = $this->tester->getContainer()->get(YamlSchemaLoader::class);
 
         // Act
         $result = $loader->load(new SplFileInfo($filePath));
@@ -47,7 +47,7 @@ class YamlSchemaLoaderTest extends Unit
     {
         // Arrange
         $filePath = $this->createYamlFile('invalid: data');
-        $loader = new YamlSchemaLoader();
+        $loader = $this->tester->getContainer()->get(YamlSchemaLoader::class);
 
         // Expect
         $this->expectException(ApiSchemaValidationException::class);
@@ -61,7 +61,7 @@ class YamlSchemaLoaderTest extends Unit
     {
         // Arrange
         $filePath = $this->createYamlFile('invalid: [yaml syntax');
-        $loader = new YamlSchemaLoader();
+        $loader = $this->tester->getContainer()->get(YamlSchemaLoader::class);
 
         // Expect
         $this->expectException(ApiSchemaValidationException::class);
@@ -75,7 +75,7 @@ class YamlSchemaLoaderTest extends Unit
     {
         // Arrange
         $filePath = $this->createYamlFile('resource: {}');
-        $loader = new YamlSchemaLoader();
+        $loader = $this->tester->getContainer()->get(YamlSchemaLoader::class);
 
         // Act
         $supports = $loader->supports(new SplFileInfo($filePath));
@@ -88,7 +88,7 @@ class YamlSchemaLoaderTest extends Unit
     {
         // Arrange
         $filePath = $this->createYmlFile('resource: {}');
-        $loader = new YamlSchemaLoader();
+        $loader = $this->tester->getContainer()->get(YamlSchemaLoader::class);
 
         // Act
         $supports = $loader->supports(new SplFileInfo($filePath));

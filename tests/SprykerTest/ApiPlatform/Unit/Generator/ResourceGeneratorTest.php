@@ -11,22 +11,9 @@ namespace SprykerTest\ApiPlatform\Unit\Generator;
 
 use Codeception\Test\Unit;
 use Spryker\ApiPlatform\Configuration\ApiPlatformConfig;
-use Spryker\ApiPlatform\Generator\ClassGenerator;
 use Spryker\ApiPlatform\Generator\ResourceGenerator;
-use Spryker\ApiPlatform\Generator\Template\PhpTemplateRenderer;
-use Spryker\ApiPlatform\Schema\Finder\SchemaFinder;
-use Spryker\ApiPlatform\Schema\Loader\YamlSchemaLoader;
-use Spryker\ApiPlatform\Schema\Merger\SchemaMerger;
-use Spryker\ApiPlatform\Schema\Parser\SchemaParser;
-use Spryker\ApiPlatform\Schema\Validation\Finder\ValidationSchemaFinder;
-use Spryker\ApiPlatform\Schema\Validation\Loader\ValidationSchemaLoader;
-use Spryker\ApiPlatform\Schema\Validation\Mapper\ValidationGroupMapper;
-use Spryker\ApiPlatform\Schema\Validation\Merger\ValidationSchemaMerger;
-use Spryker\ApiPlatform\Schema\Validator\PreMergeValidator;
-use Spryker\ApiPlatform\Schema\Validator\Rules\MergeValidationRule;
-use Spryker\ApiPlatform\Schema\Validator\SchemaValidator;
+use Spryker\ApiPlatform\Generator\ResourceGeneratorInterface;
 use SprykerTest\ApiPlatform\ApiUnitTester;
-use Symfony\Component\Filesystem\Filesystem;
 
 /**
  * Auto-generated group annotations
@@ -77,7 +64,7 @@ class ResourceGeneratorTest extends Unit
         $this->assertCount(1, $results);
     }
 
-    protected function createResourceGenerator(): ResourceGenerator
+    protected function createResourceGenerator(): ResourceGeneratorInterface
     {
         $config = new ApiPlatformConfig(
             sourceDirectories: [$this->tester->getVirtualFilesystemPath()],
@@ -87,17 +74,8 @@ class ResourceGeneratorTest extends Unit
             debug: false,
         );
 
-        return new ResourceGenerator(
-            new SchemaFinder($config),
-            [new YamlSchemaLoader()],
-            new SchemaParser(new PreMergeValidator()),
-            new SchemaValidator([], new MergeValidationRule()),
-            new SchemaMerger(new ValidationSchemaMerger()),
-            new ClassGenerator(new PhpTemplateRenderer(), new ValidationGroupMapper()),
-            $config,
-            new ValidationSchemaFinder($config),
-            new ValidationSchemaLoader(),
-            new Filesystem(),
-        );
+        $this->tester->getContainer()->set(ApiPlatformConfig::class, $config);
+
+        return $this->tester->getContainer()->get(ResourceGenerator::class);
     }
 }

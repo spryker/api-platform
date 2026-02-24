@@ -55,6 +55,14 @@ class SprykerApiPlatformExtension extends Extension implements PrependExtensionI
         $container->setParameter('spryker_api_platform.api_types', $config['api_types']);
         $container->setParameter('spryker_api_platform.debug', $config['debug']);
 
+        if (!$container->hasParameter('api_platform.formats')) {
+            $container->setParameter('api_platform.formats', []);
+        }
+
+        if (!$container->hasParameter('api_platform.relationships')) {
+            $container->setParameter('api_platform.relationships', []);
+        }
+
         $loader = new PhpFileLoader($container, new FileLocator(__DIR__ . '/../../../../resources/config'));
         $loader->load('services.php');
     }

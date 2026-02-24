@@ -19,12 +19,13 @@ class ResourceNameNormalizer
      * The normalization process:
      * 1. Trims leading and trailing whitespace
      * 2. Replaces special characters with spaces
-     * 3. Splits on separators (space, hyphen, underscore, dot, forward slash)
-     * 4. Filters out empty parts
-     * 5. Capitalizes first letter of each part
-     * 6. Joins all parts together
-     * 7. Validates result is a valid PHP identifier
-     * 8. Throws exception if starts with number or is invalid
+     * 3. Inserts delimiters at CamelCase boundaries (e.g., "CustomersAddresses" → "Customers Addresses")
+     * 4. Splits on separators (space, hyphen, underscore, dot, forward slash)
+     * 5. Filters out empty parts
+     * 6. Capitalizes first letter of each part
+     * 7. Joins all parts together
+     * 8. Validates result is a valid PHP identifier
+     * 9. Throws exception if starts with number or is invalid
      *
      * @throws \Spryker\ApiPlatform\Exception\ApiSchemaGenerationException
      */
@@ -36,7 +37,9 @@ class ResourceNameNormalizer
 
         $withoutSpecialChars = static::replaceSpecialCharactersWithSpaces($trimmed);
 
-        $parts = static::splitIntoParts($withoutSpecialChars);
+        $withCamelCaseDelimiters = static::insertDelimitersForCamelCase($withoutSpecialChars);
+
+        $parts = static::splitIntoParts($withCamelCaseDelimiters);
 
         $filteredParts = array_filter($parts, fn (string $part): bool => $part !== '');
 
@@ -65,6 +68,28 @@ class ResourceNameNormalizer
         $result = preg_replace('/[^\w\s\-_.\\/]/', ' ', $input);
 
         return $result ?? $input;
+    }
+
+    /**
+     * Inserts delimiters before uppercase letters in CamelCase strings.
+     *
+     * Handles:
+     * - Lowercase to uppercase transitions: "customersAddresses" → "customers Addresses"
+     * - Number to uppercase transitions: "OAuth2Tokens" → "OAuth2 Tokens"
+     * - Multiple consecutive uppercase letters: "XMLParser" → "XML Parser"
+     * - Preserves numbers and existing delimiters
+     *
+     * @return string String with spaces inserted at CamelCase boundaries
+     */
+    protected static function insertDelimitersForCamelCase(string $input): string
+    {
+        $withSpaces = preg_replace('/([a-z])([A-Z])/', '$1 $2', $input);
+
+        $withSpaces = preg_replace('/([0-9])([A-Z])/', '$1 $2', $withSpaces ?? $input);
+
+        $withSpaces = preg_replace('/([A-Z]+)([A-Z][a-z])/', '$1 $2', $withSpaces ?? $input);
+
+        return $withSpaces ?? $input;
     }
 
     /**

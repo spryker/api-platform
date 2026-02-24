@@ -111,7 +111,7 @@ class ResourceNameNormalizerTest extends Unit
         $result = ResourceNameNormalizer::normalize($input);
 
         // Assert
-        $this->assertSame('Accesstokens', $result);
+        $this->assertSame('AccessTokens', $result);
     }
 
     public function testGivenUppercaseNameWhenNormalizingThenConvertsToPascalCase(): void
@@ -147,7 +147,7 @@ class ResourceNameNormalizerTest extends Unit
         $result = ResourceNameNormalizer::normalize($input);
 
         // Assert
-        $this->assertSame('Accesstokens', $result);
+        $this->assertSame('AccessTokens', $result);
     }
 
     public function testGivenSingleWordLowercaseWhenNormalizingThenCapitalizes(): void
@@ -365,7 +365,7 @@ class ResourceNameNormalizerTest extends Unit
         $result = ResourceNameNormalizer::normalize($input);
 
         // Assert
-        $this->assertSame('UserprofileDataV2Final', $result);
+        $this->assertSame('UserProfileDataV2Final', $result);
     }
 
     public function testGivenNumberInMiddleWhenNormalizingThenPreservesNumber(): void
@@ -451,5 +451,115 @@ class ResourceNameNormalizerTest extends Unit
 
         // Assert
         $this->assertSame('UserProfileData', $result);
+    }
+
+    // 7. CamelCase Boundary Detection Tests
+
+    public function testGivenPascalCaseWithMultipleWordsWhenNormalizingThenPreservesCamelCaseBoundaries(): void
+    {
+        // Arrange
+        $input = 'CustomersAddresses';
+
+        // Act
+        $result = ResourceNameNormalizer::normalize($input);
+
+        // Assert
+        $this->assertSame('CustomersAddresses', $result);
+    }
+
+    public function testGivenCamelCaseWithMultipleWordsWhenNormalizingThenConvertsToPascalCase(): void
+    {
+        // Arrange
+        $input = 'customersAddresses';
+
+        // Act
+        $result = ResourceNameNormalizer::normalize($input);
+
+        // Assert
+        $this->assertSame('CustomersAddresses', $result);
+    }
+
+    public function testGivenRefreshTokensPascalCaseWhenNormalizingThenPreservesBothWords(): void
+    {
+        // Arrange
+        $input = 'RefreshTokens';
+
+        // Act
+        $result = ResourceNameNormalizer::normalize($input);
+
+        // Assert
+        $this->assertSame('RefreshTokens', $result);
+    }
+
+    public function testGivenMultipleCamelCaseWordsWhenNormalizingThenSplitsAllBoundaries(): void
+    {
+        // Arrange
+        $input = 'userProfileDataSettings';
+
+        // Act
+        $result = ResourceNameNormalizer::normalize($input);
+
+        // Assert
+        $this->assertSame('UserProfileDataSettings', $result);
+    }
+
+    public function testGivenAcronymFollowedByWordWhenNormalizingThenSplitsCorrectly(): void
+    {
+        // Arrange
+        $input = 'XMLParser';
+
+        // Act
+        $result = ResourceNameNormalizer::normalize($input);
+
+        // Assert
+        $this->assertSame('XmlParser', $result);
+    }
+
+    public function testGivenConsecutiveUppercaseLettersWhenNormalizingThenHandlesCorrectly(): void
+    {
+        // Arrange
+        $input = 'HTTPSConnection';
+
+        // Act
+        $result = ResourceNameNormalizer::normalize($input);
+
+        // Assert
+        $this->assertSame('HttpsConnection', $result);
+    }
+
+    public function testGivenCamelCaseWithNumbersWhenNormalizingThenPreservesNumbers(): void
+    {
+        // Arrange
+        $input = 'OAuth2Tokens';
+
+        // Act
+        $result = ResourceNameNormalizer::normalize($input);
+
+        // Assert
+        $this->assertSame('OAuth2Tokens', $result);
+    }
+
+    public function testGivenSingleWordPascalCaseWhenNormalizingThenRemainsUnchanged(): void
+    {
+        // Arrange
+        $input = 'Customer';
+
+        // Act
+        $result = ResourceNameNormalizer::normalize($input);
+
+        // Assert
+        $this->assertSame('Customer', $result);
+    }
+
+    public function testGivenCamelCaseWithSeparatorsWhenNormalizingThenHandlesBoth(): void
+    {
+        // Arrange
+        $input = 'customerAddress_dataFields';
+
+        // Act
+        $result = ResourceNameNormalizer::normalize($input);
+
+        // Assert
+        $this->assertSame('CustomerAddressDataFields', $result);
     }
 }

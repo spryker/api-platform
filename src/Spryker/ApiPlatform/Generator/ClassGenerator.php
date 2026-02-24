@@ -9,14 +9,59 @@ declare(strict_types=1);
 
 namespace Spryker\ApiPlatform\Generator;
 
-use Spryker\ApiPlatform\Generator\Template\TemplateRendererInterface;
+use Spryker\ApiPlatform\Generator\Template\PhpTemplateRenderer;
 use Spryker\ApiPlatform\Schema\Validation\Mapper\ValidationGroupMapperInterface;
 use Spryker\ApiPlatform\Utility\ApiTypeNormalizer;
 use Spryker\ApiPlatform\Utility\ResourceNameNormalizer;
 
-class ClassGenerator implements ClassGeneratorInterface
+/**
+ * Generates complete PHP resource class code from parsed schema definitions.
+ *
+ * Transforms resource schema arrays into fully-featured API Platform resource classes with
+ * properties, validation attributes, getters/setters, and serialization methods.
+ *
+ * Input schema excerpt:
+ * ```php
+ * [
+ *     'name' => 'Customers',
+ *     'shortName' => 'customers',
+ *     'operations' => ['Get' => [...], 'Post' => [...]],
+ *     'properties' => ['email' => ['type' => 'string', 'required' => true, ...]],
+ *     'validation' => ['post' => ['email' => [['NotBlank' => [...]]]]],
+ * ]
+ * ```
+ *
+ * Generated output structure:
+ * ```php
+ * namespace Generated\Api\Storefront;
+ * use ApiPlatform\Metadata\ApiResource;
+ * // ... more imports
+ *
+ * #[ApiResource(operations: [new Get(), new Post()], ...)]
+ * final class CustomersStorefrontResource
+ * {
+ *     #[ApiProperty(description: '...')]
+ *     #[Assert\NotBlank(groups: ['customers:create'])]
+ *     public ?string $email = null;
+ *
+ *     // ... getters/setters, toArray(), fromArray()
+ * }
+ * ```
+ *
+ * Orchestrates property transformation, attribute generation, and code rendering via template system.
+ */
+class ClassGenerator
 {
     protected const string GENERATED_NAMESPACE_PREFIX = 'Generated\Api';
+
+    /**
+     * @var array<string>
+     */
+    protected const array COMPOSITE_CONSTRAINTS_WITH_CONSTRAINTS_PARAMETER = [
+        'All',
+        'Sequentially',
+        'Composite',
+    ];
 
     /**
      * @var array<string, string>
@@ -32,22 +77,20 @@ class ClassGenerator implements ClassGeneratorInterface
     ];
 
     /**
-     * @var array<string>
-     */
-    protected const array COMPOSITE_CONSTRAINTS_WITH_CONSTRAINTS_PARAMETER = [
-        'All',
-        'Sequentially',
-        'Composite',
-    ];
-
-    /**
      * @var array<string, array{fqcn: string, shortName: string, alias: string}>
      */
     protected array $fqcnConstraintMap = [];
 
     public function __construct(
-        protected readonly TemplateRendererInterface $templateRenderer,
+        protected readonly PhpTemplateRenderer $templateRenderer,
         protected readonly ValidationGroupMapperInterface $validationGroupMapper,
+        protected readonly PropertyAttributeGenerator $propertyAttributeGenerator,
+        protected readonly ConstraintFormatter $constraintFormatter,
+        protected readonly FqcnConstraintResolver $fqcnConstraintResolver,
+        protected readonly ValidationAttributeGenerator $validationAttributeGenerator,
+        protected readonly ResourceAttributeGenerator $resourceAttributeGenerator,
+        protected readonly UseStatementCollector $useStatementCollector,
+        protected readonly RelationshipPhpDocGenerator $relationshipPhpDocGenerator,
     ) {
     }
 
@@ -71,19 +114,29 @@ class ClassGenerator implements ClassGeneratorInterface
         $apiType = ApiTypeNormalizer::normalizeForGeneration($apiType);
 
         $resourceName = $schema['name'];
+        $validationResourceName = $schema['shortName'] ?? $schema['name'];
         $codeBucket = $schema['codeBucket'] ?? null;
         $className = $this->generateClassName($resourceName, $apiType, $codeBucket);
         $namespace = $this->generateNamespace($apiType);
 
-        $this->fqcnConstraintMap = $this->collectFqcnConstraints(
+        $this->fqcnConstraintMap = $this->fqcnConstraintResolver->collectFqcnConstraints(
             $schema['validation'] ?? [],
             $schema['operations'] ?? [],
             $schema['properties'] ?? [],
         );
 
-        $properties = $this->transformProperties($schema['properties'] ?? [], $schema['validation'] ?? [], $schema['operations'] ?? [], $resourceName);
-        $uses = $this->collectUseStatements($schema, $properties);
-        $resourceAttribute = $this->generateResourceAttribute($schema);
+        $this->constraintFormatter->setFqcnConstraintMap($this->fqcnConstraintMap);
+
+        $properties = $this->transformProperties(
+            $schema['properties'] ?? [],
+            $schema['validation'] ?? [],
+            $schema['operations'] ?? [],
+            $validationResourceName,
+            $schema['includes'] ?? [],
+            $apiType,
+        );
+        $uses = $this->useStatementCollector->collect($schema, $properties, $this->fqcnConstraintMap);
+        $resourceAttribute = $this->resourceAttributeGenerator->generate($schema, $uses);
 
         $sourceFiles = $this->extractSourceFiles($schema);
 
@@ -160,11 +213,18 @@ class ClassGenerator implements ClassGeneratorInterface
      * @param array<string, array<string, mixed>> $properties
      * @param array<string, mixed> $validationSchema
      * @param array<string, mixed> $operations
+     * @param array<array{relationshipName: string, targetResource: string}> $includes
      *
-     * @return array<array{name: string, type: string, phpType: string, attributes: string, description: string}>
+     * @return array<array{name: string, type: string, phpType: string, attributes: string, description: string, phpDoc: string}>
      */
-    protected function transformProperties(array $properties, array $validationSchema, array $operations, string $resourceName): array
-    {
+    protected function transformProperties(
+        array $properties,
+        array $validationSchema,
+        array $operations,
+        string $resourceName,
+        array $includes = [],
+        string $apiType = '',
+    ): array {
         $transformed = [];
 
         foreach ($properties as $name => $property) {
@@ -172,12 +232,20 @@ class ClassGenerator implements ClassGeneratorInterface
             $phpType = $this->mapToPhpType($type);
             $attributes = $this->generatePropertyAttributes($property, $validationSchema, $operations, $name, $resourceName);
 
+            $phpDoc = $this->relationshipPhpDocGenerator->generate(
+                $property,
+                $name,
+                $includes,
+                $apiType,
+            );
+
             $transformed[] = [
                 'name' => $name,
                 'type' => $type,
                 'phpType' => $phpType,
                 'attributes' => $attributes,
                 'description' => $property['description'] ?? '',
+                'phpDoc' => $phpDoc,
             ];
         }
 
@@ -186,7 +254,11 @@ class ClassGenerator implements ClassGeneratorInterface
 
     protected function mapToPhpType(string $type): string
     {
-        return static::TYPE_MAPPING[$type] ?? 'mixed';
+        if (isset(static::TYPE_MAPPING[$type])) {
+            return static::TYPE_MAPPING[$type];
+        }
+
+        return $type;
     }
 
     /**
@@ -203,394 +275,25 @@ class ClassGenerator implements ClassGeneratorInterface
     ): string {
         $attributes = [];
 
-        $apiPropertyParts = [];
+        $apiPropertyAttribute = $this->propertyAttributeGenerator->generate(
+            $property,
+            $validationSchema,
+            $operations,
+            $propertyName,
+            $resourceName,
+        );
 
-        if (isset($property['description']) && $property['description'] !== '') {
-            $apiPropertyParts[] = sprintf("description: '%s'", addslashes($property['description']));
+        if ($apiPropertyAttribute !== '') {
+            $attributes[] = $apiPropertyAttribute;
         }
 
-        if (isset($property['writable']) && $property['writable'] === false) {
-            $apiPropertyParts[] = 'writable: false';
-        }
-
-        if (isset($property['readable']) && $property['readable'] === false) {
-            $apiPropertyParts[] = 'readable: false';
-        }
-
-        if (isset($property['identifier']) && $property['identifier'] === true) {
-            $apiPropertyParts[] = 'identifier: true';
-        }
-
-        if (isset($property['required']) && $property['required'] === true) {
-            $apiPropertyParts[] = 'required: true';
-        }
-
-        if (isset($property['openapiContext']) && $property['openapiContext'] !== []) {
-            $formattedContext = $this->formatOpenapiContext($property['openapiContext']);
-            $apiPropertyParts[] = sprintf('openapiContext: %s', $formattedContext);
-        }
-
-        if ($apiPropertyParts !== []) {
-            $attributes[] = '#[ApiProperty(' . implode(', ', $apiPropertyParts) . ')]';
-        }
-
-        $validationAttributes = $this->generateValidationAttributes($validationSchema, $operations, $propertyName, $resourceName);
+        $validationAttributes = $this->validationAttributeGenerator->generate($validationSchema, $operations, $propertyName, $resourceName);
 
         if ($validationAttributes !== []) {
             $attributes = array_merge($attributes, $validationAttributes);
         }
 
         return implode("\n    ", $attributes);
-    }
-
-    /**
-     * @param array<string, mixed> $schema
-     * @param array<array{name: string, type: string, phpType: string, attributes: string, description: string}> $properties
-     *
-     * @return array<string>
-     */
-    protected function collectUseStatements(array $schema, array $properties): array
-    {
-        $uses = [];
-
-        $uses[] = 'ApiPlatform\Metadata\ApiResource';
-
-        $hasApiProperty = false;
-        $hasValidation = false;
-
-        foreach ($properties as $property) {
-            if ($property['attributes'] !== '') {
-                if (!$hasApiProperty && str_contains($property['attributes'], '#[ApiProperty')) {
-                    $uses[] = 'ApiPlatform\Metadata\ApiProperty';
-                    $hasApiProperty = true;
-                }
-
-                if (!$hasValidation && str_contains($property['attributes'], '#[Assert\\')) {
-                    $uses[] = 'Symfony\Component\Validator\Constraints as Assert';
-                    $hasValidation = true;
-                }
-            }
-        }
-
-        foreach ($this->fqcnConstraintMap as $constraintData) {
-            $uses[] = $this->formatUseStatement($constraintData);
-        }
-
-        $operations = $schema['operations'] ?? [];
-
-        if (isset($operations['Get'])) {
-            $uses[] = 'ApiPlatform\Metadata\Get';
-        }
-
-        if (isset($operations['GetCollection'])) {
-            $uses[] = 'ApiPlatform\Metadata\GetCollection';
-        }
-
-        if (isset($operations['Post'])) {
-            $uses[] = 'ApiPlatform\Metadata\Post';
-        }
-
-        if (isset($operations['Put'])) {
-            $uses[] = 'ApiPlatform\Metadata\Put';
-        }
-
-        if (isset($operations['Patch'])) {
-            $uses[] = 'ApiPlatform\Metadata\Patch';
-        }
-
-        if (isset($operations['Delete'])) {
-            $uses[] = 'ApiPlatform\Metadata\Delete';
-        }
-
-        if (isset($schema['provider']) && $schema['provider'] !== '') {
-            $uses[] = $schema['provider'];
-        }
-
-        if (isset($schema['processor']) && $schema['processor'] !== '') {
-            $uses[] = $schema['processor'];
-        }
-
-        foreach ($operations as $operation) {
-            if (is_array($operation) && isset($operation['processor']) && $operation['processor'] !== '') {
-                $uses[] = $operation['processor'];
-            }
-        }
-
-        return array_unique($uses);
-    }
-
-    /**
-     * @param array{fqcn: string, shortName: string, alias: string}|array $constraintData
-     */
-    protected function formatUseStatement(array $constraintData): string
-    {
-        if ($constraintData['alias'] === $constraintData['shortName']) {
-            return $constraintData['fqcn'];
-        }
-
-        return sprintf('%s as %s', $constraintData['fqcn'], $constraintData['alias']);
-    }
-
-    /**
-     * @param array<string, mixed> $schema
-     */
-    protected function generateResourceAttribute(array $schema): string
-    {
-        $operations = $schema['operations'] ?? [];
-        $operationsParts = [];
-
-        foreach ($operations as $type => $operation) {
-            if (is_array($operation)) {
-                $operationsParts[] = $this->generateOperationAttribute($type, $operation);
-            }
-        }
-
-        $attributeParts = [];
-
-        if ($operationsParts !== []) {
-            $attributeParts[] = 'operations: [' . implode(', ', $operationsParts) . ']';
-        }
-
-        if (isset($schema['shortName']) && $schema['shortName'] !== '') {
-            $attributeParts[] = sprintf("shortName: '%s'", $schema['shortName']);
-        }
-
-        if (isset($schema['provider']) && $schema['provider'] !== '') {
-            $providerShortName = $this->extractShortClassName($schema['provider']);
-            $attributeParts[] = sprintf('provider: %s::class', $providerShortName);
-        }
-
-        if (isset($schema['processor']) && $schema['processor'] !== '') {
-            $processorShortName = $this->extractShortClassName($schema['processor']);
-            $attributeParts[] = sprintf('processor: %s::class', $processorShortName);
-        }
-
-        if (isset($schema['description']) && $schema['description'] !== '') {
-            $description = addslashes($schema['description']);
-            $attributeParts[] = sprintf("description: '%s'", $description);
-        }
-
-        if (isset($schema['paginationItemsPerPage'])) {
-            $attributeParts[] = sprintf('paginationItemsPerPage: %d', $schema['paginationItemsPerPage']);
-        }
-
-        if (isset($schema['security']) && $schema['security'] !== '') {
-            $security = addslashes($schema['security']);
-            $attributeParts[] = sprintf('security: "%s"', $security);
-        }
-
-        if ($attributeParts === []) {
-            return '#[ApiResource]';
-        }
-
-        return '#[ApiResource(' . implode(', ', $attributeParts) . ')]';
-    }
-
-    protected function extractShortClassName(string $fullyQualifiedClassName): string
-    {
-        $parts = explode('\\', $fullyQualifiedClassName);
-
-        return end($parts);
-    }
-
-    /**
-     * @param array<string, mixed> $operation
-     */
-    protected function generateOperationAttribute(string $type, array $operation): string
-    {
-        $params = [];
-
-        if (!empty($operation['processor'])) {
-            $processorShortName = $this->extractShortClassName($operation['processor']);
-            $params[] = sprintf('processor: %s::class', $processorShortName);
-        }
-
-        if (!empty($operation['validationGroups']) && is_array($operation['validationGroups'])) {
-            $groupsString = "['" . implode("', '", $operation['validationGroups']) . "']";
-            $params[] = sprintf('validationContext: [\'groups\' => %s]', $groupsString);
-        }
-
-        if ($params === []) {
-            return sprintf('new %s()', $type);
-        }
-
-        return sprintf(
-            'new %s(%s)',
-            $type,
-            implode(', ', $params),
-        );
-    }
-
-    /**
-     * @param array<string, mixed> $validationSchema
-     * @param array<string, mixed> $operations
-     *
-     * @return array<string>
-     */
-    protected function generateValidationAttributes(array $validationSchema, array $operations, string $propertyName, string $resourceName): array
-    {
-        $constraintsWithGroups = [];
-
-        foreach ($operations as $operationType => $operation) {
-            $httpMethod = strtolower($operationType);
-
-            if (!isset($validationSchema[$httpMethod][$propertyName])) {
-                continue;
-            }
-
-            $group = $this->validationGroupMapper->mapOperationToGroup($operationType, $resourceName);
-            $constraints = $validationSchema[$httpMethod][$propertyName];
-
-            foreach ($constraints as $constraint) {
-                if ($this->isOptionalConstraint($constraint)) {
-                    $nestedConstraints = $this->extractNestedConstraintsFromOptional($constraint);
-
-                    foreach ($nestedConstraints as $nestedConstraint) {
-                        if ($this->shouldSkipConstraintForOptionalField($nestedConstraint)) {
-                            continue;
-                        }
-
-                        $constraintsWithGroups[] = [
-                            'constraint' => $nestedConstraint,
-                            'group' => $group,
-                        ];
-                    }
-
-                    continue;
-                }
-
-                $constraintsWithGroups[] = [
-                    'constraint' => $constraint,
-                    'group' => $group,
-                ];
-            }
-        }
-
-        $deduplicatedConstraints = $this->deduplicateConstraintsByGroups($constraintsWithGroups);
-
-        $attributes = [];
-
-        foreach ($deduplicatedConstraints as $constraintData) {
-            $attributes[] = $this->generateConstraintAttribute($constraintData['constraint'], $constraintData['groups']);
-        }
-
-        return $attributes;
-    }
-
-    /**
-     * @param array<array{constraint: mixed, group: string}> $constraintsWithGroups
-     *
-     * @return array<array{constraint: mixed, groups: array<string>}>
-     */
-    protected function deduplicateConstraintsByGroups(array $constraintsWithGroups): array
-    {
-        $groupedByConstraint = [];
-
-        foreach ($constraintsWithGroups as $item) {
-            $constraint = $item['constraint'];
-            $group = $item['group'];
-
-            $key = $this->generateConstraintKey($constraint);
-
-            if (!isset($groupedByConstraint[$key])) {
-                $groupedByConstraint[$key] = [
-                    'constraint' => $constraint,
-                    'groups' => [],
-                ];
-            }
-
-            $groupedByConstraint[$key]['groups'][] = $group;
-        }
-
-        foreach ($groupedByConstraint as $key => $data) {
-            $groupedByConstraint[$key]['groups'] = array_values(array_unique($data['groups']));
-            sort($groupedByConstraint[$key]['groups']);
-        }
-
-        return array_values($groupedByConstraint);
-    }
-
-    /**
-     * @param mixed $constraint
-     */
-    protected function generateConstraintKey(mixed $constraint): string
-    {
-        if (is_string($constraint)) {
-            if ($this->isFqcn($constraint)) {
-                return $this->normalizeFqcn($constraint);
-            }
-
-            return $constraint;
-        }
-
-        if (!is_array($constraint)) {
-            return 'unknown_' . md5(serialize($constraint));
-        }
-
-        $constraintName = (string)array_key_first($constraint);
-        $normalizedName = $this->isFqcn($constraintName) ? $this->normalizeFqcn($constraintName) : $constraintName;
-        $options = $constraint[$constraintName];
-
-        if (!is_array($options)) {
-            return $normalizedName;
-        }
-
-        return $normalizedName . '_' . md5(serialize($options));
-    }
-
-    /**
-     * @param array<string> $groups
-     */
-    protected function generateConstraintAttribute(mixed $constraint, array $groups): string
-    {
-        $groupsString = implode("', '", $groups);
-
-        if (is_string($constraint)) {
-            if ($this->isFqcn($constraint)) {
-                $normalized = $this->normalizeFqcn($constraint);
-                $alias = $this->fqcnConstraintMap[$normalized]['alias'] ?? $this->parseConstraintFqcn($constraint)['shortName'];
-
-                return sprintf("#[%s(groups: ['%s'])]", $alias, $groupsString);
-            }
-
-            return sprintf("#[Assert\\%s(groups: ['%s'])]", $constraint, $groupsString);
-        }
-
-        if (!is_array($constraint)) {
-            return '';
-        }
-
-        $constraintName = (string)array_key_first($constraint);
-        $options = $constraint[$constraintName];
-
-        if ($this->isFqcn($constraintName)) {
-            $normalized = $this->normalizeFqcn($constraintName);
-            $alias = $this->fqcnConstraintMap[$normalized]['alias'] ?? $this->parseConstraintFqcn($constraintName)['shortName'];
-
-            if (!is_array($options)) {
-                return sprintf("#[%s(groups: ['%s'])]", $alias, $groupsString);
-            }
-
-            $formattedOptions = $this->formatConstraintOptions($options, $constraintName);
-
-            if ($formattedOptions === '') {
-                return sprintf("#[%s(groups: ['%s'])]", $alias, $groupsString);
-            }
-
-            return sprintf("#[%s(%s, groups: ['%s'])]", $alias, $formattedOptions, $groupsString);
-        }
-
-        if (!is_array($options)) {
-            return sprintf("#[Assert\\%s(groups: ['%s'])]", $constraintName, $groupsString);
-        }
-
-        $formattedOptions = $this->formatConstraintOptions($options, $constraintName);
-
-        if ($formattedOptions === '') {
-            return sprintf("#[Assert\\%s(groups: ['%s'])]", $constraintName, $groupsString);
-        }
-
-        return sprintf("#[Assert\\%s(%s, groups: ['%s'])]", $constraintName, $formattedOptions, $groupsString);
     }
 
     /**
@@ -726,42 +429,6 @@ class ClassGenerator implements ClassGeneratorInterface
         }
 
         return '[' . implode(', ', $items) . ']';
-    }
-
-    protected function isOptionalConstraint(mixed $constraint): bool
-    {
-        if (!is_array($constraint)) {
-            return false;
-        }
-
-        return isset($constraint['Optional']);
-    }
-
-    /**
-     * @param array<mixed> $constraint
-     *
-     * @return array<mixed>
-     */
-    protected function extractNestedConstraintsFromOptional(array $constraint): array
-    {
-        if (!isset($constraint['Optional']['constraints'])) {
-            return [];
-        }
-
-        return $constraint['Optional']['constraints'];
-    }
-
-    protected function shouldSkipConstraintForOptionalField(mixed $constraint): bool
-    {
-        if (is_string($constraint) && $constraint === 'NotBlank') {
-            return true;
-        }
-
-        if (is_array($constraint) && isset($constraint['NotBlank'])) {
-            return true;
-        }
-
-        return false;
     }
 
     protected function normalizeFqcn(string $fqcn): string

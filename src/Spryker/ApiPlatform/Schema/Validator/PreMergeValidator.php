@@ -71,7 +71,7 @@ class PreMergeValidator implements PreMergeValidatorInterface
 
             $type = $property['type'];
 
-            if (!in_array($type, static::VALID_TYPES, true)) {
+            if (!$this->isValidType($type)) {
                 $codeBucketContext = '';
 
                 if (isset($schema['codeBucket'])) {
@@ -87,7 +87,7 @@ class PreMergeValidator implements PreMergeValidatorInterface
                     $codeBucketContext,
                 );
 
-                $errors[] = sprintf('  Valid types: %s', implode(', ', static::VALID_TYPES));
+                $errors[] = sprintf('  Valid types: %s or resource class names (e.g., CustomersStorefrontResource)', implode(', ', static::VALID_TYPES));
 
                 if ($suggestion !== null) {
                     $errors[] = sprintf('  Hint: %s', $suggestion);
@@ -103,6 +103,20 @@ class PreMergeValidator implements PreMergeValidatorInterface
 
             throw new ApiSchemaValidationException($errorMessage, $filePath);
         }
+    }
+
+    protected function isValidType(string $type): bool
+    {
+        if (in_array($type, static::VALID_TYPES, true)) {
+            return true;
+        }
+
+        return $this->isResourceClassName($type);
+    }
+
+    protected function isResourceClassName(string $type): bool
+    {
+        return str_ends_with($type, 'StorefrontResource') || str_ends_with($type, 'BackendResource');
     }
 
     protected function suggestType(string $invalidType): ?string

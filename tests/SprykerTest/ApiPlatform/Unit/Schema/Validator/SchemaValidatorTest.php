@@ -14,7 +14,6 @@ use Spryker\ApiPlatform\Exception\ApiSchemaValidationException;
 use Spryker\ApiPlatform\Schema\Validator\Rules\MergeValidationRule;
 use Spryker\ApiPlatform\Schema\Validator\SchemaValidator;
 use SprykerTest\ApiPlatform\ApiUnitTester;
-use Symfony\Component\PropertyAccess\PropertyAccess;
 
 /**
  * Auto-generated group annotations
@@ -57,6 +56,6 @@ class SchemaValidatorTest extends Unit
 
     protected function createMergeValidationRule(): MergeValidationRule
     {
-        return new MergeValidationRule(PropertyAccess::createPropertyAccessor());
+        return $this->tester->getContainer()->get(MergeValidationRule::class);
     }
 }

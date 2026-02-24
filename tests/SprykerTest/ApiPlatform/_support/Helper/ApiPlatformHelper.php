@@ -75,15 +75,19 @@ class ApiPlatformHelper extends Module
     }
 
     /**
-     * Cleans up the compiled container directory.
+     * Cleans up all test-generated directories and files.
      */
     protected function cleanupContainerCache(): void
     {
         $containerDirectory = codecept_data_dir('symfony_test_kernel_cache');
         $logDirectory = codecept_data_dir('symfony_test_kernel_logs');
+        $cacheDirectory = codecept_data_dir('cache');
+        $generatedApiDirectory = codecept_data_dir('Api');
 
         $filesystem = new Filesystem();
         $filesystem->remove($containerDirectory);
         $filesystem->remove($logDirectory);
+        $filesystem->remove($cacheDirectory);
+        $filesystem->remove($generatedApiDirectory);
     }
 }

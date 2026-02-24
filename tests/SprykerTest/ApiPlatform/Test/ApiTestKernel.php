@@ -9,14 +9,19 @@ declare(strict_types=1);
 
 namespace SprykerTest\ApiPlatform\Test;
 
+use ApiPlatform\Symfony\Security\ResourceAccessChecker;
 use Spryker\ApiPlatform\DependencyInjection\Compiler\ApiResourceServiceRegistrationPass;
 use Spryker\Service\Container\Pass\SprykerDefaultsPass;
 use SprykerTest\ApiPlatform\DependencyInjection\Compiler\DisableCacheWarmingPass;
 use SprykerTest\ApiPlatform\DependencyInjection\Compiler\FilterApiResourcesByTypePass;
 use SprykerTest\ApiPlatform\DependencyInjection\Compiler\RegisterGeneratedResourcesPass;
+use SprykerTest\ApiPlatform\Test\Security\CustomerProvider;
+use SprykerTest\ApiPlatform\Test\Security\TokenAuthenticator;
 use SprykerTest\Shared\Testify\Helper\Kernel\TestKernel;
 use Symfony\Component\Config\Loader\LoaderInterface;
 use Symfony\Component\DependencyInjection\ContainerBuilder;
+use Symfony\Component\DependencyInjection\Definition;
+use Symfony\Component\DependencyInjection\Reference;
 
 class ApiTestKernel extends TestKernel
 {
@@ -29,6 +34,8 @@ class ApiTestKernel extends TestKernel
 
     protected function build(ContainerBuilder $container): void
     {
+        $container->addCompilerPass(new DisableCacheWarmingPass());
+
         if (TestModeConfiguration::isProjectMode()) {
             parent::build($container);
 
@@ -37,7 +44,6 @@ class ApiTestKernel extends TestKernel
 
         $container->addCompilerPass(new SprykerDefaultsPass());
         $container->addCompilerPass(new ApiResourceServiceRegistrationPass());
-        $container->addCompilerPass(new DisableCacheWarmingPass());
         $container->addCompilerPass(new FilterApiResourcesByTypePass($this->apiType));
         $container->addCompilerPass(new RegisterGeneratedResourcesPass($this->resourcePaths));
     }
@@ -89,6 +95,10 @@ class ApiTestKernel extends TestKernel
 
         $loader->load(function (ContainerBuilder $container): void {
             $this->configureApiPlatformContainer($container);
+        });
+
+        $loader->load(function (ContainerBuilder $container): void {
+            $this->registerSecurityServices($container);
         });
     }
 
@@ -167,5 +177,33 @@ class ApiTestKernel extends TestKernel
 
         // Include API type in container class name to prevent pollution between Backend/Storefront
         return $parentClass . '_' . $this->apiType;
+    }
+
+    protected function registerSecurityServices(ContainerBuilder $container): void
+    {
+        $customerProviderDefinition = new Definition(CustomerProvider::class);
+        $customerProviderDefinition->setPublic(true);
+        $container->setDefinition(CustomerProvider::class, $customerProviderDefinition);
+
+        $tokenAuthenticatorDefinition = new Definition(TokenAuthenticator::class);
+        $tokenAuthenticatorDefinition->setArgument(0, $customerProviderDefinition);
+        $tokenAuthenticatorDefinition->setPublic(true);
+        $container->setDefinition(TokenAuthenticator::class, $tokenAuthenticatorDefinition);
+
+        $this->registerApiPlatformSecurityServices($container);
+    }
+
+    protected function registerApiPlatformSecurityServices(ContainerBuilder $container): void
+    {
+        $resourceAccessCheckerDefinition = new Definition(ResourceAccessChecker::class);
+        $resourceAccessCheckerDefinition->setArguments([
+            new Reference('security.expression_language', ContainerBuilder::NULL_ON_INVALID_REFERENCE),
+            new Reference('security.authentication.trust_resolver', ContainerBuilder::NULL_ON_INVALID_REFERENCE),
+            new Reference('security.role_hierarchy', ContainerBuilder::NULL_ON_INVALID_REFERENCE),
+            new Reference('security.token_storage', ContainerBuilder::NULL_ON_INVALID_REFERENCE),
+            new Reference('security.authorization_checker', ContainerBuilder::NULL_ON_INVALID_REFERENCE),
+        ]);
+        $resourceAccessCheckerDefinition->setPublic(true);
+        $container->setDefinition('api_platform.security.resource_access_checker', $resourceAccessCheckerDefinition);
     }
 }

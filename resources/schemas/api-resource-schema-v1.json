@@ -170,6 +170,14 @@
                                         }
                                     },
                                     "additionalProperties": true
+                                },
+                                "uriTemplate": {
+                                    "type": "string",
+                                    "description": "URI template for relationship links (enables JSON:API links generation). Can be either the operation name or URI path of the related resource.",
+                                    "examples": [
+                                        "/customers/{customerReference}/addresses",
+                                        "_api_/customers/{customerReference}/addresses_get_collection"
+                                    ]
                                 }
                             },
                             "additionalProperties": false
@@ -228,6 +236,111 @@
                             "summary": "Customer API",
                             "description": "Manage customer data"
                         }
+                    ]
+                },
+                "includes": {
+                    "type": "array",
+                    "description": "List of relationships that can be included with this resource via ?include= parameter",
+                    "items": {
+                        "type": "object",
+                        "required": ["relationshipName", "targetResource"],
+                        "properties": {
+                            "relationshipName": {
+                                "type": "string",
+                                "description": "The name used in ?include= parameter (e.g., 'addresses')",
+                                "pattern": "^[a-zA-Z][a-zA-Z0-9_-]*$",
+                                "examples": ["addresses", "orders", "wishlists"]
+                            },
+                            "targetResource": {
+                                "type": "string",
+                                "description": "The name of the target resource to include",
+                                "pattern": "^[A-Za-z][A-Za-z0-9]*$",
+                                "examples": ["CustomersAddresses", "Orders", "Wishlists"]
+                            },
+                            "uriTemplate": {
+                                "type": "string",
+                                "description": "URI template for the related resource (enables JSON:API links). If not specified, will be auto-generated from targetResource.",
+                                "examples": ["/customers/{customerReference}/addresses"]
+                            },
+                            "uriVariableMappings": {
+                                "type": "object",
+                                "description": "Mapping of properties from this resource to URI variables for the target resource provider",
+                                "patternProperties": {
+                                    "^[a-zA-Z][a-zA-Z0-9]*$": {
+                                        "type": "string",
+                                        "pattern": "^[a-zA-Z][a-zA-Z0-9]*$"
+                                    }
+                                },
+                                "additionalProperties": false,
+                                "examples": [
+                                    {
+                                        "customerReference": "customerReference"
+                                    }
+                                ]
+                            }
+                        },
+                        "additionalProperties": false
+                    },
+                    "examples": [
+                        [
+                            {
+                                "relationshipName": "addresses",
+                                "targetResource": "CustomersAddresses",
+                                "uriVariableMappings": {
+                                    "customerReference": "customerReference"
+                                }
+                            }
+                        ]
+                    ]
+                },
+                "includableIn": {
+                    "type": "array",
+                    "description": "List of parent resources that can include this resource via ?include= parameter",
+                    "items": {
+                        "type": "object",
+                        "required": ["resource", "relationshipName"],
+                        "properties": {
+                            "resource": {
+                                "type": "string",
+                                "description": "The name of the parent resource",
+                                "pattern": "^[A-Za-z][A-Za-z0-9]*$",
+                                "examples": ["Customers", "Orders"]
+                            },
+                            "relationshipName": {
+                                "type": "string",
+                                "description": "The relationship name used in parent's includes declaration",
+                                "pattern": "^[a-zA-Z][a-zA-Z0-9_-]*$",
+                                "examples": ["addresses", "items"]
+                            },
+                            "uriVariableMappings": {
+                                "type": "object",
+                                "description": "Mapping of properties (must match parent's declaration)",
+                                "patternProperties": {
+                                    "^[a-zA-Z][a-zA-Z0-9]*$": {
+                                        "type": "string",
+                                        "pattern": "^[a-zA-Z][a-zA-Z0-9]*$"
+                                    }
+                                },
+                                "additionalProperties": false,
+                                "examples": [
+                                    {
+                                        "customerReference": "customerReference"
+                                    }
+                                ]
+                            }
+                        },
+                        "additionalProperties": false
+                    },
+                    "examples": [
+                        [
+                            {
+                                "resource": "Customers",
+                                "relationshipName": "addresses",
+                                "uriVariableMappings": {
+                                    "customerReference": "customerReference"
+                                }
+                            }
+                        ]
                     ]
                 },
                 "sourceFile": {

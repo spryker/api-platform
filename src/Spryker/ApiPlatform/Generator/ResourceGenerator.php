@@ -31,8 +31,43 @@ use Spryker\ApiPlatform\Utility\ResourceNameNormalizer;
 use Symfony\Component\Filesystem\Filesystem;
 use Throwable;
 
+/**
+ * Main orchestrator for API Platform resource generation.
+ *
+ * Coordinates the complete resource generation pipeline from YAML schema files to PHP resource classes.
+ *
+ * Pipeline flow:
+ * 1. Find and load .resource.yml and .validation.yml files
+ * 2. Parse schemas into arrays with validation
+ * 3. Merge grouped schemas (handles CodeBucket inheritance)
+ * 4. Validate merged schemas
+ * 5. Generate PHP resource classes
+ * 6. Write to Generated/Api/{ApiType}/ directory
+ *
+ * Input: API type (storefront, backend, backoffice)
+ * Output: Generated PHP resource class files
+ *
+ * Example input structure (customers.resource.yml):
+ * ```yaml
+ * resource:
+ *   name: Customers
+ *   shortName: customers
+ *   provider: Spryker\Glue\Customer\Api\Storefront\Provider\CustomersStorefrontProvider
+ *   processor: Spryker\Glue\Customer\Api\Storefront\Processor\CustomersStorefrontProcessor
+ *   operations:
+ *     - type: Get
+ *     - type: Post
+ * ```
+ *
+ * Example output location:
+ * - src/Generated/Api/Storefront/CustomersStorefrontResource.php
+ *
+ * Handles failures gracefully by yielding error details and continuing with remaining valid schemas.
+ */
 class ResourceGenerator implements ResourceGeneratorInterface
 {
+    protected const string CODEBUCKET_DELIMITER = '#';
+
     /**
      * @param iterable<\Spryker\ApiPlatform\Schema\Loader\SchemaLoaderInterface> $loaders
      */
@@ -42,7 +77,7 @@ class ResourceGenerator implements ResourceGeneratorInterface
         protected readonly SchemaParserInterface $schemaParser,
         protected readonly SchemaValidatorInterface $schemaValidator,
         protected readonly SchemaMergerInterface $schemaMerger,
-        protected readonly ClassGeneratorInterface $classGenerator,
+        protected readonly ClassGenerator $classGenerator,
         protected readonly ApiPlatformConfig $config,
         protected readonly ValidationSchemaFinderInterface $validationSchemaFinder,
         protected readonly ValidationSchemaLoaderInterface $validationSchemaLoader,
@@ -57,7 +92,7 @@ class ResourceGenerator implements ResourceGeneratorInterface
     }
 
     /**
-     * @return \Generator<array{status: string, resource?: string, file?: string, message?: string, diagnostics?: array<string, mixed>, suggestion?: string}>
+     * @return \Generator<array{status: string, resource?: string, file?: string, className?: string, sourceFiles?: array<string>, validationSourceFiles?: array<string>, message?: string, diagnostics?: array<string, mixed>, suggestion?: string}>
      */
     public function generateResources(string $apiType): Generator
     {
@@ -230,12 +265,7 @@ class ResourceGenerator implements ResourceGeneratorInterface
                 $schema = $this->validationSchemaLoader->load($file);
                 $filePath = $file->getRealPath() ?: $file->getPathname();
 
-                $codeBucket = null;
-
-                /** @phpstan-ignore function.alreadyNarrowedType */
-                if (is_array($schema) && isset($schema['codeBucket'])) {
-                    $codeBucket = $schema['codeBucket'];
-                }
+                $codeBucket = $schema['codeBucket'] ?? null;
 
                 $key = $this->generateValidationKey($filePath, $apiType, $codeBucket);
 
@@ -293,7 +323,7 @@ class ResourceGenerator implements ResourceGeneratorInterface
         $key = sprintf('%s_%s', $apiType, $fileName);
 
         if ($codeBucket !== null) {
-            $key .= sprintf('#%s', $codeBucket);
+            $key .= sprintf('%s%s', static::CODEBUCKET_DELIMITER, $codeBucket);
         }
 
         return $key;
@@ -408,9 +438,11 @@ class ResourceGenerator implements ResourceGeneratorInterface
                 ];
 
                 $this->logger->error(sprintf(
-                    'Failed to parse schema file %s: %s',
+                    'Failed to parse schema file %s: %s in %s:%d',
                     $file->getPathname(),
                     $exception->getMessage(),
+                    $exception->getFile(),
+                    $exception->getLine(),
                 ));
             }
         }
@@ -442,7 +474,7 @@ class ResourceGenerator implements ResourceGeneratorInterface
         $codeBucketGroups = [];
 
         foreach ($groupedSchemas as $groupKey => $schemas) {
-            if (str_contains($groupKey, '#')) {
+            if (str_contains($groupKey, static::CODEBUCKET_DELIMITER)) {
                 $codeBucketGroups[$groupKey] = $schemas;
             } else {
                 $baseGroups[$groupKey] = $schemas;

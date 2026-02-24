@@ -32,7 +32,7 @@ class PhpTemplateRendererTest extends Unit
     {
         // Arrange
         $templateData = $this->createMinimalTemplateData();
-        $renderer = new PhpTemplateRenderer();
+        $renderer = $this->tester->getContainer()->get(PhpTemplateRenderer::class);
 
         // Act
         $result = $renderer->render($templateData);
@@ -45,7 +45,7 @@ class PhpTemplateRendererTest extends Unit
     {
         // Arrange
         $templateData = $this->createMinimalTemplateData();
-        $renderer = new PhpTemplateRenderer();
+        $renderer = $this->tester->getContainer()->get(PhpTemplateRenderer::class);
 
         // Act
         $result = $renderer->render($templateData);
@@ -58,7 +58,7 @@ class PhpTemplateRendererTest extends Unit
     {
         // Arrange
         $templateData = $this->createMinimalTemplateData();
-        $renderer = new PhpTemplateRenderer();
+        $renderer = $this->tester->getContainer()->get(PhpTemplateRenderer::class);
 
         // Act
         $result = $renderer->render($templateData);
@@ -71,7 +71,7 @@ class PhpTemplateRendererTest extends Unit
     {
         // Arrange
         $templateData = $this->createTemplateDataWithProperties();
-        $renderer = new PhpTemplateRenderer();
+        $renderer = $this->tester->getContainer()->get(PhpTemplateRenderer::class);
 
         // Act
         $result = $renderer->render($templateData);
@@ -84,7 +84,7 @@ class PhpTemplateRendererTest extends Unit
     {
         // Arrange
         $templateData = $this->createTemplateDataWithProperties();
-        $renderer = new PhpTemplateRenderer();
+        $renderer = $this->tester->getContainer()->get(PhpTemplateRenderer::class);
 
         // Act
         $result = $renderer->render($templateData);
@@ -97,7 +97,7 @@ class PhpTemplateRendererTest extends Unit
     {
         // Arrange
         $templateData = $this->createTemplateDataWithProperties();
-        $renderer = new PhpTemplateRenderer();
+        $renderer = $this->tester->getContainer()->get(PhpTemplateRenderer::class);
 
         // Act
         $result = $renderer->render($templateData);
@@ -110,7 +110,7 @@ class PhpTemplateRendererTest extends Unit
     {
         // Arrange
         $templateData = $this->createMinimalTemplateData();
-        $renderer = new PhpTemplateRenderer();
+        $renderer = $this->tester->getContainer()->get(PhpTemplateRenderer::class);
 
         // Act
         $result = $renderer->render($templateData);
@@ -123,7 +123,7 @@ class PhpTemplateRendererTest extends Unit
     {
         // Arrange
         $templateData = $this->createTemplateDataWithMultipleProperties();
-        $renderer = new PhpTemplateRenderer();
+        $renderer = $this->tester->getContainer()->get(PhpTemplateRenderer::class);
 
         // Act
         $result = $renderer->render($templateData);
@@ -179,6 +179,7 @@ class PhpTemplateRendererTest extends Unit
                     'phpType' => 'int',
                     'attributes' => '',
                     'description' => 'ID',
+                    'phpDoc' => '',
                 ],
             ],
             'metadata' => [
@@ -206,6 +207,7 @@ class PhpTemplateRendererTest extends Unit
                     'phpType' => 'int',
                     'attributes' => '',
                     'description' => 'ID',
+                    'phpDoc' => '',
                 ],
                 [
                     'name' => 'name',
@@ -213,6 +215,7 @@ class PhpTemplateRendererTest extends Unit
                     'phpType' => 'string',
                     'attributes' => '',
                     'description' => 'Name',
+                    'phpDoc' => '',
                 ],
             ],
             'metadata' => [

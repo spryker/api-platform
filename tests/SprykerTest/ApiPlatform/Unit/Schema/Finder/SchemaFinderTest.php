@@ -12,6 +12,7 @@ namespace SprykerTest\ApiPlatform\Unit\Schema\Finder;
 use Codeception\Test\Unit;
 use Spryker\ApiPlatform\Configuration\ApiPlatformConfig;
 use Spryker\ApiPlatform\Schema\Finder\SchemaFinder;
+use Spryker\ApiPlatform\Schema\Finder\SchemaFinderInterface;
 use SprykerTest\ApiPlatform\ApiUnitTester;
 
 /**
@@ -154,6 +155,8 @@ class SchemaFinderTest extends Unit
             debug: false,
         );
 
-        return new SchemaFinder($config);
+        $this->tester->getContainer()->set(ApiPlatformConfig::class, $config);
+
+        return $this->tester->getContainer()->get(SchemaFinderInterface::class);
     }
 }
