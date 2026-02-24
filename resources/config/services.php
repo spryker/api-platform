@@ -66,6 +66,8 @@ use Spryker\ApiPlatform\Schema\Validator\Rules\ResourceNamingValidationRule;
 use Spryker\ApiPlatform\Schema\Validator\Rules\SecurityExpressionValidationRule;
 use Spryker\ApiPlatform\Schema\Validator\SchemaValidator;
 use Spryker\ApiPlatform\Schema\Validator\SchemaValidatorInterface;
+use Spryker\ApiPlatform\Serializer\Encoder\CXmlEncoder;
+use Spryker\ApiPlatform\Serializer\Normalizer\CXmlNormalizer;
 use Symfony\Component\ExpressionLanguage\ExpressionLanguage;
 use Symfony\Component\Filesystem\Filesystem;
 use Symfony\Component\PropertyAccess\PropertyAccess;
@@ -286,4 +288,12 @@ return static function (ContainerConfigurator $container): void {
      */
     $services->set(LinksPositionNormalizer::class)
         ->tag('serializer.normalizer');
+
+    $services->set(CXmlNormalizer::class)
+        ->autoconfigure(false)
+        ->decorate('api_platform.serializer.normalizer.item');
+
+    $services->set(CXmlEncoder::class)
+        ->autoconfigure(false)
+        ->decorate('serializer.encoder.xml');
 };

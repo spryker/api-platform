@@ -20,6 +20,7 @@
         "api-platform/state": "^4.2.0",
         "api-platform/symfony": "^4.2.0",
         "api-platform/validator": "^4.2.0",
+        "friendsofcxml/cxml-php": "^2.0.0",
         "php": ">=8.3",
         "spryker/kernel": "^3.48.0",
         "spryker/laminas": "^1.0.0",
