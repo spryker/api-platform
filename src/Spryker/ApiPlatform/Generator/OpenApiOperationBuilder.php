@@ -225,11 +225,6 @@ class OpenApiOperationBuilder
         return '[' . implode(', ', $parts) . ']';
     }
 
-    /**
-     * @param mixed $value
-     *
-     * @return string
-     */
     protected function formatOpenapiContextValue(mixed $value): string
     {
         if (is_array($value)) {

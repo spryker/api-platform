@@ -29,11 +29,6 @@ use Throwable;
  */
 class RelationshipConfigurationPass implements CompilerPassInterface
 {
-    /**
-     * @param \Symfony\Component\DependencyInjection\ContainerBuilder $container
-     *
-     * @return void
-     */
     public function process(ContainerBuilder $container): void
     {
         if (!$this->hasRequiredParameters($container)) {
@@ -67,11 +62,6 @@ class RelationshipConfigurationPass implements CompilerPassInterface
         $container->setParameter('api_platform.relationships', $relationships);
     }
 
-    /**
-     * @param \Symfony\Component\DependencyInjection\ContainerBuilder $container
-     *
-     * @return bool
-     */
     protected function hasRequiredParameters(ContainerBuilder $container): bool
     {
         return $container->hasParameter('spryker_api_platform.api_types')
@@ -216,12 +206,6 @@ class RelationshipConfigurationPass implements CompilerPassInterface
         return $relationships;
     }
 
-    /**
-     * @param string $targetResource
-     * @param string $currentSchemaDir
-     *
-     * @return string|null
-     */
     protected function findProviderForResource(string $targetResource, string $currentSchemaDir): ?string
     {
         $targetFileName = $this->convertToKebabCase($targetResource) . '.resource.yml';
@@ -248,11 +232,6 @@ class RelationshipConfigurationPass implements CompilerPassInterface
         return $targetSchema['resource']['provider'];
     }
 
-    /**
-     * @param string $string
-     *
-     * @return string
-     */
     protected function convertToKebabCase(string $string): string
     {
         $filterChain = (new FilterChain())

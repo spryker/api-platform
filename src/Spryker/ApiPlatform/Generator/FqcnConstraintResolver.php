@@ -301,21 +301,11 @@ class FqcnConstraintResolver
         return $result;
     }
 
-    /**
-     * @param string $fqcn
-     *
-     * @return string
-     */
     protected function normalizeFqcn(string $fqcn): string
     {
         return ltrim($fqcn, '\\');
     }
 
-    /**
-     * @param string $constraintName
-     *
-     * @return bool
-     */
     protected function isFqcn(string $constraintName): bool
     {
         return str_contains($constraintName, '\\');

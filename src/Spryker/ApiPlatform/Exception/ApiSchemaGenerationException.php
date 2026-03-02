@@ -18,12 +18,6 @@ use Throwable;
  */
 class ApiSchemaGenerationException extends ApiSchemaException
 {
-    /**
-     * @param string $message
-     * @param string|null $resourceName
-     * @param string|null $apiType
-     * @param \Throwable|null $previous
-     */
     public function __construct(
         string $message,
         protected readonly ?string $resourceName = null,

@@ -17,14 +17,6 @@ use SplFileInfo;
  */
 interface ValidationSchemaFinderInterface
 {
-    /**
-     * @param string $resourceName
-     * @param string $apiType
-     * @param string $layer
-     * @param string $sourceDirectory
-     *
-     * @return \SplFileInfo|null
-     */
     public function findValidationSchema(
         string $resourceName,
         string $apiType,

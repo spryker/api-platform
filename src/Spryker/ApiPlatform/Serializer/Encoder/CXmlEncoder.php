@@ -88,21 +88,11 @@ class CXmlEncoder implements EncoderInterface, DecoderInterface, NormalizationAw
         }
     }
 
-    /**
-     * @param string $format
-     *
-     * @return bool
-     */
     public function supportsEncoding(string $format): bool
     {
         return $this->decoratedXmlEncoder->supportsEncoding($format);
     }
 
-    /**
-     * @param string $format
-     *
-     * @return bool
-     */
     public function supportsDecoding(string $format): bool
     {
         return $this->decoratedXmlEncoder->supportsDecoding($format);

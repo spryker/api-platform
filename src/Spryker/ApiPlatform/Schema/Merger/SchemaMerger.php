@@ -374,9 +374,6 @@ class SchemaMerger implements SchemaMergerInterface
         return $result;
     }
 
-    /**
-     * @param mixed $validation
-     */
     protected function isMultipleValidations(mixed $validation): bool
     {
         if (!is_array($validation)) {

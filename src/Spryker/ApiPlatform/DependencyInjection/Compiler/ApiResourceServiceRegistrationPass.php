@@ -37,9 +37,6 @@ class ApiResourceServiceRegistrationPass implements CompilerPassInterface
      */
     protected array $registeredServices = [];
 
-    /**
-     * @param \Symfony\Component\DependencyInjection\ContainerBuilder $container
-     */
     public function process(ContainerBuilder $container): void
     {
         if (!$this->hasRequiredParameters($container)) {
@@ -73,11 +70,6 @@ class ApiResourceServiceRegistrationPass implements CompilerPassInterface
         }
     }
 
-    /**
-     * @param \Symfony\Component\DependencyInjection\ContainerBuilder $container
-     *
-     * @return bool
-     */
     protected function hasRequiredParameters(ContainerBuilder $container): bool
     {
         return $container->hasParameter('spryker_api_platform.api_types')

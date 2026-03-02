@@ -24,9 +24,6 @@ class RelationshipData
     ) {
     }
 
-    /**
-     * @return bool
-     */
     public function isPaginated(): bool
     {
         return $this->pagination !== null;
@@ -40,9 +37,6 @@ class RelationshipData
         return $this->resources;
     }
 
-    /**
-     * @return \Spryker\ApiPlatform\Relationship\RelationshipPagination|null
-     */
     public function getPagination(): ?RelationshipPagination
     {
         return $this->pagination;

@@ -111,11 +111,6 @@ class ResourceAttributeGenerator
         return '#[ApiResource(' . implode(', ', $attributeParts) . ')]';
     }
 
-    /**
-     * @param string $fullyQualifiedClassName
-     *
-     * @return string
-     */
     protected function extractShortClassName(string $fullyQualifiedClassName): string
     {
         $parts = explode('\\', $fullyQualifiedClassName);
@@ -296,11 +291,6 @@ class ResourceAttributeGenerator
         return $linkParameters;
     }
 
-    /**
-     * @param string $fullClassName
-     *
-     * @return string
-     */
     protected function getShortClassName(string $fullClassName): string
     {
         $parts = explode('\\', $fullClassName);

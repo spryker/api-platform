@@ -28,33 +28,21 @@ class RelationshipPagination
     ) {
     }
 
-    /**
-     * @return bool
-     */
     public function hasNextPage(): bool
     {
         return $this->currentPage < $this->totalPages;
     }
 
-    /**
-     * @return bool
-     */
     public function hasPreviousPage(): bool
     {
         return $this->currentPage > 1;
     }
 
-    /**
-     * @return int
-     */
     public function getNextPage(): int
     {
         return $this->hasNextPage() ? $this->currentPage + 1 : $this->currentPage;
     }
 
-    /**
-     * @return int
-     */
     public function getPreviousPage(): int
     {
         return $this->hasPreviousPage() ? $this->currentPage - 1 : $this->currentPage;

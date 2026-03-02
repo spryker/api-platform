@@ -29,9 +29,6 @@ use Symfony\Component\HttpKernel\Bundle\Bundle;
  */
 class SprykerApiPlatformBundle extends Bundle
 {
-    /**
-     * @param \Symfony\Component\DependencyInjection\ContainerBuilder $container
-     */
     public function build(ContainerBuilder $container): void
     {
         parent::build($container);

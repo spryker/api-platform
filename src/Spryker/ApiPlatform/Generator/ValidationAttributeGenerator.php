@@ -146,11 +146,6 @@ class ValidationAttributeGenerator
         return array_values($groupedByConstraint);
     }
 
-    /**
-     * @param mixed $constraint
-     *
-     * @return string
-     */
     protected function generateConstraintKey(mixed $constraint): string
     {
         if (is_string($constraint)) {
@@ -176,11 +171,6 @@ class ValidationAttributeGenerator
         return $normalizedName . '_' . md5(serialize($options));
     }
 
-    /**
-     * @param mixed $constraint
-     *
-     * @return bool
-     */
     protected function isOptionalConstraint(mixed $constraint): bool
     {
         if (!is_array($constraint)) {
@@ -204,11 +194,6 @@ class ValidationAttributeGenerator
         return $constraint['Optional']['constraints'];
     }
 
-    /**
-     * @param mixed $constraint
-     *
-     * @return bool
-     */
     protected function shouldSkipConstraintForOptionalField(mixed $constraint): bool
     {
         if (is_string($constraint) && $constraint === 'NotBlank') {
@@ -222,21 +207,11 @@ class ValidationAttributeGenerator
         return false;
     }
 
-    /**
-     * @param string $fqcn
-     *
-     * @return string
-     */
     protected function normalizeFqcn(string $fqcn): string
     {
         return ltrim($fqcn, '\\');
     }
 
-    /**
-     * @param string $constraintName
-     *
-     * @return bool
-     */
     protected function isFqcn(string $constraintName): bool
     {
         return str_contains($constraintName, '\\');

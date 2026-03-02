@@ -31,9 +31,6 @@ use Symfony\Component\DependencyInjection\Reference;
  */
 class ApiPlatformDecoratorPass implements CompilerPassInterface
 {
-    /**
-     * @param \Symfony\Component\DependencyInjection\ContainerBuilder $container
-     */
     public function process(ContainerBuilder $container): void
     {
         if (!$container->has('api_platform.resource_class_resolver')) {
