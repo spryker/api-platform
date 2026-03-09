@@ -246,6 +246,8 @@ class ClassGenerator
                 'attributes' => $attributes,
                 'description' => $property['description'] ?? '',
                 'phpDoc' => $phpDoc,
+                'default' => $property['default'] ?? null,
+                'hasDefault' => array_key_exists('default', $property),
             ];
         }
 

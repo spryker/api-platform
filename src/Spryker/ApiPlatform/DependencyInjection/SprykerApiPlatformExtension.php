@@ -9,7 +9,9 @@ declare(strict_types=1);
 
 namespace Spryker\ApiPlatform\DependencyInjection;
 
+use Spryker\ApiPlatform\Attribute\ApiType;
 use Symfony\Component\Config\FileLocator;
+use Symfony\Component\DependencyInjection\ChildDefinition;
 use Symfony\Component\DependencyInjection\ContainerBuilder;
 use Symfony\Component\DependencyInjection\Extension\Extension;
 use Symfony\Component\DependencyInjection\Extension\PrependExtensionInterface;
@@ -22,6 +24,8 @@ use Symfony\Component\DependencyInjection\Loader\PhpFileLoader;
  */
 class SprykerApiPlatformExtension extends Extension implements PrependExtensionInterface
 {
+    protected const string SECURITY_BUNDLE_NAME = 'SecurityBundle';
+
     public function prepend(ContainerBuilder $container): void
     {
         $configs = $container->getExtensionConfig($this->getAlias());
@@ -55,6 +59,20 @@ class SprykerApiPlatformExtension extends Extension implements PrependExtensionI
         $container->setParameter('spryker_api_platform.api_types', $config['api_types']);
         $container->setParameter('spryker_api_platform.debug', $config['debug']);
 
+        // Registers the #[ApiType] attribute for autoconfiguration. Any service class annotated with
+        // #[ApiType(['...'])] will automatically receive a `spryker_api_platform.api_type` tag
+        // per declared type. These tags are then evaluated by the compiler pass to remove services
+        // that do not match the current application's configured API types.
+        // @see \Spryker\ApiPlatform\DependencyInjection\Compiler\ApiTypeServiceFilterPass
+        $container->registerAttributeForAutoconfiguration(
+            ApiType::class,
+            static function (ChildDefinition $definition, ApiType $attribute): void {
+                foreach ($attribute->types as $type) {
+                    $definition->addTag('spryker_api_platform.api_type', ['type' => $type]);
+                }
+            },
+        );
+
         if (!$container->hasParameter('api_platform.formats')) {
             $container->setParameter('api_platform.formats', []);
         }
@@ -65,6 +83,19 @@ class SprykerApiPlatformExtension extends Extension implements PrependExtensionI
 
         $loader = new PhpFileLoader($container, new FileLocator(__DIR__ . '/../../../../resources/config'));
         $loader->load('services.php');
+
+        $this->loadSecurityServices($container, $loader);
+    }
+
+    protected function loadSecurityServices(ContainerBuilder $container, PhpFileLoader $loader): void
+    {
+        $bundles = $container->getParameter('kernel.bundles');
+
+        if (!is_array($bundles) || !isset($bundles[static::SECURITY_BUNDLE_NAME])) {
+            return;
+        }
+
+        $loader->load('security_services.php');
     }
 
     /**

@@ -17,6 +17,7 @@ use Spryker\Shared\Kernel\Container\ContainerProxy;
 use SprykerTest\ApiPlatform\Test\ApiTestKernel;
 use SprykerTest\Shared\Testify\Helper\Kernel\TestKernel;
 use Symfony\Bundle\FrameworkBundle\FrameworkBundle;
+use Symfony\Bundle\SecurityBundle\SecurityBundle;
 use Symfony\Component\Filesystem\Exception\IOException;
 use Symfony\Component\Filesystem\Filesystem;
 use Symfony\Component\HttpKernel\KernelInterface;
@@ -130,6 +131,7 @@ class ApiResourceGeneratorHelper
         // instead of constructing everything manually.
         $kernel->addBundles([
             FrameworkBundle::class,
+            SecurityBundle::class,
             ApiPlatformBundle::class,
             SprykerApiPlatformBundle::class,
         ]);

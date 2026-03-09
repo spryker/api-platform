@@ -11,7 +11,9 @@ namespace Spryker\ApiPlatform;
 
 use Spryker\ApiPlatform\DependencyInjection\Compiler\ApiPlatformDecoratorPass;
 use Spryker\ApiPlatform\DependencyInjection\Compiler\ApiResourceServiceRegistrationPass;
+use Spryker\ApiPlatform\DependencyInjection\Compiler\ApiTypeServiceFilterPass;
 use Spryker\ApiPlatform\DependencyInjection\Compiler\RelationshipConfigurationPass;
+use Spryker\ApiPlatform\DependencyInjection\Compiler\SecurityServiceRegistrationPass;
 use Symfony\Component\DependencyInjection\Compiler\PassConfig;
 use Symfony\Component\DependencyInjection\ContainerBuilder;
 use Symfony\Component\HttpKernel\Bundle\Bundle;
@@ -52,6 +54,18 @@ class SprykerApiPlatformBundle extends Bundle
             new RelationshipConfigurationPass(),
             PassConfig::TYPE_BEFORE_OPTIMIZATION,
             45,
+        );
+
+        $container->addCompilerPass(
+            new SecurityServiceRegistrationPass(),
+            PassConfig::TYPE_BEFORE_OPTIMIZATION,
+            40,
+        );
+
+        $container->addCompilerPass(
+            new ApiTypeServiceFilterPass(),
+            PassConfig::TYPE_BEFORE_OPTIMIZATION,
+            30,
         );
     }
 

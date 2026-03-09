@@ -11,8 +11,6 @@ namespace SprykerTest\ApiPlatform\Test;
 
 use ApiPlatform\Symfony\Security\ResourceAccessChecker;
 use Spryker\ApiPlatform\DependencyInjection\Compiler\ApiResourceServiceRegistrationPass;
-use Spryker\Service\Container\Pass\SprykerDefaultsPass;
-use SprykerTest\ApiPlatform\DependencyInjection\Compiler\DisableCacheWarmingPass;
 use SprykerTest\ApiPlatform\DependencyInjection\Compiler\FilterApiResourcesByTypePass;
 use SprykerTest\ApiPlatform\DependencyInjection\Compiler\RegisterGeneratedResourcesPass;
 use SprykerTest\ApiPlatform\Test\Security\CustomerProvider;
@@ -34,15 +32,14 @@ class ApiTestKernel extends TestKernel
 
     protected function build(ContainerBuilder $container): void
     {
-        $container->addCompilerPass(new DisableCacheWarmingPass());
-
         if (TestModeConfiguration::isProjectMode()) {
             parent::build($container);
 
             return;
         }
 
-        $container->addCompilerPass(new SprykerDefaultsPass());
+        parent::build($container);
+
         $container->addCompilerPass(new ApiResourceServiceRegistrationPass());
         $container->addCompilerPass(new FilterApiResourcesByTypePass($this->apiType));
         $container->addCompilerPass(new RegisterGeneratedResourcesPass($this->resourcePaths));
@@ -131,8 +128,6 @@ class ApiTestKernel extends TestKernel
         foreach ($this->bundleConfigurations as $bundleName => $configuration) {
             $container->loadFromExtension($bundleName, $configuration);
         }
-
-        $container->setParameter('kernel.bundles', $this->bundleClasses);
     }
 
     protected function configureSprykerApiPlatformParameters(ContainerBuilder $container): void

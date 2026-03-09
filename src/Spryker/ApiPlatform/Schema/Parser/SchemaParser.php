@@ -15,6 +15,12 @@ use Spryker\ApiPlatform\Generator\ResourceNameTagGenerator;
 use Spryker\ApiPlatform\Schema\Validation\Mapper\ValidationGroupMapperInterface;
 use Spryker\ApiPlatform\Schema\Validator\PreMergeValidatorInterface;
 
+/**
+ * Parses raw YAML resource schemas into normalized arrays ready for code generation.
+ *
+ * Normalizes operations, properties, includes, and pagination settings, merges
+ * validation schemas, and auto-enriches operations with validation groups.
+ */
 class SchemaParser implements SchemaParserInterface
 {
     public function __construct(
@@ -64,7 +70,16 @@ class SchemaParser implements SchemaParserInterface
             'provider' => $this->getValue($resource, 'provider', null),
             'processor' => $this->getValue($resource, 'processor', null),
             'paginationItemsPerPage' => $this->getValue($resource, 'paginationItemsPerPage', null),
+            'paginationEnabled' => $this->getValue($resource, 'paginationEnabled', null),
+            'paginationMaximumItemsPerPage' => $this->getValue($resource, 'paginationMaximumItemsPerPage', null),
+            'paginationClientEnabled' => $this->getValue($resource, 'paginationClientEnabled', null),
+            'paginationClientItemsPerPage' => $this->getValue($resource, 'paginationClientItemsPerPage', null),
             'security' => $this->getValue($resource, 'security', null),
+            'securityMessage' => $this->getValue($resource, 'securityMessage', null),
+            'securityPostDenormalize' => $this->getValue($resource, 'securityPostDenormalize', null),
+            'securityPostDenormalizeMessage' => $this->getValue($resource, 'securityPostDenormalizeMessage', null),
+            'securityPostValidation' => $this->getValue($resource, 'securityPostValidation', null),
+            'securityPostValidationMessage' => $this->getValue($resource, 'securityPostValidationMessage', null),
             'openapiContext' => $this->getValue($resource, 'openapiContext', []),
             'includes' => $includes,
             'includableIn' => $this->normalizeIncludableIn($resource),
@@ -274,6 +289,10 @@ class SchemaParser implements SchemaParserInterface
 
             if (isset($operation['output']) && is_array($operation['output'])) {
                 $normalizedOperation['output'] = $operation['output'];
+            }
+
+            if (isset($operation['normalizationContext']) && is_array($operation['normalizationContext'])) {
+                $normalizedOperation['normalizationContext'] = $operation['normalizationContext'];
             }
 
             $normalized[$operationType] = $normalizedOperation;

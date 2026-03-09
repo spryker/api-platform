@@ -35,20 +35,14 @@ use Spryker\ApiPlatform\Generator\MediaType\MediaTypeFormatterRegistry;
  * ]
  * ```
  *
- * Generated output for Post operation with multiple formats:
+ * Generated output (returned as the Operation part only):
  * ```php
- * new Post(openapi: new Operation(requestBody: new RequestBody(content: new ArrayObject([
- *     'application/vnd.api+json' => new MediaType(example: [
- *         'data' => [
- *             'type' => 'customers',
- *             'attributes' => [
- *                 'email' => 'test@example.com',
- *                 'firstName' => 'John',
- *             ],
- *         ],
- *     ]),
- *     'application/xml' => new MediaType(example: [...])
- * ])))
+ * new Operation(
+ *     tags: ['customers'],
+ *     requestBody: new RequestBody(content: new ArrayObject([
+ *         'application/vnd.api+json' => new MediaType(example: [...]),
+ *     ])),
+ * )
  * ```
  *
  * Automatically filters out identifier and read-only properties from write operation examples.
@@ -66,10 +60,13 @@ class OpenApiOperationBuilder
     }
 
     /**
+     * Returns a formatted `new Operation(...)` string, or empty string if no OpenAPI customization needed.
+     *
      * @param array<string, mixed> $parsedSchema
      * @param array<string, mixed> $operation
      * @param string $operationType
      * @param array<string>|null $tags
+     * @param int $indentLevel The indent level of the openapi key (content renders at $indentLevel + 1)
      *
      * @return string
      */
@@ -77,19 +74,20 @@ class OpenApiOperationBuilder
         array $parsedSchema,
         array $operation,
         string $operationType,
-        ?array $tags = null
+        ?array $tags = null,
+        int $indentLevel = 3,
     ): string {
-        $operationParameters = [];
+        $operationParts = [];
 
         if ($tags !== null && $tags !== []) {
-            $operationParameters['tags'] = $this->formatTagsParameter($tags);
+            $operationParts[] = $this->formatTagsParameter($tags);
         }
 
         if (isset($operation['openapiContext']['requestBody'])) {
             $content = $this->formatOpenapiContextContent($operation['openapiContext']['requestBody']['content']);
-            $operationParameters['requestBody'] = sprintf('new RequestBody(content: new ArrayObject(%s))', $content);
+            $operationParts[] = sprintf('requestBody: new RequestBody(content: new ArrayObject(%s))', $content);
 
-            return $this->buildOperationWithParameters($operationType, $operationParameters);
+            return $this->buildOperationString($operationParts, $indentLevel);
         }
 
         $enabledMimeTypes = $this->getEnabledMimeTypes();
@@ -97,11 +95,11 @@ class OpenApiOperationBuilder
         $formatters = $this->formatterRegistry->getFormattersForMediaTypes($enabledMimeTypes);
 
         if ($formatters === []) {
-            if ($operationParameters !== []) {
-                return $this->buildOperationWithParameters($operationType, $operationParameters);
+            if ($operationParts !== []) {
+                return $this->buildOperationString($operationParts, $indentLevel);
             }
 
-            return sprintf('new %s()', $operationType);
+            return '';
         }
 
         $contentParts = [];
@@ -122,40 +120,40 @@ class OpenApiOperationBuilder
         }
 
         if ($contentParts === []) {
-            if ($operationParameters !== []) {
-                return $this->buildOperationWithParameters($operationType, $operationParameters);
+            if ($operationParts !== []) {
+                return $this->buildOperationString($operationParts, $indentLevel);
             }
 
-            return sprintf('new %s()', $operationType);
+            return '';
         }
 
-        $operationParameters['requestBody'] = sprintf(
-            'new RequestBody(content: new ArrayObject([%s]))',
+        $operationParts[] = sprintf(
+            'requestBody: new RequestBody(content: new ArrayObject([%s]))',
             implode(', ', $contentParts),
         );
 
-        return $this->buildOperationWithParameters($operationType, $operationParameters);
+        return $this->buildOperationString($operationParts, $indentLevel);
     }
 
     /**
-     * @param string $operationType
-     * @param array<string, string> $parameters
+     * Builds a multi-line `new Operation(...)` string from pre-formatted parameter parts.
+     *
+     * @param array<string> $parts Pre-formatted `key: value` strings
+     * @param int $indentLevel The indent level of the Operation opening/closing
      *
      * @return string
      */
-    protected function buildOperationWithParameters(string $operationType, array $parameters): string
+    protected function buildOperationString(array $parts, int $indentLevel): string
     {
-        if ($parameters === []) {
-            return sprintf('new %s()', $operationType);
+        if ($parts === []) {
+            return '';
         }
 
-        $parameterString = implode(', ', $parameters);
+        $paramIndent = $this->indent($indentLevel + 1);
+        $closeIndent = $this->indent($indentLevel);
+        $content = $paramIndent . implode(",\n" . $paramIndent, $parts);
 
-        return sprintf(
-            'new %s(openapi: new Operation(%s))',
-            $operationType,
-            $parameterString,
-        );
+        return sprintf("new Operation(\n%s,\n%s)", $content, $closeIndent);
     }
 
     /**
@@ -281,5 +279,10 @@ class OpenApiOperationBuilder
         );
 
         return '[' . implode(', ', $items) . ']';
+    }
+
+    protected function indent(int $level): string
+    {
+        return str_repeat('    ', $level);
     }
 }

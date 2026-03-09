@@ -712,7 +712,7 @@ class SchemaParserTest extends Unit
         $this->assertEquals('Related CustomersAddresses resources', $result['properties']['addresses']['description']);
     }
 
-    public function testGivenOperationWithOutputWhenParsingThenExtractsOutput(): void
+    public function testGivenOperationWithNormalizationContextWhenParsingThenExtractsNormalizationContext(): void
     {
         // Arrange
         $rawSchema = [
@@ -721,7 +721,7 @@ class SchemaParserTest extends Unit
                 'operations' => [
                     [
                         'type' => 'Post',
-                        'output' => ['gen_id' => false],
+                        'normalizationContext' => ['gen_id' => false],
                     ],
                 ],
             ],
@@ -732,8 +732,8 @@ class SchemaParserTest extends Unit
         $result = $parser->parse($rawSchema, new SplFileInfo(__FILE__));
 
         // Assert
-        $this->assertArrayHasKey('output', $result['operations']['Post']);
-        $this->assertFalse($result['operations']['Post']['output']['gen_id']);
+        $this->assertArrayHasKey('normalizationContext', $result['operations']['Post']);
+        $this->assertFalse($result['operations']['Post']['normalizationContext']['gen_id']);
     }
 
     public function testGivenOperationWithoutOutputWhenParsingThenDoesNotIncludeOutput(): void
@@ -905,6 +905,99 @@ class SchemaParserTest extends Unit
 
         // Assert
         $this->assertEquals(['custom_group'], $result['operations']['Post']['validationGroups']);
+    }
+
+    public function testGivenResourceLevelSecurityFieldsWhenParsingThenExtractsAllSecurityFields(): void
+    {
+        // Arrange
+        $rawSchema = [
+            'resource' => [
+                'name' => 'Customer',
+                'security' => "is_granted('ROLE_USER')",
+                'securityMessage' => 'Access denied',
+                'securityPostDenormalize' => "is_granted('ROLE_ADMIN')",
+                'securityPostDenormalizeMessage' => 'Admin only',
+                'securityPostValidation' => "is_granted('ROLE_SUPER_ADMIN')",
+                'securityPostValidationMessage' => 'Super admin only',
+            ],
+        ];
+        $parser = $this->createSchemaParser();
+
+        // Act
+        $result = $parser->parse($rawSchema, new SplFileInfo(__FILE__));
+
+        // Assert
+        $this->assertEquals("is_granted('ROLE_USER')", $result['security']);
+        $this->assertEquals('Access denied', $result['securityMessage']);
+        $this->assertEquals("is_granted('ROLE_ADMIN')", $result['securityPostDenormalize']);
+        $this->assertEquals('Admin only', $result['securityPostDenormalizeMessage']);
+        $this->assertEquals("is_granted('ROLE_SUPER_ADMIN')", $result['securityPostValidation']);
+        $this->assertEquals('Super admin only', $result['securityPostValidationMessage']);
+    }
+
+    public function testGivenPaginationEnabledWhenParsingThenExtractsPaginationEnabled(): void
+    {
+        // Arrange
+        $rawSchema = ['resource' => ['name' => 'Customer', 'paginationEnabled' => true]];
+        $parser = $this->createSchemaParser();
+
+        // Act
+        $result = $parser->parse($rawSchema, new SplFileInfo(__FILE__));
+
+        // Assert
+        $this->assertTrue($result['paginationEnabled']);
+    }
+
+    public function testGivenPaginationMaximumItemsPerPageWhenParsingThenExtractsPaginationMaximumItemsPerPage(): void
+    {
+        // Arrange
+        $rawSchema = ['resource' => ['name' => 'Customer', 'paginationMaximumItemsPerPage' => 100]];
+        $parser = $this->createSchemaParser();
+
+        // Act
+        $result = $parser->parse($rawSchema, new SplFileInfo(__FILE__));
+
+        // Assert
+        $this->assertEquals(100, $result['paginationMaximumItemsPerPage']);
+    }
+
+    public function testGivenPaginationClientEnabledWhenParsingThenExtractsPaginationClientEnabled(): void
+    {
+        // Arrange
+        $rawSchema = ['resource' => ['name' => 'Customer', 'paginationClientEnabled' => true]];
+        $parser = $this->createSchemaParser();
+
+        // Act
+        $result = $parser->parse($rawSchema, new SplFileInfo(__FILE__));
+
+        // Assert
+        $this->assertTrue($result['paginationClientEnabled']);
+    }
+
+    public function testGivenPaginationClientItemsPerPageWhenParsingThenExtractsPaginationClientItemsPerPage(): void
+    {
+        // Arrange
+        $rawSchema = ['resource' => ['name' => 'Customer', 'paginationClientItemsPerPage' => true]];
+        $parser = $this->createSchemaParser();
+
+        // Act
+        $result = $parser->parse($rawSchema, new SplFileInfo(__FILE__));
+
+        // Assert
+        $this->assertTrue($result['paginationClientItemsPerPage']);
+    }
+
+    public function testGivenPropertyWithDefaultWhenParsingThenExtractsDefault(): void
+    {
+        // Arrange
+        $rawSchema = ['resource' => ['name' => 'Customer', 'properties' => ['status' => ['type' => 'string', 'default' => 'active']]]];
+        $parser = $this->createSchemaParser();
+
+        // Act
+        $result = $parser->parse($rawSchema, new SplFileInfo(__FILE__));
+
+        // Assert
+        $this->assertEquals('active', $result['properties']['status']['default']);
     }
 
     protected function createSchemaParser(string $validationGroupReturnValue = ''): SchemaParser

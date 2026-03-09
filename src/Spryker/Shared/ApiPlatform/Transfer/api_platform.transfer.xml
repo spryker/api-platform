@@ -2,12 +2,34 @@
 <transfers xmlns="spryker:transfer-01" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xsi:schemaLocation="spryker:transfer-01 http://static.spryker.com/transfer-01.xsd">
 
     <transfer name="OauthAccessTokenValidationRequest">
+        <property name="accessToken" type="string"/>
+        <property name="type" type="string"/>
     </transfer>
 
     <transfer name="SprykerFeatureCriteria" strict="true">
     </transfer>
 
     <transfer name="User">
+    </transfer>
+
+    <transfer name="OauthAccessTokenValidationResponse">
+        <property name="oauthUserId" type="string"/>
+        <property name="isValid" type="bool"/>
+        <property name="oauthClientId" type="string"/>
+        <property name="oauthScopes" type="array" singular="oauthScopes"/>
+        <property name="oauthAccessTokenId" type="string"/>
+    </transfer>
+
+    <transfer name="AuditLoggerConfigCriteria" strict="true">
+        <property name="channelName" type="string"/>
+    </transfer>
+
+    <transfer name="AcceptLanguage" strict="true">
+        <property name="type" type="string"/>
+    </transfer>
+
+    <transfer name="Store">
+        <property name="availableLocaleIsoCodes" type="array" singular="availableLocaleCode"/>
     </transfer>
 
 </transfers>

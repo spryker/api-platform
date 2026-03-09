@@ -52,6 +52,10 @@ class JsonApiFormatTransformer implements FormatTransformerInterface
         $newSchemas = new ArrayObject();
 
         foreach ($schemas as $schemaName => $schemaDefinition) {
+            // Case when the resource is configured to not have an ID such as a /token request
+            // Need to be caught here to prevent UI rendering exceptions.
+            $schemaName = str_replace('_noid', '', $schemaName);
+
             if (!$this->isJsonApiSchema($schemaName)) {
                 continue;
             }

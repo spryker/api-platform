@@ -30,11 +30,13 @@ class IdNormalizer implements NormalizerInterface, NormalizerAwareInterface
      */
     public function normalize(mixed $object, ?string $format = null, array $context = []): array|string|int|float|bool|\ArrayObject|null
     {
+        // Recursion guard: prevents this normalizer from being called again
+        // when delegating to the next normalizer in the chain
         $context[static::class] = true;
 
         // When gen_id is disabled, pre-set the IRI with the entity identifier
         // to prevent the JSON:API ItemNormalizer from calling the IRI converter
-        if (($context['output']['gen_id'] ?? true) === false) {
+        if (($context['gen_id'] ?? true) === false) {
             $identifiers = $this->identifiersExtractor->getIdentifiersFromItem($object);
             $identifier = array_pop($identifiers);
 
