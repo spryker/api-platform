@@ -12,6 +12,7 @@ namespace Spryker\ApiPlatform\OpenApi\Decorator;
 use ApiPlatform\OpenApi\Factory\OpenApiFactoryInterface;
 use ApiPlatform\OpenApi\Model\Components;
 use ApiPlatform\OpenApi\Model\MediaType;
+use ApiPlatform\OpenApi\Model\Parameter;
 use ApiPlatform\OpenApi\Model\RequestBody;
 use ApiPlatform\OpenApi\OpenApi;
 use ArrayObject;
@@ -29,6 +30,28 @@ use ArrayObject;
 class OpenApiDecorator implements OpenApiFactoryInterface
 {
     protected const array METHODS_WITH_REQUEST_BODY = ['post', 'put', 'patch'];
+
+    protected const array HTTP_METHODS = ['get', 'post', 'put', 'patch', 'delete'];
+
+    protected const string ACCEPT_LANGUAGE_HEADER_NAME = 'Accept-Language';
+
+    protected const string ACCEPT_LANGUAGE_HEADER_IN = 'header';
+
+    protected const string ACCEPT_LANGUAGE_HEADER_DESCRIPTION = 'Preferred language for the response (e.g., `de`, `en-US`). Uses standard HTTP content negotiation.';
+
+    protected const string ACCEPT_LANGUAGE_HEADER_EXAMPLE = 'de';
+
+    protected const string ACCEPT_LANGUAGE_SCHEMA_TYPE = 'string';
+
+    protected const string SPARSE_FIELDSETS_PARAMETER_NAME = 'fields[]';
+
+    protected const string SPARSE_FIELDSETS_PARAMETER_IN = 'query';
+
+    protected const string SPARSE_FIELDSETS_PARAMETER_DESCRIPTION = 'Allows you to reduce the response to contain only the properties you need. Use sparse fieldsets to select exactly which properties should be returned.';
+
+    protected const string SPARSE_FIELDSETS_SCHEMA_TYPE = 'array';
+
+    protected const string SPARSE_FIELDSETS_ITEMS_TYPE = 'string';
 
     /**
      * @var array<string, \Spryker\ApiPlatform\OpenApi\FormatTransformer\FormatTransformerInterface>
@@ -55,6 +78,8 @@ class OpenApiDecorator implements OpenApiFactoryInterface
 
         $openApi = $this->transformSchemas($openApi);
         $openApi = $this->fixRequestBodyReferences($openApi);
+        $openApi = $this->addAcceptLanguageHeader($openApi);
+        $openApi = $this->addSparseFieldsetsParameter($openApi);
 
         return $openApi;
     }
@@ -184,5 +209,110 @@ class OpenApiDecorator implements OpenApiFactoryInterface
         }
 
         return $newContent;
+    }
+
+    /**
+     * Adds Accept-Language header parameter to all operations in the OpenAPI spec.
+     */
+    protected function addAcceptLanguageHeader(OpenApi $openApi): OpenApi
+    {
+        $paths = $openApi->getPaths();
+        $acceptLanguageParameter = $this->createAcceptLanguageParameter();
+
+        foreach ($paths->getPaths() as $path => $pathItem) {
+            foreach (static::HTTP_METHODS as $method) {
+                $getter = sprintf('get%s', ucfirst($method));
+                $setter = sprintf('with%s', ucfirst($method));
+
+                $operation = $pathItem->$getter();
+
+                if ($operation === null) {
+                    continue;
+                }
+
+                $parameters = $operation->getParameters();
+                $parameters[] = $acceptLanguageParameter;
+
+                $pathItem = $pathItem->$setter(
+                    $operation->withParameters($parameters),
+                );
+            }
+
+            $paths->addPath($path, $pathItem);
+        }
+
+        return $openApi;
+    }
+
+    protected function createAcceptLanguageParameter(): Parameter
+    {
+        return new Parameter(
+            name: static::ACCEPT_LANGUAGE_HEADER_NAME,
+            in: static::ACCEPT_LANGUAGE_HEADER_IN,
+            description: static::ACCEPT_LANGUAGE_HEADER_DESCRIPTION,
+            required: false,
+            schema: ['type' => static::ACCEPT_LANGUAGE_SCHEMA_TYPE],
+            example: static::ACCEPT_LANGUAGE_HEADER_EXAMPLE,
+        );
+    }
+
+    /**
+     * Adds sparse fieldsets (fields[]) query parameter to all GET operations that don't already have it.
+     */
+    protected function addSparseFieldsetsParameter(OpenApi $openApi): OpenApi
+    {
+        $paths = $openApi->getPaths();
+        $sparseFieldsetsParameter = $this->createSparseFieldsetsParameter();
+
+        foreach ($paths->getPaths() as $path => $pathItem) {
+            $operation = $pathItem->getGet();
+
+            if ($operation === null) {
+                continue;
+            }
+
+            if ($this->hasSparseFieldsetsParameter($operation->getParameters())) {
+                continue;
+            }
+
+            $parameters = $operation->getParameters();
+            $parameters[] = $sparseFieldsetsParameter;
+
+            $pathItem = $pathItem->withGet(
+                $operation->withParameters($parameters),
+            );
+
+            $paths->addPath($path, $pathItem);
+        }
+
+        return $openApi;
+    }
+
+    /**
+     * @param array<\ApiPlatform\OpenApi\Model\Parameter> $parameters
+     */
+    protected function hasSparseFieldsetsParameter(array $parameters): bool
+    {
+        foreach ($parameters as $parameter) {
+            if ($parameter->getName() === static::SPARSE_FIELDSETS_PARAMETER_NAME) {
+                return true;
+            }
+        }
+
+        return false;
+    }
+
+    protected function createSparseFieldsetsParameter(): Parameter
+    {
+        return new Parameter(
+            name: static::SPARSE_FIELDSETS_PARAMETER_NAME,
+            in: static::SPARSE_FIELDSETS_PARAMETER_IN,
+            description: static::SPARSE_FIELDSETS_PARAMETER_DESCRIPTION,
+            required: false,
+            schema: [
+                'type' => static::SPARSE_FIELDSETS_SCHEMA_TYPE,
+                'items' => ['type' => static::SPARSE_FIELDSETS_ITEMS_TYPE],
+            ],
+        );
     }
 }

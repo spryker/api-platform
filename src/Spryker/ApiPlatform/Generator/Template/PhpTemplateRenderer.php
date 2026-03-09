@@ -186,11 +186,42 @@ PHP;
                 continue;
             }
 
-            $propertyLines[] = "    public ?{$property['phpType']} \${$property['name']} = null;";
+            $defaultValue = $this->formatPropertyDefault($property);
+            $propertyLines[] = "    public ?{$property['phpType']} \${$property['name']} = {$defaultValue};";
             $rendered[] = implode("\n", $propertyLines);
         }
 
         return implode("\n\n", $rendered);
+    }
+
+    /**
+     * @param array<string, mixed> $property
+     */
+    protected function formatPropertyDefault(array $property): string
+    {
+        if (!isset($property['hasDefault']) || $property['hasDefault'] !== true) {
+            return 'null';
+        }
+
+        $default = $property['default'];
+
+        if ($default === null) {
+            return 'null';
+        }
+
+        if (is_bool($default)) {
+            return $default ? 'true' : 'false';
+        }
+
+        if (is_int($default) || is_float($default)) {
+            return (string)$default;
+        }
+
+        if (is_string($default)) {
+            return sprintf("'%s'", addslashes($default));
+        }
+
+        return 'null';
     }
 
     /**
@@ -275,7 +306,8 @@ PHP;
                 continue;
             }
 
-            $assignments[] = "        \$instance->{$property['name']} = \$data['{$property['name']}'] ?? null;";
+            $defaultValue = $this->formatPropertyDefault($property);
+            $assignments[] = "        \$instance->{$property['name']} = \$data['{$property['name']}'] ?? {$defaultValue};";
         }
 
         $assignmentsStr = implode("\n", $assignments);

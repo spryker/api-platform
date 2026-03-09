@@ -10,11 +10,14 @@ declare(strict_types=1);
 namespace Symfony\Component\DependencyInjection\Loader\Configurator;
 
 use ApiPlatform\JsonApi\State\JsonApiProvider;
+use ApiPlatform\Serializer\Filter\PropertyFilter;
 use ApiPlatform\State\ErrorProvider;
 use Spryker\ApiPlatform\Cache\ApiResourceCacheWarmer;
 use Spryker\ApiPlatform\Command\ApiDebugCommand;
 use Spryker\ApiPlatform\Command\ApiGenerateCommand;
 use Spryker\ApiPlatform\Configuration\ApiPlatformConfig;
+use Spryker\ApiPlatform\EventSubscriber\AcceptLanguageLocaleSubscriber;
+use Spryker\ApiPlatform\EventSubscriber\OAuthExceptionSubscriber;
 use Spryker\ApiPlatform\Generator\ClassGenerator;
 use Spryker\ApiPlatform\Generator\ConstraintFormatter;
 use Spryker\ApiPlatform\Generator\FqcnConstraintResolver;
@@ -68,10 +71,14 @@ use Spryker\ApiPlatform\Schema\Validator\SchemaValidator;
 use Spryker\ApiPlatform\Schema\Validator\SchemaValidatorInterface;
 use Spryker\ApiPlatform\Serializer\Encoder\CXmlEncoder;
 use Spryker\ApiPlatform\Serializer\Normalizer\CXmlNormalizer;
+use Spryker\ApiPlatform\Serializer\TranslatingConstraintViolationListNormalizer;
+use Spryker\ApiPlatform\State\TranslatingErrorProvider;
+use Symfony\Component\DependencyInjection\ContainerInterface;
 use Symfony\Component\ExpressionLanguage\ExpressionLanguage;
 use Symfony\Component\Filesystem\Filesystem;
 use Symfony\Component\PropertyAccess\PropertyAccess;
 use Symfony\Component\PropertyAccess\PropertyAccessorInterface;
+use Symfony\Component\Security\Core\Authorization\ExpressionLanguage as SecurityExpressionLanguage;
 
 return static function (ContainerConfigurator $container): void {
     $services = $container->services()
@@ -142,8 +149,8 @@ return static function (ContainerConfigurator $container): void {
 
     $services->set(MergeValidationRule::class);
 
-    // Dependencies
-    $services->set(ExpressionLanguage::class);
+    // Dependencies: Security-aware ExpressionLanguage auto-registers is_granted() and other security functions
+    $services->set(ExpressionLanguage::class, SecurityExpressionLanguage::class);
 
     $services->set(PropertyAccessorInterface::class)
         ->factory([PropertyAccess::class, 'createPropertyAccessor']);
@@ -235,6 +242,23 @@ return static function (ContainerConfigurator $container): void {
             ->tag('api_platform.state_provider', ['key' => 'api_platform.state.error_provider']);
     }
 
+    // Convert OAuthServerException to HttpException with correct status code
+    $services->set(OAuthExceptionSubscriber::class);
+
+    // Locale resolution from Accept-Language header
+    $services->set(AcceptLanguageLocaleSubscriber::class);
+
+    // Translate error messages using Spryker glossary
+    $services->set(TranslatingErrorProvider::class)
+        ->autoconfigure(false)
+        ->decorate('api_platform.state.error_provider')
+        ->arg('$decorated', service('.inner'));
+
+    // Translate validation constraint violation messages using Spryker glossary
+    $services->set(TranslatingConstraintViolationListNormalizer::class)
+        ->autoconfigure(false)
+        ->decorate('api_platform.jsonapi.normalizer.constraint_violation_list', null, 0, ContainerInterface::IGNORE_ON_INVALID_REFERENCE);
+
     // Relationship system (?include)
     // Note: api_platform.relationships parameter is populated by RelationshipConfigurationPass compiler pass
     $services->set(ApiPlatformRelationshipResolver::class)
@@ -242,6 +266,14 @@ return static function (ContainerConfigurator $container): void {
         ->arg('$providerLocator', service('service_container'));
 
     $services->alias(ApiPlatformRelationshipResolverInterface::class, ApiPlatformRelationshipResolver::class);
+
+    // Sparse fieldsets: enables ?fields[resourceType]=attr1,attr2 for JSON:API
+    $services->set('spryker.api_platform.filter.property', PropertyFilter::class)
+        ->arg('$parameterName', 'fields')
+        ->arg('$overrideDefaultProperties', true)
+        ->arg('$whitelist', null)
+        ->arg('$nameConverter', service('api_platform.name_converter')->nullOnInvalid())
+        ->tag('api_platform.filter');
 
     // Enable API Platform's JsonApiProvider to parse ?include= parameter
     $services->set(JsonApiProvider::class)

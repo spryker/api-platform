@@ -12,9 +12,31 @@ namespace Spryker\ApiPlatform\Schema\Validator\Rules;
 use Symfony\Component\ExpressionLanguage\ExpressionLanguage;
 use Symfony\Component\ExpressionLanguage\SyntaxError;
 
+/**
+ * Validates that security expressions in resource schemas are syntactically
+ * correct by linting them against the variables available at runtime
+ * (token, user, roles, request, etc.).
+ */
 class SecurityExpressionValidationRule implements ValidationRuleInterface
 {
     protected const array VALID_OPERATIONS = ['Get', 'GetCollection', 'Post', 'Put', 'Patch', 'Delete'];
+
+    /**
+     * Variable names available at runtime in security expressions.
+     *
+     * @see \ApiPlatform\Symfony\Security\ResourceAccessChecker::isGranted()
+     * @see \ApiPlatform\Symfony\Security\State\AccessCheckerProvider::provide()
+     */
+    protected const array EXPRESSION_VARIABLE_NAMES = [
+        'token',
+        'user',
+        'roles',
+        'object',
+        'previous_object',
+        'request',
+        'trust_resolver',
+        'auth_checker',
+    ];
 
     public function __construct(
         protected readonly ExpressionLanguage $expressionLanguage,
@@ -78,7 +100,7 @@ class SecurityExpressionValidationRule implements ValidationRuleInterface
         }
 
         try {
-            $this->expressionLanguage->parse($security, []);
+            $this->expressionLanguage->lint($security, static::EXPRESSION_VARIABLE_NAMES);
         } catch (SyntaxError $e) {
             return [
                 sprintf(

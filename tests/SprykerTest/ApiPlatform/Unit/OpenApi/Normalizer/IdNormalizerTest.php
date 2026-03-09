@@ -57,7 +57,7 @@ class IdNormalizerTest extends Unit
 
         // Act
         $result = $normalizer->normalize($object, 'jsonapi', [
-            'output' => ['gen_id' => false],
+            'gen_id' => false,
         ]);
 
         // Assert
@@ -126,9 +126,7 @@ class IdNormalizerTest extends Unit
         $normalizer->setNormalizer($innerNormalizer);
 
         // Act
-        $result = $normalizer->normalize($object, 'jsonapi', [
-            'output' => [],
-        ]);
+        $result = $normalizer->normalize($object, 'jsonapi', []);
 
         // Assert
         $this->assertEquals('entity-id', $result['data']['id']);

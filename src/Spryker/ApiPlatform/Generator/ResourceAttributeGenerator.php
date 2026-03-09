@@ -52,6 +52,8 @@ namespace Spryker\ApiPlatform\Generator;
  */
 class ResourceAttributeGenerator
 {
+    protected const int OPERATION_PARAM_INDENT_LEVEL = 3;
+
     public function __construct(protected OpenApiOperationBuilder $openApiOperationBuilder)
     {
     }
@@ -76,7 +78,9 @@ class ResourceAttributeGenerator
         $attributeParts = [];
 
         if ($operationsParts !== []) {
-            $attributeParts[] = 'operations: [' . implode(', ', $operationsParts) . ']';
+            $indent2 = $this->indent(2);
+            $operationsContent = $indent2 . implode(",\n" . $indent2, $operationsParts);
+            $attributeParts[] = sprintf("operations: [\n%s,\n%s]", $operationsContent, $this->indent(1));
         }
 
         if (isset($schema['shortName']) && $schema['shortName'] !== '') {
@@ -102,13 +106,66 @@ class ResourceAttributeGenerator
             $attributeParts[] = sprintf('paginationItemsPerPage: %d', $schema['paginationItemsPerPage']);
         }
 
+        if (isset($schema['paginationEnabled'])) {
+            $attributeParts[] = sprintf('paginationEnabled: %s', $schema['paginationEnabled'] ? 'true' : 'false');
+        }
+
+        if (isset($schema['paginationMaximumItemsPerPage'])) {
+            $attributeParts[] = sprintf('paginationMaximumItemsPerPage: %d', $schema['paginationMaximumItemsPerPage']);
+        }
+
+        if (isset($schema['paginationClientEnabled'])) {
+            $attributeParts[] = sprintf('paginationClientEnabled: %s', $schema['paginationClientEnabled'] ? 'true' : 'false');
+        }
+
+        if (isset($schema['paginationClientItemsPerPage'])) {
+            $attributeParts[] = sprintf('paginationClientItemsPerPage: %s', $schema['paginationClientItemsPerPage'] ? 'true' : 'false');
+        }
+
+        if (isset($schema['security']) && is_string($schema['security'])) {
+            $escapedSecurity = str_replace("'", "\\'", $schema['security']);
+            $attributeParts[] = sprintf("security: '%s'", $escapedSecurity);
+        }
+
+        if (isset($schema['securityMessage']) && is_string($schema['securityMessage'])) {
+            $escapedSecurityMessage = str_replace("'", "\\'", $schema['securityMessage']);
+            $attributeParts[] = sprintf("securityMessage: '%s'", $escapedSecurityMessage);
+        }
+
+        if (isset($schema['securityPostDenormalize']) && is_string($schema['securityPostDenormalize'])) {
+            $escapedSecurityPostDenormalize = str_replace("'", "\\'", $schema['securityPostDenormalize']);
+            $attributeParts[] = sprintf("securityPostDenormalize: '%s'", $escapedSecurityPostDenormalize);
+        }
+
+        if (isset($schema['securityPostDenormalizeMessage']) && is_string($schema['securityPostDenormalizeMessage'])) {
+            $escapedSecurityPostDenormalizeMessage = str_replace("'", "\\'", $schema['securityPostDenormalizeMessage']);
+            $attributeParts[] = sprintf("securityPostDenormalizeMessage: '%s'", $escapedSecurityPostDenormalizeMessage);
+        }
+
+        if (isset($schema['securityPostValidation']) && is_string($schema['securityPostValidation'])) {
+            $escapedSecurityPostValidation = str_replace("'", "\\'", $schema['securityPostValidation']);
+            $attributeParts[] = sprintf("securityPostValidation: '%s'", $escapedSecurityPostValidation);
+        }
+
+        if (isset($schema['securityPostValidationMessage']) && is_string($schema['securityPostValidationMessage'])) {
+            $escapedSecurityPostValidationMessage = str_replace("'", "\\'", $schema['securityPostValidationMessage']);
+            $attributeParts[] = sprintf("securityPostValidationMessage: '%s'", $escapedSecurityPostValidationMessage);
+        }
+
+        if (isset($schema['openapiContext']) && $schema['openapiContext'] !== []) {
+            $attributeParts[] = sprintf('openapiContext: %s', $this->formatArrayParameter($schema['openapiContext']));
+        }
+
         $this->addOperationUseStatements($schema, $operations, $uses);
 
         if ($attributeParts === []) {
             return '#[ApiResource]';
         }
 
-        return '#[ApiResource(' . implode(', ', $attributeParts) . ')]';
+        $indent1 = $this->indent(1);
+        $content = $indent1 . implode(",\n" . $indent1, $attributeParts);
+
+        return sprintf("#[ApiResource(\n%s,\n)]", $content);
     }
 
     protected function extractShortClassName(string $fullyQualifiedClassName): string
@@ -120,10 +177,11 @@ class ResourceAttributeGenerator
 
     /**
      * @param array<string, mixed> $operation
+     * @param int $indentLevel
      *
      * @return array<string, mixed>
      */
-    protected function buildOperationParameters(array $operation): array
+    protected function buildOperationParameters(array $operation, int $indentLevel): array
     {
         $parameters = [];
 
@@ -132,7 +190,7 @@ class ResourceAttributeGenerator
         }
 
         if (isset($operation['uriVariables']) && is_array($operation['uriVariables'])) {
-            $parameters['uriVariables'] = $this->buildUriVariablesParameter($operation['uriVariables']);
+            $parameters['uriVariables'] = $this->buildUriVariablesParameter($operation['uriVariables'], $indentLevel);
         }
 
         if (isset($operation['security']) && is_string($operation['security'])) {
@@ -163,8 +221,16 @@ class ResourceAttributeGenerator
             $parameters['securityPostValidationMessage'] = $operation['securityPostValidationMessage'];
         }
 
+        if (isset($operation['processor']) && is_string($operation['processor'])) {
+            $parameters['processor'] = $operation['processor'];
+        }
+
         if (isset($operation['output']) && is_array($operation['output'])) {
             $parameters['output'] = $operation['output'];
+        }
+
+        if (isset($operation['normalizationContext']) && is_array($operation['normalizationContext'])) {
+            $parameters['normalizationContext'] = $operation['normalizationContext'];
         }
 
         return $parameters;
@@ -172,20 +238,29 @@ class ResourceAttributeGenerator
 
     /**
      * @param array<string, mixed> $parameters
+     * @param int $indentLevel
      *
      * @return string
      */
-    protected function formatOperationParameters(array $parameters): string
+    protected function formatOperationParameters(array $parameters, int $indentLevel): string
     {
         if ($parameters === []) {
             return '';
         }
 
         $parts = [];
+        $indent = $this->indent($indentLevel);
 
         foreach ($parameters as $key => $value) {
             if (($key === 'uriVariables' || $key === 'openapi') && is_string($value)) {
                 $parts[] = sprintf('%s: %s', $key, $value);
+
+                continue;
+            }
+
+            if ($key === 'processor' && is_string($value)) {
+                $shortName = $this->extractShortClassName($value);
+                $parts[] = sprintf('%s: %s::class', $key, $shortName);
 
                 continue;
             }
@@ -214,7 +289,7 @@ class ResourceAttributeGenerator
             }
         }
 
-        return implode(', ', $parts);
+        return $indent . implode(",\n" . $indent, $parts);
     }
 
     /**
@@ -248,20 +323,26 @@ class ResourceAttributeGenerator
 
     /**
      * @param array<string, mixed> $uriVariables
+     * @param int $keyIndentLevel The indent level of the uriVariables key
      *
      * @return string
      */
-    protected function buildUriVariablesParameter(array $uriVariables): string
+    protected function buildUriVariablesParameter(array $uriVariables, int $keyIndentLevel): string
     {
         $parts = [];
+        $itemIndent = $this->indent($keyIndentLevel + 1);
+        $linkParamIndent = $this->indent($keyIndentLevel + 2);
 
         foreach ($uriVariables as $variableName => $config) {
             $linkParameters = $this->buildLinkParameters($variableName, $config);
-            $linkCode = sprintf('new Link(%s)', implode(', ', $linkParameters));
+            $linkParamsContent = $linkParamIndent . implode(",\n" . $linkParamIndent, $linkParameters);
+            $linkCode = sprintf("new Link(\n%s,\n%s)", $linkParamsContent, $itemIndent);
             $parts[] = sprintf("'%s' => %s", $variableName, $linkCode);
         }
 
-        return '[' . implode(', ', $parts) . ']';
+        $content = $itemIndent . implode(",\n" . $itemIndent, $parts);
+
+        return sprintf("[\n%s,\n%s]", $content, $this->indent($keyIndentLevel));
     }
 
     /**
@@ -307,7 +388,7 @@ class ResourceAttributeGenerator
      */
     protected function generateOperationAttribute(array $schema, string $type, array $operation): string
     {
-        $baseParameters = $this->buildOperationParameters($operation);
+        $baseParameters = $this->buildOperationParameters($operation, static::OPERATION_PARAM_INDENT_LEVEL);
 
         if (isset($operation['validationGroups']) && is_array($operation['validationGroups'])) {
             $validationGroups = $operation['validationGroups'];
@@ -319,26 +400,28 @@ class ResourceAttributeGenerator
         $needsOpenApiOperation = in_array($type, ['Post', 'Patch', 'Put'], true);
 
         if ($needsOpenApiOperation) {
-            $openApiOperation = $this->openApiOperationBuilder->generateOpenApiOperation($schema, $operation, $type, $tags);
+            $openApiOperation = $this->openApiOperationBuilder->generateOpenApiOperation(
+                $schema,
+                $operation,
+                $type,
+                $tags,
+                static::OPERATION_PARAM_INDENT_LEVEL,
+            );
 
-            if (str_contains($openApiOperation, 'openapi:')) {
-                preg_match('/openapi:\s*(.+)\)\)$/', $openApiOperation, $matches);
-
-                if (isset($matches[1])) {
-                    $baseParameters['openapi'] = $matches[1] . ')';
-                }
+            if ($openApiOperation !== '') {
+                $baseParameters['openapi'] = $openApiOperation;
             }
         } elseif ($tags !== null && $tags !== []) {
-            $baseParameters['openapi'] = $this->buildOpenApiOperationWithTags($tags);
+            $baseParameters['openapi'] = $this->buildOpenApiOperationWithTags($tags, static::OPERATION_PARAM_INDENT_LEVEL);
         }
 
         if ($baseParameters === []) {
             return sprintf('new %s()', $type);
         }
 
-        $parametersString = $this->formatOperationParameters($baseParameters);
+        $parametersString = $this->formatOperationParameters($baseParameters, static::OPERATION_PARAM_INDENT_LEVEL);
 
-        return sprintf('new %s(%s)', $type, $parametersString);
+        return sprintf("new %s(\n%s,\n%s)", $type, $parametersString, $this->indent(2));
     }
 
     /**
@@ -362,17 +445,21 @@ class ResourceAttributeGenerator
 
     /**
      * @param array<string> $tags
+     * @param int $indentLevel The indent level of the openapi key
      *
      * @return string
      */
-    protected function buildOpenApiOperationWithTags(array $tags): string
+    protected function buildOpenApiOperationWithTags(array $tags, int $indentLevel): string
     {
         $formattedTags = array_map(
             fn (string $tag): string => sprintf("'%s'", str_replace("'", "\\'", $tag)),
             $tags,
         );
 
-        return sprintf('new Operation(tags: [%s])', implode(', ', $formattedTags));
+        $paramIndent = $this->indent($indentLevel + 1);
+        $closeIndent = $this->indent($indentLevel);
+
+        return sprintf("new Operation(\n%stags: [%s],\n%s)", $paramIndent, implode(', ', $formattedTags), $closeIndent);
     }
 
     /**
@@ -472,5 +559,36 @@ class ResourceAttributeGenerator
         if ($needsOperationImport) {
             $uses[] = 'ApiPlatform\OpenApi\Model\Operation';
         }
+
+        $this->collectOperationProcessorUseStatements($operations, $uses);
+    }
+
+    /**
+     * @param array<string, mixed> $operations
+     * @param array<string> $uses
+     */
+    protected function collectOperationProcessorUseStatements(array $operations, array &$uses): void
+    {
+        $collected = [];
+
+        foreach ($operations as $operation) {
+            if (!isset($operation['processor']) || !is_string($operation['processor'])) {
+                continue;
+            }
+
+            $processorFqcn = $operation['processor'];
+
+            if (!str_contains($processorFqcn, '\\') || isset($collected[$processorFqcn])) {
+                continue;
+            }
+
+            $collected[$processorFqcn] = true;
+            $uses[] = $processorFqcn;
+        }
+    }
+
+    protected function indent(int $level): string
+    {
+        return str_repeat('    ', $level);
     }
 }

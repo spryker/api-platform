@@ -9,8 +9,10 @@
         "spryker/transfer": "Required for strict transfer properties.",
         "symfony/config": "Required for the ApiPlatform.",
         "symfony/console": "Required for the ApiPlatform.",
+        "symfony/expression-language": "Required for the ApiPlatform.",
         "symfony/finder": "Required for the ApiPlatform.",
         "symfony/http-kernel": "Required for the ApiPlatform.",
+        "symfony/security-bundle": "Required for the ApiPlatform.",
         "symfony/yaml": "Required for the ApiPlatform."
     }
 }

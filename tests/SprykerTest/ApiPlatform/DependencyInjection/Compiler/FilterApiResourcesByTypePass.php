@@ -93,6 +93,11 @@ class FilterApiResourcesByTypePass implements CompilerPassInterface
             return false;
         }
 
+        // Skip ApiPlatform infrastructure services — these are not module-specific API type providers
+        if (str_starts_with($class, 'Spryker\\ApiPlatform\\')) {
+            return false;
+        }
+
         // If it is a provider but not from the expected API type, remove it
         if (!str_ends_with($class, $expectedProviderNamespace)) {
             return true;
@@ -107,6 +112,11 @@ class FilterApiResourcesByTypePass implements CompilerPassInterface
 
         // Skip everything that is not a processor and not from Spryker
         if (!str_ends_with($class, 'Processor') || !str_starts_with($class, 'Spryker\\')) {
+            return false;
+        }
+
+        // Skip ApiPlatform infrastructure services — these are not module-specific API type processors
+        if (str_starts_with($class, 'Spryker\\ApiPlatform\\')) {
             return false;
         }
 

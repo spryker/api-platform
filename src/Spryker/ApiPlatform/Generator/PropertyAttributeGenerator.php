@@ -93,10 +93,26 @@ class PropertyAttributeGenerator
         }
 
         if ($apiPropertyParts !== []) {
-            $attributes[] = '#[ApiProperty(' . implode(', ', $apiPropertyParts) . ')]';
+            $attributes[] = $this->formatApiPropertyAttribute($apiPropertyParts);
         }
 
         return implode("\n    ", $attributes);
+    }
+
+    /**
+     * @param array<string> $apiPropertyParts
+     */
+    protected function formatApiPropertyAttribute(array $apiPropertyParts): string
+    {
+        if (count($apiPropertyParts) < 3) {
+            return '#[ApiProperty(' . implode(', ', $apiPropertyParts) . ')]';
+        }
+
+        $indent2 = $this->indent(2);
+        $indent1 = $this->indent(1);
+        $content = $indent2 . implode(",\n" . $indent2, $apiPropertyParts);
+
+        return sprintf("#[ApiProperty(\n%s,\n%s)]", $content, $indent1);
     }
 
     /**
@@ -163,5 +179,10 @@ class PropertyAttributeGenerator
         );
 
         return '[' . implode(', ', $items) . ']';
+    }
+
+    protected function indent(int $level): string
+    {
+        return str_repeat('    ', $level);
     }
 }

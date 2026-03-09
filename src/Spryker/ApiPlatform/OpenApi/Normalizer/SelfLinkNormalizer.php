@@ -24,6 +24,8 @@ class SelfLinkNormalizer implements NormalizerInterface, NormalizerAwareInterfac
      */
     public function normalize(mixed $object, ?string $format = null, array $context = []): array|string|int|float|bool|\ArrayObject|null
     {
+        // Recursion guard: prevents this normalizer from being called again
+        // when delegating to the next normalizer in the chain
         $context[static::class] = true;
 
         $data = $this->normalizer->normalize($object, $format, $context);
@@ -34,7 +36,7 @@ class SelfLinkNormalizer implements NormalizerInterface, NormalizerAwareInterfac
 
         // Skip self link generation when IRI generation is disabled
         // because the id is an entity identifier, not a valid URL
-        if (($context['output']['gen_id'] ?? true) === false) {
+        if (($context['gen_id'] ?? true) === false) {
             return $data;
         }
 
