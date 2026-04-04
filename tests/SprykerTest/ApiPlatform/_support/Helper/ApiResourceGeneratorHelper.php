@@ -223,6 +223,6 @@ class ApiResourceGeneratorHelper
 
     protected function writeln(string $message): void
     {
-        echo sprintf("[ApiResourceGenerator] %s\n", $message);
+        fwrite(STDERR, sprintf("[ApiResourceGenerator] %s\n", $message));
     }
 }
