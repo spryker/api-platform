@@ -11,13 +11,21 @@ namespace Symfony\Component\DependencyInjection\Loader\Configurator;
 
 use ApiPlatform\JsonApi\State\JsonApiProvider;
 use ApiPlatform\Serializer\Filter\PropertyFilter;
+use ApiPlatform\Serializer\SerializerContextBuilder;
 use ApiPlatform\State\ErrorProvider;
 use Spryker\ApiPlatform\Cache\ApiResourceCacheWarmer;
 use Spryker\ApiPlatform\Command\ApiDebugCommand;
 use Spryker\ApiPlatform\Command\ApiGenerateCommand;
 use Spryker\ApiPlatform\Configuration\ApiPlatformConfig;
 use Spryker\ApiPlatform\EventSubscriber\AcceptLanguageLocaleSubscriber;
+use Spryker\ApiPlatform\EventSubscriber\ETagResponseSubscriber;
+use Spryker\ApiPlatform\EventSubscriber\GlueApiExceptionSubscriber;
+use Spryker\ApiPlatform\EventSubscriber\JsonApiContentTypeCleanupSubscriber;
+use Spryker\ApiPlatform\EventSubscriber\JsonApiRelationshipNormalizerSubscriber;
+use Spryker\ApiPlatform\EventSubscriber\JsonApiRequestValidatorSubscriber;
+use Spryker\ApiPlatform\EventSubscriber\JsonApiResolvedRelationshipSubscriber;
 use Spryker\ApiPlatform\EventSubscriber\OAuthExceptionSubscriber;
+use Spryker\ApiPlatform\EventSubscriber\PaginationLinksResponseSubscriber;
 use Spryker\ApiPlatform\Generator\ClassGenerator;
 use Spryker\ApiPlatform\Generator\ConstraintFormatter;
 use Spryker\ApiPlatform\Generator\FqcnConstraintResolver;
@@ -37,6 +45,7 @@ use Spryker\ApiPlatform\OpenApi\Normalizer\EmptyRelationshipNormalizer;
 use Spryker\ApiPlatform\OpenApi\Normalizer\IdNormalizer;
 use Spryker\ApiPlatform\OpenApi\Normalizer\LinksPositionNormalizer;
 use Spryker\ApiPlatform\OpenApi\Normalizer\SelfLinkNormalizer;
+use Spryker\ApiPlatform\Processor\RelationshipProcessor;
 use Spryker\ApiPlatform\Provider\RelationshipProvider;
 use Spryker\ApiPlatform\Relationship\ApiPlatformRelationshipResolver;
 use Spryker\ApiPlatform\Relationship\ApiPlatformRelationshipResolverInterface;
@@ -92,7 +101,8 @@ return static function (ContainerConfigurator $container): void {
         ->arg('$cacheDir', param('spryker_api_platform.cache_dir'))
         ->arg('$generatedDir', param('spryker_api_platform.generated_dir'))
         ->arg('$apiTypes', param('spryker_api_platform.api_types'))
-        ->arg('$debug', param('spryker_api_platform.debug'));
+        ->arg('$debug', param('spryker_api_platform.debug'))
+        ->arg('$excludedPathFragments', param('spryker_api_platform.excluded_path_fragments'));
 
     // Schema Loaders
     $services->set(YamlSchemaLoader::class)
@@ -240,10 +250,36 @@ return static function (ContainerConfigurator $container): void {
             ->arg('$resourceClassResolver', service('api_platform.resource_class_resolver'))
             ->arg('$resourceMetadataCollectionFactory', service('api_platform.metadata.resource.metadata_collection_factory'))
             ->tag('api_platform.state_provider', ['key' => 'api_platform.state.error_provider']);
+
+        $services->set('api_platform.serializer.context_builder', SerializerContextBuilder::class)
+            ->arg(0, service('api_platform.metadata.resource.metadata_collection_factory'))
+            ->arg('$debug', true);
     }
+
+    // Add ETag response header when providers store etag value in request attributes
+    $services->set(ETagResponseSubscriber::class);
+
+    // Convert GlueApiException to JSON:API error response with Glue error codes
+    $services->set(GlueApiExceptionSubscriber::class);
 
     // Convert OAuthServerException to HttpException with correct status code
     $services->set(OAuthExceptionSubscriber::class);
+
+    // Validate JSON:API request body (type field, resource ID presence)
+    $services->set(JsonApiRequestValidatorSubscriber::class);
+
+    // Strip charset and fix self-link query string order
+    $services->set(JsonApiContentTypeCleanupSubscriber::class);
+
+    // Normalize relationship keys (camelCase to kebab-case) and IRI IDs to entity IDs
+    $services->set(JsonApiRelationshipNormalizerSubscriber::class);
+
+    // Inject resolver-based relationship data into JSON:API responses
+    $services->set(JsonApiResolvedRelationshipSubscriber::class)
+        ->arg('$normalizer', service('serializer'));
+
+    // Add pagination links (first, last, prev, next) for resources with internal pagination
+    $services->set(PaginationLinksResponseSubscriber::class);
 
     // Locale resolution from Accept-Language header
     $services->set(AcceptLanguageLocaleSubscriber::class);
@@ -257,13 +293,17 @@ return static function (ContainerConfigurator $container): void {
     // Translate validation constraint violation messages using Spryker glossary
     $services->set(TranslatingConstraintViolationListNormalizer::class)
         ->autoconfigure(false)
-        ->decorate('api_platform.jsonapi.normalizer.constraint_violation_list', null, 0, ContainerInterface::IGNORE_ON_INVALID_REFERENCE);
+        ->decorate('api_platform.jsonapi.normalizer.constraint_violation_list', null, 0, ContainerInterface::IGNORE_ON_INVALID_REFERENCE)
+        ->arg('$decorated', service('.inner'));
 
     // Relationship system (?include)
-    // Note: api_platform.relationships parameter is populated by RelationshipConfigurationPass compiler pass
+    // Note: api_platform.relationships parameter and scoped locators are populated by RelationshipConfigurationPass.
+    // Empty service locators are provided as defaults so the service is valid before the compiler pass runs.
+    // RelationshipConfigurationPass replaces these with scoped locators containing the actual provider/resolver services.
     $services->set(ApiPlatformRelationshipResolver::class)
         ->arg('$relationships', param('api_platform.relationships'))
-        ->arg('$providerLocator', service('service_container'));
+        ->arg('$providerLocator', service_locator([]))
+        ->arg('$resolverLocator', service_locator([]));
 
     $services->alias(ApiPlatformRelationshipResolverInterface::class, ApiPlatformRelationshipResolver::class);
 
@@ -285,8 +325,13 @@ return static function (ContainerConfigurator $container): void {
         ->autoconfigure(false)
         ->decorate(JsonApiProvider::class)
         ->arg('$decorated', service('.inner'))
-        ->arg('$relationshipResolver', service(ApiPlatformRelationshipResolverInterface::class))
-        ->arg('$requestStack', service('request_stack'));
+        ->arg('$relationshipResolver', service(ApiPlatformRelationshipResolverInterface::class));
+
+    $services->set(RelationshipProcessor::class)
+        ->autoconfigure(false)
+        ->decorate('api_platform.state_processor.locator')
+        ->arg('$decorated', service('.inner'))
+        ->arg('$relationshipResolver', service(ApiPlatformRelationshipResolverInterface::class));
 
     /**
      * We want a specific format for the JSON:API response.

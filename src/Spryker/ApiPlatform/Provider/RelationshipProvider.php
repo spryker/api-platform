@@ -12,22 +12,21 @@ namespace Spryker\ApiPlatform\Provider;
 use ApiPlatform\Metadata\Operation;
 use ApiPlatform\State\ProviderInterface;
 use Spryker\ApiPlatform\Relationship\ApiPlatformRelationshipResolverInterface;
-use Symfony\Component\HttpFoundation\RequestStack;
+use Symfony\Component\HttpFoundation\Request;
 
 /**
  * @implements \ApiPlatform\State\ProviderInterface<object>
  */
 class RelationshipProvider implements ProviderInterface
 {
+    protected const string REQUEST_ATTRIBUTE_RESOLVED_RELATIONSHIPS = '_spryker_resolved_relationships';
+
     /**
      * @param \ApiPlatform\State\ProviderInterface<object> $decorated
-     * @param \Spryker\ApiPlatform\Relationship\ApiPlatformRelationshipResolverInterface $relationshipResolver
-     * @param \Symfony\Component\HttpFoundation\RequestStack $requestStack
      */
     public function __construct(
         protected ProviderInterface $decorated,
         protected ApiPlatformRelationshipResolverInterface $relationshipResolver,
-        protected RequestStack $requestStack,
     ) {
     }
 
@@ -46,17 +45,10 @@ class RelationshipProvider implements ProviderInterface
             return null;
         }
 
-        // Ensure request is in context
-        $request = $this->requestStack->getCurrentRequest();
+        $request = $context['request'] ?? null;
 
-        if (!isset($context['request']) && $request) {
-            $context['request'] = $request;
-        }
+        $requestedIncludes = $request instanceof Request ? $request->attributes->get('_api_included', []) : [];
 
-        // Read from request attributes (set by JsonApiProvider)
-        $requestedIncludes = $request?->attributes->get('_api_included', []);
-
-        // Fallback to parsing from context if not set by JsonApiProvider
         if (!$requestedIncludes) {
             $requestedIncludes = $this->relationshipResolver->parseIncludeParameter($context);
         }
@@ -75,9 +67,58 @@ class RelationshipProvider implements ProviderInterface
             $context,
         );
 
-        foreach ($relationships as $relationshipName => $relationship) {
-            if (is_object($result) && property_exists($result, $relationshipName)) {
-                $result->{$relationshipName} = $relationship;
+        // All resolved relationships are injected via the subscriber so that
+        // relationship linkage and included resources appear correctly in the
+        // JSON:API response regardless of the property's readable flag.
+        if ($relationships) {
+            $existing = $request?->attributes->get(static::REQUEST_ATTRIBUTE_RESOLVED_RELATIONSHIPS, []) ?? [];
+            $request?->attributes->set(
+                static::REQUEST_ATTRIBUTE_RESOLVED_RELATIONSHIPS,
+                array_merge($existing, $relationships),
+            );
+        }
+
+        // Map per-item relationship data from resolver classes to relationship paths
+        $perItemData = $this->relationshipResolver->getPerItemRelationshipData();
+
+        if ($perItemData) {
+            $perItemByPath = $this->mapPerItemDataToPaths($relationships, $perItemData);
+            $existing = $request?->attributes->get('_spryker_per_item_relationships', []) ?? [];
+            $request?->attributes->set(
+                '_spryker_per_item_relationships',
+                array_merge($existing, $perItemByPath),
+            );
+        }
+
+        return $result;
+    }
+
+    /**
+     * Maps per-item relationship data from resolver class keys to relationship path keys.
+     *
+     * @param array<string, array<object>> $relationships Path → resources
+     * @param array<string, array<string, array<object>>> $perItemData Resolver class → parent ID → resources
+     *
+     * @return array<string, array<string, array<object>>> Path → parent ID → resources
+     */
+    protected function mapPerItemDataToPaths(array $relationships, array $perItemData): array
+    {
+        $result = [];
+
+        foreach ($relationships as $path => $resources) {
+            foreach ($perItemData as $resolverClass => $parentMapping) {
+                // Match by checking if the resources returned for this path are the same objects
+                $flatResources = [];
+
+                foreach ($parentMapping as $parentResources) {
+                    $flatResources = array_merge($flatResources, $parentResources);
+                }
+
+                if ($flatResources === $resources) {
+                    $result[$path] = $parentMapping;
+
+                    break;
+                }
             }
         }
 

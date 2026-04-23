@@ -37,7 +37,7 @@ class UseStatementCollector
 {
     /**
      * @param array<string, mixed> $schema
-     * @param array<array{name: string, type: string, phpType: string, attributes: string, description: string}> $properties
+     * @param array<array{name: string, type: string, phpType: string, attributes: string, description: string, serializedName?: string, serializedPath?: string}> $properties
      * @param array<string, array{fqcn: string, shortName: string, alias: string}> $fqcnConstraintMap
      *
      * @return array<string>
@@ -50,8 +50,20 @@ class UseStatementCollector
 
         $hasApiProperty = false;
         $hasValidation = false;
+        $hasSerializedName = false;
+        $hasSerializedPath = false;
 
         foreach ($properties as $property) {
+            if (!$hasSerializedPath && isset($property['serializedPath']) && $property['serializedPath'] !== '') {
+                $uses[] = 'Symfony\Component\Serializer\Attribute\SerializedPath';
+                $hasSerializedPath = true;
+            }
+
+            if (!$hasSerializedName && isset($property['serializedName']) && $property['serializedName'] !== '') {
+                $uses[] = 'Symfony\Component\Serializer\Attribute\SerializedName';
+                $hasSerializedName = true;
+            }
+
             if ($property['attributes'] === '') {
                 continue;
             }

@@ -9,10 +9,11 @@ declare(strict_types=1);
 
 namespace Spryker\ApiPlatform;
 
+use Spryker\ApiPlatform\DependencyInjection\Compiler\ApiClassAutoDiscoveryPass;
 use Spryker\ApiPlatform\DependencyInjection\Compiler\ApiPlatformDecoratorPass;
-use Spryker\ApiPlatform\DependencyInjection\Compiler\ApiResourceServiceRegistrationPass;
 use Spryker\ApiPlatform\DependencyInjection\Compiler\ApiTypeServiceFilterPass;
 use Spryker\ApiPlatform\DependencyInjection\Compiler\RelationshipConfigurationPass;
+use Spryker\ApiPlatform\DependencyInjection\Compiler\SchemaServiceRegistrationPass;
 use Spryker\ApiPlatform\DependencyInjection\Compiler\SecurityServiceRegistrationPass;
 use Symfony\Component\DependencyInjection\Compiler\PassConfig;
 use Symfony\Component\DependencyInjection\ContainerBuilder;
@@ -27,7 +28,7 @@ use Symfony\Component\HttpKernel\Bundle\Bundle;
  * Resources can be defined using YAML schemas and are automatically generated
  * into PHP classes with full API Platform attribute support.
  *
- * @see https://docs.spryker.com/api-resource-generator TODO
+ * @see https://docs.spryker.com/api-resource-generator
  */
 class SprykerApiPlatformBundle extends Bundle
 {
@@ -36,7 +37,13 @@ class SprykerApiPlatformBundle extends Bundle
         parent::build($container);
 
         $container->addCompilerPass(
-            new ApiResourceServiceRegistrationPass(),
+            new SchemaServiceRegistrationPass(),
+            PassConfig::TYPE_BEFORE_OPTIMIZATION,
+            50,
+        );
+
+        $container->addCompilerPass(
+            new ApiClassAutoDiscoveryPass(),
             PassConfig::TYPE_BEFORE_OPTIMIZATION,
             50,
         );

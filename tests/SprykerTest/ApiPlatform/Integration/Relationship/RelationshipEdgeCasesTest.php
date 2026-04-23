@@ -18,7 +18,6 @@ use Spryker\ApiPlatform\Provider\RelationshipProvider;
 use Spryker\ApiPlatform\Relationship\ApiPlatformRelationshipResolver;
 use SprykerTest\ApiPlatform\ApiIntegrationTester;
 use Symfony\Component\HttpFoundation\Request;
-use Symfony\Component\HttpFoundation\RequestStack;
 
 /**
  * Auto-generated group annotations
@@ -40,8 +39,7 @@ class RelationshipEdgeCasesTest extends Unit
         $mainResource = (object)['customerReference' => 'customer-001', 'addresses' => null];
 
         $relatedProvider = $this->createMock(ProviderInterface::class);
-        $relatedProvider->expects($this->once())
-            ->method('provide')
+        $relatedProvider->method('provide')
             ->willReturn(null);
 
         $providerLocator = $this->createMock(ContainerInterface::class);
@@ -63,11 +61,10 @@ class RelationshipEdgeCasesTest extends Unit
             ->willReturn($mainResource);
 
         $request = new Request(['include' => 'addresses']);
-        $requestStack = new RequestStack();
-        $requestStack->push($request);
+        $resolverLocator = $this->createMock(ContainerInterface::class);
 
-        $resolver = new ApiPlatformRelationshipResolver($relationships, $providerLocator);
-        $decorator = new RelationshipProvider($innerProvider, $resolver, $requestStack);
+        $resolver = new ApiPlatformRelationshipResolver($relationships, $providerLocator, $resolverLocator);
+        $decorator = new RelationshipProvider($innerProvider, $resolver);
 
         $operation = new Get(shortName: 'customers');
         $context = ['request' => $request];
@@ -77,8 +74,10 @@ class RelationshipEdgeCasesTest extends Unit
 
         // Assert
         $this->assertSame($mainResource, $result);
-        $this->assertObjectHasProperty('addresses', $result);
-        $this->assertSame([], $result->addresses);
+
+        $storedRelationships = $request->attributes->get('_spryker_resolved_relationships', []);
+        $this->assertArrayHasKey('addresses', $storedRelationships);
+        $this->assertSame([], $storedRelationships['addresses']);
     }
 
     public function testGivenProviderNotFoundWhenLoadingRelationshipThenHandledGracefully(): void
@@ -108,11 +107,10 @@ class RelationshipEdgeCasesTest extends Unit
             ->willReturn($mainResource);
 
         $request = new Request(['include' => 'addresses']);
-        $requestStack = new RequestStack();
-        $requestStack->push($request);
+        $resolverLocator = $this->createMock(ContainerInterface::class);
 
-        $resolver = new ApiPlatformRelationshipResolver($relationships, $providerLocator);
-        $decorator = new RelationshipProvider($innerProvider, $resolver, $requestStack);
+        $resolver = new ApiPlatformRelationshipResolver($relationships, $providerLocator, $resolverLocator);
+        $decorator = new RelationshipProvider($innerProvider, $resolver);
 
         $operation = new Get(shortName: 'customers');
         $context = ['request' => $request];
@@ -122,8 +120,10 @@ class RelationshipEdgeCasesTest extends Unit
 
         // Assert
         $this->assertSame($mainResource, $result);
-        $this->assertObjectHasProperty('addresses', $result);
-        $this->assertSame([], $result->addresses);
+
+        $storedRelationships = $request->attributes->get('_spryker_resolved_relationships', []);
+        $this->assertArrayHasKey('addresses', $storedRelationships);
+        $this->assertSame([], $storedRelationships['addresses']);
     }
 
     public function testGivenInnerProviderReturnsNullWhenProvidingThenReturnsNullWithoutLoadingRelationships(): void
@@ -138,11 +138,10 @@ class RelationshipEdgeCasesTest extends Unit
         $providerLocator->expects($this->never())->method('has');
 
         $request = new Request(['include' => 'addresses']);
-        $requestStack = new RequestStack();
-        $requestStack->push($request);
+        $resolverLocator = $this->createMock(ContainerInterface::class);
 
-        $resolver = new ApiPlatformRelationshipResolver([], $providerLocator);
-        $decorator = new RelationshipProvider($innerProvider, $resolver, $requestStack);
+        $resolver = new ApiPlatformRelationshipResolver([], $providerLocator, $resolverLocator);
+        $decorator = new RelationshipProvider($innerProvider, $resolver);
 
         $operation = new Get(shortName: 'customers');
         $context = ['request' => $request];
@@ -166,10 +165,10 @@ class RelationshipEdgeCasesTest extends Unit
 
         $providerLocator = $this->createMock(ContainerInterface::class);
 
-        $requestStack = new RequestStack();
+        $resolverLocator = $this->createMock(ContainerInterface::class);
 
-        $resolver = new ApiPlatformRelationshipResolver([], $providerLocator);
-        $decorator = new RelationshipProvider($innerProvider, $resolver, $requestStack);
+        $resolver = new ApiPlatformRelationshipResolver([], $providerLocator, $resolverLocator);
+        $decorator = new RelationshipProvider($innerProvider, $resolver);
 
         $operation = new Get(shortName: 'customers');
         $context = [];
@@ -212,10 +211,10 @@ class RelationshipEdgeCasesTest extends Unit
 
         $request = new Request(['include' => 'addresses']);
 
-        $requestStack = new RequestStack();
+        $resolverLocator = $this->createMock(ContainerInterface::class);
 
-        $resolver = new ApiPlatformRelationshipResolver($relationships, $providerLocator);
-        $decorator = new RelationshipProvider($innerProvider, $resolver, $requestStack);
+        $resolver = new ApiPlatformRelationshipResolver($relationships, $providerLocator, $resolverLocator);
+        $decorator = new RelationshipProvider($innerProvider, $resolver);
 
         $operation = new Get(shortName: 'customers');
         $context = ['request' => $request];
@@ -256,11 +255,10 @@ class RelationshipEdgeCasesTest extends Unit
             ->willReturn($mainResource);
 
         $request = new Request(['include' => 'addresses']);
-        $requestStack = new RequestStack();
-        $requestStack->push($request);
+        $resolverLocator = $this->createMock(ContainerInterface::class);
 
-        $resolver = new ApiPlatformRelationshipResolver($relationships, $providerLocator);
-        $decorator = new RelationshipProvider($innerProvider, $resolver, $requestStack);
+        $resolver = new ApiPlatformRelationshipResolver($relationships, $providerLocator, $resolverLocator);
+        $decorator = new RelationshipProvider($innerProvider, $resolver);
 
         $operation = new Get(shortName: 'customers');
         $context = ['request' => $request];
@@ -286,11 +284,10 @@ class RelationshipEdgeCasesTest extends Unit
         $providerLocator = $this->createMock(ContainerInterface::class);
 
         $request = new Request(['include' => '']);
-        $requestStack = new RequestStack();
-        $requestStack->push($request);
+        $resolverLocator = $this->createMock(ContainerInterface::class);
 
-        $resolver = new ApiPlatformRelationshipResolver([], $providerLocator);
-        $decorator = new RelationshipProvider($innerProvider, $resolver, $requestStack);
+        $resolver = new ApiPlatformRelationshipResolver([], $providerLocator, $resolverLocator);
+        $decorator = new RelationshipProvider($innerProvider, $resolver);
 
         $operation = new Get(shortName: 'customers');
         $context = ['request' => $request];
@@ -339,11 +336,10 @@ class RelationshipEdgeCasesTest extends Unit
             ->willReturn($mainResource);
 
         $request = new Request(['include' => 'addresses']);
-        $requestStack = new RequestStack();
-        $requestStack->push($request);
+        $resolverLocator = $this->createMock(ContainerInterface::class);
 
-        $resolver = new ApiPlatformRelationshipResolver($relationships, $providerLocator);
-        $decorator = new RelationshipProvider($innerProvider, $resolver, $requestStack);
+        $resolver = new ApiPlatformRelationshipResolver($relationships, $providerLocator, $resolverLocator);
+        $decorator = new RelationshipProvider($innerProvider, $resolver);
 
         $operation = new Get(shortName: 'customers');
         $context = ['request' => $request];

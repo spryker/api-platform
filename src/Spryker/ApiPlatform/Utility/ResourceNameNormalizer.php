@@ -56,6 +56,11 @@ class ResourceNameNormalizer
         return $normalized;
     }
 
+    /**
+     * @throws \Spryker\ApiPlatform\Exception\ApiSchemaGenerationException
+     *
+     * @return void
+     */
     protected static function validateNotEmpty(string $trimmed, string $original): void
     {
         if ($trimmed === '') {
@@ -115,6 +120,11 @@ class ResourceNameNormalizer
         return implode('', $capitalizedParts);
     }
 
+    /**
+     * @throws \Spryker\ApiPlatform\Exception\ApiSchemaGenerationException
+     *
+     * @return void
+     */
     protected static function validateResult(string $normalized, string $original): void
     {
         if (preg_match('/^\d/', $normalized)) {

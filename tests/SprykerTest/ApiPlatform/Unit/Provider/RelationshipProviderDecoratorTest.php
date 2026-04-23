@@ -16,7 +16,6 @@ use Spryker\ApiPlatform\Provider\RelationshipProvider;
 use Spryker\ApiPlatform\Relationship\ApiPlatformRelationshipResolverInterface;
 use SprykerTest\ApiPlatform\ApiUnitTester;
 use Symfony\Component\HttpFoundation\Request;
-use Symfony\Component\HttpFoundation\RequestStack;
 
 /**
  * Auto-generated group annotations
@@ -43,8 +42,7 @@ class RelationshipProviderDecoratorTest extends Unit
         $relationshipResolver = $this->createMock(ApiPlatformRelationshipResolverInterface::class);
         $relationshipResolver->expects($this->never())->method('parseIncludeParameter');
 
-        $requestStack = new RequestStack();
-        $decorator = new RelationshipProvider($innerProvider, $relationshipResolver, $requestStack);
+        $decorator = new RelationshipProvider($innerProvider, $relationshipResolver);
 
         $operation = new Get(shortName: 'customers');
 
@@ -71,8 +69,7 @@ class RelationshipProviderDecoratorTest extends Unit
             ->willReturn([]);
         $relationshipResolver->expects($this->never())->method('resolveRelationships');
 
-        $requestStack = new RequestStack();
-        $decorator = new RelationshipProvider($innerProvider, $relationshipResolver, $requestStack);
+        $decorator = new RelationshipProvider($innerProvider, $relationshipResolver);
 
         $operation = new Get(shortName: 'customers');
 
@@ -90,8 +87,6 @@ class RelationshipProviderDecoratorTest extends Unit
         $relationships = ['addresses' => [(object)['id' => 'addr-1']]];
 
         $request = new Request();
-        $requestStack = new RequestStack();
-        $requestStack->push($request);
 
         $innerProvider = $this->createMock(ProviderInterface::class);
         $innerProvider->expects($this->once())
@@ -109,17 +104,19 @@ class RelationshipProviderDecoratorTest extends Unit
             }))
             ->willReturn($relationships);
 
-        $decorator = new RelationshipProvider($innerProvider, $relationshipResolver, $requestStack);
+        $decorator = new RelationshipProvider($innerProvider, $relationshipResolver);
 
         $operation = new Get(shortName: 'customers');
 
         // Act
-        $result = $decorator->provide($operation, [], []);
+        $result = $decorator->provide($operation, [], ['request' => $request]);
 
         // Assert
         $this->assertSame($resource, $result);
-        $this->assertObjectHasProperty('addresses', $result);
-        $this->assertSame($relationships['addresses'], $result->addresses);
+
+        $storedRelationships = $request->attributes->get('_spryker_resolved_relationships', []);
+        $this->assertArrayHasKey('addresses', $storedRelationships);
+        $this->assertSame($relationships['addresses'], $storedRelationships['addresses']);
     }
 
     public function testGivenCollectionResultWhenProvidingThenResolvesRelationshipsForAllResources(): void
@@ -131,8 +128,6 @@ class RelationshipProviderDecoratorTest extends Unit
         $relationships = ['addresses' => [(object)['id' => 'addr-1']]];
 
         $request = new Request();
-        $requestStack = new RequestStack();
-        $requestStack->push($request);
 
         $innerProvider = $this->createMock(ProviderInterface::class);
         $innerProvider->expects($this->once())
@@ -150,12 +145,12 @@ class RelationshipProviderDecoratorTest extends Unit
             }))
             ->willReturn($relationships);
 
-        $decorator = new RelationshipProvider($innerProvider, $relationshipResolver, $requestStack);
+        $decorator = new RelationshipProvider($innerProvider, $relationshipResolver);
 
         $operation = new Get(shortName: 'customers');
 
         // Act
-        $result = $decorator->provide($operation, [], []);
+        $result = $decorator->provide($operation, [], ['request' => $request]);
 
         // Assert
         $this->assertSame($resources, $result);
@@ -185,9 +180,7 @@ class RelationshipProviderDecoratorTest extends Unit
             ->method('resolveRelationships')
             ->willReturn($relationships);
 
-        $requestStack = new RequestStack();
-
-        $decorator = new RelationshipProvider($innerProvider, $relationshipResolver, $requestStack);
+        $decorator = new RelationshipProvider($innerProvider, $relationshipResolver);
 
         $operation = new Get(shortName: 'customers');
 

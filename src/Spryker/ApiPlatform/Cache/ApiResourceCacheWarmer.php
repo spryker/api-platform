@@ -53,6 +53,8 @@ class ApiResourceCacheWarmer implements CacheWarmerInterface
 
     /**
      * Ensures that the generated resource directories exist for all API types.
+     *
+     * @return void
      */
     protected function ensureGeneratedResourceDirectoriesExist(): void
     {

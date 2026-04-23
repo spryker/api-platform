@@ -9,6 +9,8 @@ declare(strict_types=1);
 
 namespace Spryker\ApiPlatform\EventSubscriber;
 
+use Generated\Shared\Transfer\LocaleTransfer;
+use Generated\Shared\Transfer\StoreTransfer;
 use Spryker\Client\Store\StoreClientInterface;
 use Spryker\Service\Locale\LocaleServiceInterface;
 use Symfony\Component\EventDispatcher\EventSubscriberInterface;
@@ -24,6 +26,10 @@ use Symfony\Component\HttpKernel\KernelEvents;
 class AcceptLanguageLocaleSubscriber implements EventSubscriberInterface
 {
     protected const string LOCALE_ATTRIBUTE = '_locale';
+
+    protected const string LOCALE_TRANSFER_ATTRIBUTE = 'LocaleTransfer';
+
+    protected const string STORE_TRANSFER_ATTRIBUTE = 'StoreTransfer';
 
     protected const string ACCEPT_LANGUAGE_HEADER = 'Accept-Language';
 
@@ -46,22 +52,27 @@ class AcceptLanguageLocaleSubscriber implements EventSubscriberInterface
     public function onKernelRequest(RequestEvent $event): void
     {
         $request = $event->getRequest();
+
+        $storeTransfer = $this->storeClient->getCurrentStore();
+        $request->attributes->set(static::STORE_TRANSFER_ATTRIBUTE, $storeTransfer);
+
         $acceptLanguageHeader = $request->headers->get(static::ACCEPT_LANGUAGE_HEADER) ?? '';
 
-        $locale = $this->resolveLocale($acceptLanguageHeader);
+        $locale = $this->resolveLocale($acceptLanguageHeader, $storeTransfer);
         $request->attributes->set(static::LOCALE_ATTRIBUTE, $locale);
         $request->setLocale($locale);
+
+        $localeTransfer = (new LocaleTransfer())->setLocaleName($locale);
+        $request->attributes->set(static::LOCALE_TRANSFER_ATTRIBUTE, $localeTransfer);
     }
 
-    protected function resolveLocale(string $acceptLanguageHeader): string
+    protected function resolveLocale(string $acceptLanguageHeader, StoreTransfer $storeTransfer): string
     {
-        $storeTransfer = $this->storeClient->getCurrentStore();
-
         $availableLocales = $storeTransfer->getAvailableLocaleIsoCodes();
         $localesByLanguageCode = $this->getLocaleCodesIndexedByLanguageCode($availableLocales);
 
-        if ($acceptLanguageHeader === '') {
-            return $this->getDefaultLocale($localesByLanguageCode);
+        if ($acceptLanguageHeader === '' || $localesByLanguageCode === []) {
+            return $this->getDefaultLocale($storeTransfer, $localesByLanguageCode);
         }
 
         $acceptLanguageTransfer = $this->localeService->getAcceptLanguage(
@@ -70,11 +81,11 @@ class AcceptLanguageLocaleSubscriber implements EventSubscriberInterface
         );
 
         if (!$acceptLanguageTransfer || $acceptLanguageTransfer->getType() === null) {
-            return $this->getDefaultLocale($localesByLanguageCode);
+            return $this->getDefaultLocale($storeTransfer, $localesByLanguageCode);
         }
 
         return $localesByLanguageCode[$acceptLanguageTransfer->getType()]
-            ?? $this->getDefaultLocale($localesByLanguageCode);
+            ?? $this->getDefaultLocale($storeTransfer, $localesByLanguageCode);
     }
 
     /**
@@ -94,11 +105,10 @@ class AcceptLanguageLocaleSubscriber implements EventSubscriberInterface
         return $indexedLocaleCodes;
     }
 
-    /**
-     * @param array<string, string> $localesByLanguageCode
-     */
-    protected function getDefaultLocale(array $localesByLanguageCode): string
+    protected function getDefaultLocale(StoreTransfer $storeTransfer, array $localesByLanguageCode): string
     {
-        return array_values($localesByLanguageCode)[0] ?? 'en_US';
+        return $storeTransfer->getDefaultLocaleIsoCode()
+            ?? array_values($localesByLanguageCode)[0]
+            ?? 'en_US';
     }
 }

@@ -64,6 +64,8 @@ class TranslatingErrorProvider implements ProviderInterface
 
     /**
      * @param callable(?string): void $setter
+     *
+     * @return void
      */
     protected function translateField(?string $value, string $locale, callable $setter): void
     {

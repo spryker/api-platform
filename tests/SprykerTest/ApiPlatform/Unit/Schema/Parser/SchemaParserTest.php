@@ -419,7 +419,7 @@ class SchemaParserTest extends Unit
         $this->assertArrayHasKey('addresses', $result['properties']);
         $this->assertEquals('array', $result['properties']['addresses']['type']);
         $this->assertFalse($result['properties']['addresses']['writable']);
-        $this->assertTrue($result['properties']['addresses']['readable']);
+        $this->assertFalse($result['properties']['addresses']['readable']);
         $this->assertFalse($result['properties']['addresses']['required']);
         $this->assertEquals('Related CustomersAddresses resources', $result['properties']['addresses']['description']);
     }
@@ -560,7 +560,7 @@ class SchemaParserTest extends Unit
         $this->assertArrayHasKey('orders', $result['properties']);
         $this->assertEquals('Related Orders resources', $result['properties']['orders']['description']);
         $this->assertFalse($result['properties']['orders']['writable']);
-        $this->assertTrue($result['properties']['orders']['readable']);
+        $this->assertFalse($result['properties']['orders']['readable']);
     }
 
     public function testGivenIncludesWithUriTemplateWhenParsingThenAutoGeneratesPropertyWithUriTemplate(): void
@@ -588,7 +588,7 @@ class SchemaParserTest extends Unit
         $this->assertArrayHasKey('uriTemplate', $result['properties']['addresses']);
         $this->assertEquals('/customers/{customerReference}/addresses', $result['properties']['addresses']['uriTemplate']);
         $this->assertFalse($result['properties']['addresses']['writable']);
-        $this->assertTrue($result['properties']['addresses']['readable']);
+        $this->assertFalse($result['properties']['addresses']['readable']);
     }
 
     public function testGivenPropertyWithUriTemplateWhenParsingThenPreservesUriTemplate(): void

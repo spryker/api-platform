@@ -9,16 +9,13 @@ declare(strict_types=1);
 
 namespace Spryker\ApiPlatform\DependencyInjection\Compiler;
 
-use InvalidArgumentException;
-use Laminas\Filter\FilterChain;
-use Laminas\Filter\StringToLower;
-use Laminas\Filter\Word\CamelCaseToDash;
 use SplFileInfo;
+use Spryker\ApiPlatform\Relationship\ApiPlatformRelationshipResolver;
+use Symfony\Component\DependencyInjection\Argument\ServiceLocatorArgument;
 use Symfony\Component\DependencyInjection\Compiler\CompilerPassInterface;
 use Symfony\Component\DependencyInjection\ContainerBuilder;
-use Symfony\Component\Finder\Finder;
-use Symfony\Component\Yaml\Yaml;
-use Throwable;
+use Symfony\Component\DependencyInjection\Definition;
+use Symfony\Component\DependencyInjection\Reference;
 
 /**
  * Builds the api_platform.relationships container parameter from resource schema files.
@@ -26,9 +23,25 @@ use Throwable;
  * This compiler pass scans all resource schema files (*.resource.yml/yaml) and extracts
  * the 'includes' configuration to build a centralized relationship registry stored as
  * the 'api_platform.relationships' container parameter.
+ *
+ * Supports both singular (`resource:`) and plural (`resources:`) YAML formats.
+ * Resolves cross-module target resources via a global provider index.
+ * Supports `resolverClass` for complex relationships requiring custom logic.
  */
 class RelationshipConfigurationPass implements CompilerPassInterface
 {
+    /**
+     * Global index mapping resource identifiers to their provider and shortName.
+     *
+     * @var array<string, array{provider: string, shortName: string}>
+     */
+    protected array $providerIndex = [];
+
+    public function __construct(
+        protected SchemaFileDiscovery $schemaFileDiscovery = new SchemaFileDiscovery(),
+    ) {
+    }
+
     public function process(ContainerBuilder $container): void
     {
         if (!$this->hasRequiredParameters($container)) {
@@ -50,16 +63,23 @@ class RelationshipConfigurationPass implements CompilerPassInterface
         $relationships = [];
 
         foreach ($apiTypes as $apiType) {
-            $schemaFiles = $this->findSchemaFiles($sourceDirectories, $apiType);
+            $schemaFiles = $this->schemaFileDiscovery->findSchemaFiles($sourceDirectories, $apiType);
+
+            $this->buildProviderIndex($schemaFiles);
 
             foreach ($schemaFiles as $schemaFile) {
                 $relationshipConfigs = $this->extractRelationshipsFromSchema($schemaFile);
 
                 $relationships = array_merge($relationships, $relationshipConfigs);
             }
+
+            $this->providerIndex = [];
         }
 
         $container->setParameter('api_platform.relationships', $relationships);
+
+        $this->registerResolverServices($container, $relationships);
+        $this->replaceWithScopedLocators($container, $relationships);
     }
 
     protected function hasRequiredParameters(ContainerBuilder $container): bool
@@ -69,65 +89,68 @@ class RelationshipConfigurationPass implements CompilerPassInterface
     }
 
     /**
-     * @param array<string> $sourceDirectories
+     * Builds a global index of all resource providers across all schema files.
+     * This enables cross-module target resource resolution.
      *
-     * @return array<\SplFileInfo>
-     */
-    protected function findSchemaFiles(array $sourceDirectories, string $apiType): array
-    {
-        $apiType = strtolower($apiType);
-        $searchDirectories = $this->getSearchDirectories($sourceDirectories, $apiType);
-
-        if ($searchDirectories === []) {
-            return [];
-        }
-
-        $schemaFiles = [];
-
-        try {
-            $finder = new Finder();
-            $finder->files()
-                ->in($searchDirectories)
-                ->name('*.resource.yml')
-                ->name('*.resource.yaml')
-                ->sortByName();
-
-            foreach ($finder as $file) {
-                $schemaFiles[] = $file;
-            }
-        } catch (InvalidArgumentException $e) {
-            return [];
-        }
-
-        return $schemaFiles;
-    }
-
-    /**
-     * @param array<string> $sourceDirectories
+     * @param array<\SplFileInfo> $schemaFiles
      *
-     * @return array<string>
+     * @return void
      */
-    protected function getSearchDirectories(array $sourceDirectories, string $apiType): array
+    protected function buildProviderIndex(array $schemaFiles): void
     {
-        $searchDirectories = [];
+        $this->providerIndex = [];
 
-        foreach ($sourceDirectories as $baseDir) {
-            $baseDir = rtrim($baseDir, '/');
+        foreach ($schemaFiles as $schemaFile) {
+            $schema = $this->schemaFileDiscovery->parseSchemaFile($schemaFile);
 
-            $matchingDirs = glob(sprintf('%s/*/resources/api/%s', $baseDir, $apiType), GLOB_ONLYDIR);
-
-            if ($matchingDirs === false || $matchingDirs === []) {
+            if ($schema === null) {
                 continue;
             }
 
-            foreach ($matchingDirs as $dir) {
-                if (is_dir($dir) && is_readable($dir)) {
-                    $searchDirectories[] = $dir;
-                }
+            $resourceDefinitions = $this->schemaFileDiscovery->extractResourceDefinitions($schema);
+
+            foreach ($resourceDefinitions as $resourceDefinition) {
+                $this->indexResourceProvider($resourceDefinition);
             }
         }
+    }
 
-        return $searchDirectories;
+    /**
+     * Indexes a resource definition by all available identifiers (name, resource key, shortName).
+     *
+     * @param array<string, mixed> $resource
+     *
+     * @return void
+     */
+    protected function indexResourceProvider(array $resource): void
+    {
+        $provider = $resource['provider'] ?? null;
+
+        if ($provider === null || !is_string($provider)) {
+            return;
+        }
+
+        $name = $resource['name'] ?? null;
+        $resourceKey = $resource['resource'] ?? null;
+        $shortName = $resource['shortName'] ?? null;
+        $resolvedShortName = $shortName ?? $name ?? $resourceKey ?? '';
+
+        $indexEntry = [
+            'provider' => $provider,
+            'shortName' => is_string($resolvedShortName) ? $resolvedShortName : '',
+        ];
+
+        if (is_string($name)) {
+            $this->providerIndex[$name] = $indexEntry;
+        }
+
+        if (is_string($resourceKey)) {
+            $this->providerIndex[$resourceKey] = $indexEntry;
+        }
+
+        if (is_string($shortName)) {
+            $this->providerIndex[$shortName] = $indexEntry;
+        }
     }
 
     /**
@@ -137,107 +160,232 @@ class RelationshipConfigurationPass implements CompilerPassInterface
      */
     protected function extractRelationshipsFromSchema(SplFileInfo $schemaFile): array
     {
-        $filePath = $schemaFile->getRealPath();
+        $schema = $this->schemaFileDiscovery->parseSchemaFile($schemaFile);
 
-        if ($filePath === false) {
+        if ($schema === null) {
             return [];
         }
 
-        try {
-            $schema = Yaml::parseFile($filePath);
-        } catch (Throwable $e) {
-            return [];
-        }
-
-        if (!isset($schema['resource']) || !is_array($schema['resource'])) {
-            return [];
-        }
-
-        $resource = $schema['resource'];
-
-        $resourceShortName = $resource['shortName'] ?? $resource['name'] ?? null;
-
-        if ($resourceShortName === null) {
-            return [];
-        }
-
-        $includes = $resource['includes'] ?? [];
-
-        if (!is_array($includes) || $includes === []) {
-            return [];
-        }
-
+        $resourceDefinitions = $this->schemaFileDiscovery->extractResourceDefinitions($schema);
         $relationships = [];
 
-        foreach ($includes as $include) {
-            if (!is_array($include)) {
+        foreach ($resourceDefinitions as $resource) {
+            $resourceShortName = $resource['shortName'] ?? $resource['name'] ?? null;
+
+            if ($resourceShortName === null) {
                 continue;
             }
 
-            $relationshipName = $include['relationshipName'] ?? null;
-            $targetResource = $include['targetResource'] ?? null;
+            $includes = $resource['includes'] ?? [];
 
-            if ($relationshipName === null || $targetResource === null) {
+            if (!is_array($includes) || $includes === []) {
                 continue;
             }
 
-            $uriVariableMappings = $include['uriVariableMappings'] ?? [];
+            foreach ($includes as $include) {
+                if (!is_array($include)) {
+                    continue;
+                }
 
-            if (!is_array($uriVariableMappings)) {
-                $uriVariableMappings = [];
+                $relationshipConfig = $this->buildRelationshipConfig($include, $resourceShortName);
+
+                if ($relationshipConfig === null) {
+                    continue;
+                }
+
+                $relationships[$relationshipConfig['key']] = $relationshipConfig['config'];
             }
-
-            $targetProviderServiceId = $this->findProviderForResource($targetResource, dirname($filePath));
-
-            if ($targetProviderServiceId === null) {
-                continue;
-            }
-
-            $key = sprintf('%s.%s', $resourceShortName, $relationshipName);
-
-            $relationships[$key] = [
-                'relationship_name' => $relationshipName,
-                'target_resource_type' => $this->convertToKebabCase($targetResource),
-                'provider_service_id' => $targetProviderServiceId,
-                'uri_variable_mappings' => $uriVariableMappings,
-            ];
         }
 
         return $relationships;
     }
 
-    protected function findProviderForResource(string $targetResource, string $currentSchemaDir): ?string
+    /**
+     * Builds a single relationship configuration entry from an include definition.
+     *
+     * Supports two modes:
+     * - Provider-based: uses targetResource to find a provider via the global index
+     * - Resolver-based: uses resolverClass for complex relationships requiring custom logic
+     *
+     * @param array<string, mixed> $include
+     * @param string $resourceShortName
+     *
+     * @return array{key: string, config: array<string, mixed>}|null
+     */
+    protected function buildRelationshipConfig(array $include, string $resourceShortName): ?array
     {
-        $targetFileName = $this->convertToKebabCase($targetResource) . '.resource.yml';
-        $targetFilePath = sprintf('%s/%s', $currentSchemaDir, $targetFileName);
+        $relationshipName = $include['relationshipName'] ?? null;
 
-        if (!file_exists($targetFilePath)) {
-            $targetFilePath = sprintf('%s/%s', $currentSchemaDir, str_replace('.yml', '.yaml', $targetFileName));
-        }
-
-        if (!file_exists($targetFilePath)) {
+        if ($relationshipName === null) {
             return null;
         }
 
-        try {
-            $targetSchema = Yaml::parseFile($targetFilePath);
-        } catch (Throwable $e) {
-            return null;
+        $resolverClass = $include['resolverClass'] ?? null;
+
+        if (is_string($resolverClass)) {
+            return $this->buildResolverRelationshipConfig($include, $resourceShortName, $resolverClass);
         }
 
-        if (!isset($targetSchema['resource']['provider'])) {
-            return null;
-        }
-
-        return $targetSchema['resource']['provider'];
+        return $this->buildProviderRelationshipConfig($include, $resourceShortName);
     }
 
-    protected function convertToKebabCase(string $string): string
-    {
-        $filterChain = (new FilterChain())
-            ->attach(new CamelCaseToDash())
-            ->attach(new StringToLower());
+    /**
+     * @param array<string, mixed> $include
+     * @param string $resourceShortName
+     * @param string $resolverClass
+     *
+     * @return array{key: string, config: array<string, mixed>}
+     */
+    protected function buildResolverRelationshipConfig(
+        array $include,
+        string $resourceShortName,
+        string $resolverClass,
+    ): array {
+        $relationshipName = $include['relationshipName'];
+        $targetResource = $include['targetResource'] ?? null;
+        $targetResourceType = $relationshipName;
 
-        return $filterChain->filter($string);
+        if (is_string($targetResource)) {
+            $targetEntry = $this->providerIndex[$targetResource] ?? null;
+            $targetResourceType = $targetEntry !== null ? $targetEntry['shortName'] : $relationshipName;
+        }
+
+        $key = sprintf('%s.%s', $resourceShortName, $relationshipName);
+
+        return [
+            'key' => $key,
+            'config' => [
+                'relationship_name' => $relationshipName,
+                'target_resource_type' => $targetResourceType,
+                'resolver_class' => $resolverClass,
+                'uri_variable_mappings' => [],
+                'auto_include' => (bool)($include['autoInclude'] ?? false),
+                'auto_include_max_depth' => (int)($include['autoIncludeMaxDepth'] ?? PHP_INT_MAX),
+                'auto_include_min_depth' => (int)($include['autoIncludeMinDepth'] ?? 0),
+            ],
+        ];
+    }
+
+    /**
+     * @param array<string, mixed> $include
+     * @param string $resourceShortName
+     *
+     * @return array{key: string, config: array<string, mixed>}|null
+     */
+    protected function buildProviderRelationshipConfig(array $include, string $resourceShortName): ?array
+    {
+        $relationshipName = $include['relationshipName'];
+        $targetResource = $include['targetResource'] ?? null;
+
+        if ($targetResource === null) {
+            return null;
+        }
+
+        $targetEntry = $this->findTargetResourceEntry($targetResource);
+
+        if ($targetEntry === null) {
+            return null;
+        }
+
+        $uriVariableMappings = $include['uriVariableMappings'] ?? [];
+
+        if (!is_array($uriVariableMappings)) {
+            $uriVariableMappings = [];
+        }
+
+        $key = sprintf('%s.%s', $resourceShortName, $relationshipName);
+
+        return [
+            'key' => $key,
+            'config' => [
+                'relationship_name' => $relationshipName,
+                'target_resource_type' => $targetEntry['shortName'],
+                'provider_service_id' => $targetEntry['provider'],
+                'uri_variable_mappings' => $uriVariableMappings,
+                'auto_include' => (bool)($include['autoInclude'] ?? false),
+                'auto_include_max_depth' => (int)($include['autoIncludeMaxDepth'] ?? PHP_INT_MAX),
+                'auto_include_min_depth' => (int)($include['autoIncludeMinDepth'] ?? 0),
+            ],
+        ];
+    }
+
+    /**
+     * Finds a target resource entry from the global provider index.
+     *
+     * @param string $targetResource
+     *
+     * @return array{provider: string, shortName: string}|null
+     */
+    protected function findTargetResourceEntry(string $targetResource): ?array
+    {
+        return $this->providerIndex[$targetResource] ?? null;
+    }
+
+    /**
+     * Registers resolver classes as public autowired services in the container.
+     *
+     * @param \Symfony\Component\DependencyInjection\ContainerBuilder $container
+     * @param array<string, array<string, mixed>> $relationships
+     *
+     * @return void
+     */
+    protected function registerResolverServices(ContainerBuilder $container, array $relationships): void
+    {
+        foreach ($relationships as $config) {
+            $resolverClass = $config['resolver_class'] ?? null;
+
+            if (!is_string($resolverClass) || $container->has($resolverClass)) {
+                continue;
+            }
+
+            if (!class_exists($resolverClass)) {
+                continue;
+            }
+
+            $definition = new Definition($resolverClass);
+            $definition->setPublic(true);
+            $definition->setAutowired(true);
+            $definition->setAutoconfigured(true);
+
+            $container->setDefinition($resolverClass, $definition);
+        }
+    }
+
+    /**
+     * Replaces the full service container injection on ApiPlatformRelationshipResolver
+     * with scoped ServiceLocator instances containing only the provider and resolver
+     * services that are actually referenced by the relationship configuration.
+     *
+     * @param \Symfony\Component\DependencyInjection\ContainerBuilder $container
+     * @param array<string, array<string, mixed>> $relationships
+     *
+     * @return void
+     */
+    protected function replaceWithScopedLocators(ContainerBuilder $container, array $relationships): void
+    {
+        if (!$container->hasDefinition(ApiPlatformRelationshipResolver::class)) {
+            return;
+        }
+
+        $providerReferences = [];
+        $resolverReferences = [];
+
+        foreach ($relationships as $config) {
+            $providerServiceId = $config['provider_service_id'] ?? null;
+
+            if (is_string($providerServiceId)) {
+                $providerReferences[$providerServiceId] = new Reference($providerServiceId);
+            }
+
+            $resolverClass = $config['resolver_class'] ?? null;
+
+            if (is_string($resolverClass)) {
+                $resolverReferences[$resolverClass] = new Reference($resolverClass);
+            }
+        }
+
+        $definition = $container->getDefinition(ApiPlatformRelationshipResolver::class);
+        $definition->setArgument('$providerLocator', new ServiceLocatorArgument($providerReferences));
+        $definition->setArgument('$resolverLocator', new ServiceLocatorArgument($resolverReferences));
     }
 }

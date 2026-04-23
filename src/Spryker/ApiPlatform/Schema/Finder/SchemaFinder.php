@@ -45,6 +45,8 @@ class SchemaFinder implements SchemaFinderInterface
      * - src/Pyz/{Module}/resources/api/{apiType}/*.{yaml,yml}
      *
      * @param string $apiType The API type (normalized to lowercase automatically)
+     *
+     * @return \Generator<int, \Symfony\Component\Finder\SplFileInfo>
      */
     public function findSchemaFiles(string $apiType): Generator
     {
@@ -64,8 +66,23 @@ class SchemaFinder implements SchemaFinderInterface
             ->sortByName();
 
         foreach ($finder as $file) {
+            if ($this->isExcluded((string)$file->getRealPath())) {
+                continue;
+            }
+
             yield $file;
         }
+    }
+
+    protected function isExcluded(string $realPath): bool
+    {
+        foreach ($this->config->getExcludedPathFragments() as $fragment) {
+            if ($fragment !== '' && str_contains($realPath, $fragment)) {
+                return true;
+            }
+        }
+
+        return false;
     }
 
     /**

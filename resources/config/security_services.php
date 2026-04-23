@@ -10,6 +10,7 @@ declare(strict_types=1);
 namespace Symfony\Component\DependencyInjection\Loader\Configurator;
 
 use Spryker\ApiPlatform\Security\ApiUserProvider;
+use Spryker\ApiPlatform\Security\GlueAuthenticationEntryPoint;
 use Spryker\ApiPlatform\Security\OauthAuthenticator;
 
 return static function (ContainerConfigurator $container): void {
@@ -22,5 +23,8 @@ return static function (ContainerConfigurator $container): void {
         ->public();
 
     $services->set(OauthAuthenticator::class)
+        ->public();
+
+    $services->set(GlueAuthenticationEntryPoint::class)
         ->public();
 };

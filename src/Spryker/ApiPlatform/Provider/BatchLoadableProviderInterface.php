@@ -9,11 +9,12 @@ declare(strict_types=1);
 
 namespace Spryker\ApiPlatform\Provider;
 
-use ApiPlatform\Metadata\Operation;
 use ApiPlatform\State\ProviderInterface;
 
 /**
  * Providers implementing this interface support batch loading of related resources.
+ *
+ * By that the provider can expect that an "_batch_data" array key exists in the uriVariables array.
  *
  * Instead of calling the provider N times (once per main resource), the resolver
  * will collect all URI variables and call provideBatch once with all parameters.
@@ -36,14 +37,5 @@ use ApiPlatform\State\ProviderInterface;
  */
 interface BatchLoadableProviderInterface extends ProviderInterface
 {
-    /**
-     * Provide resources for multiple sets of URI variables in a single call.
-     *
-     * @param \ApiPlatform\Metadata\Operation $operation
-     * @param array<array<string, mixed>> $batchUriVariables Array of URI variable sets
-     * @param array<string, mixed> $context
-     *
-     * @return array<array<object>> Array of resource arrays, indexed by batch position
-     */
-    public function provideBatch(Operation $operation, array $batchUriVariables, array $context): array;
+    public const string BATCH_DATA_KEY = '_batch_data';
 }

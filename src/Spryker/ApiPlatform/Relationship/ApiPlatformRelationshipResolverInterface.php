@@ -32,4 +32,17 @@ interface ApiPlatformRelationshipResolverInterface
      * @return array<string>
      */
     public function parseIncludeParameter(array $context): array;
+
+    /**
+     * Returns true when the given relationship uses a custom resolver class
+     * instead of a standard URI-template-based provider.
+     */
+    public function isResolverBased(string $resourceType, string $relationshipName): bool;
+
+    /**
+     * Returns per-item relationship data collected during resolution.
+     *
+     * @return array<string, array<string, array<object>>>
+     */
+    public function getPerItemRelationshipData(): array;
 }

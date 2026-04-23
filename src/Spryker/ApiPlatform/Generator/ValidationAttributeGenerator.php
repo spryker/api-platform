@@ -68,13 +68,13 @@ class ValidationAttributeGenerator
         $constraintsWithGroups = [];
 
         foreach ($operations as $operationType => $operation) {
-            $httpMethod = strtolower($operationType);
+            $httpMethod = strtolower($operation['type'] ?? $operationType);
 
             if (!isset($validationSchema[$httpMethod][$propertyName])) {
                 continue;
             }
 
-            $group = $this->validationGroupMapper->mapOperationToGroup($operationType, $resourceName);
+            $group = $this->validationGroupMapper->mapOperationToGroup($operation['type'] ?? $operationType, $resourceName);
             $constraints = $validationSchema[$httpMethod][$propertyName];
 
             foreach ($constraints as $constraint) {

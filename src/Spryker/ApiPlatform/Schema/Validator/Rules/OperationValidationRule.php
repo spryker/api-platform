@@ -22,17 +22,24 @@ class OperationValidationRule implements ValidationRuleInterface
     {
         $errors = [];
         $operations = $schema['operations'] ?? [];
+        $includableIn = $schema['includableIn'] ?? [];
 
-        if (!is_array($operations) || $operations === []) {
+        if ((!is_array($operations) || $operations === []) && (!is_array($includableIn) || $includableIn === [])) {
             return [
                 sprintf(
-                    'At least one operation must be defined in %s',
+                    'At least one operation or includableIn must be defined in %s',
                     $schema['sourceFile'] ?? 'unknown file',
                 ),
             ];
         }
 
-        foreach (array_keys($operations) as $operationType) {
+        if (!is_array($operations) || $operations === []) {
+            return $errors;
+        }
+
+        foreach ($operations as $key => $operation) {
+            $operationType = is_array($operation) ? ($operation['type'] ?? $key) : $key;
+
             if (!in_array($operationType, static::VALID_OPERATIONS, true)) {
                 $errors[] = sprintf(
                     'Invalid operation type "%s" in %s. Valid types are: %s',

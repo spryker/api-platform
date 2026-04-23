@@ -186,6 +186,23 @@ class RelationshipPhpDocGeneratorTest extends Unit
         $this->assertSame('@var \Generated\Api\Storefront\CustomersAddressesStorefrontResource[]', $result);
     }
 
+    public function testGivenKebabCaseRelationshipNameWhenGeneratingThenMatchesCamelCaseProperty(): void
+    {
+        // Arrange
+        $property = ['type' => 'array'];
+        $propertyName = 'cartRules';
+        $includes = [
+            ['relationshipName' => 'cart-rules', 'targetResource' => 'CartRules'],
+        ];
+        $apiType = 'Storefront';
+
+        // Act
+        $result = $this->generator->generate($property, $propertyName, $includes, $apiType);
+
+        // Assert
+        $this->assertSame('@var \Generated\Api\Storefront\CartRulesStorefrontResource[]', $result);
+    }
+
     public function testGivenComplexResourceNameWhenGeneratingThenNormalizesCorrectly(): void
     {
         // Arrange

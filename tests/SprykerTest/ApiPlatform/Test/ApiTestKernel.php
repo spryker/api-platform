@@ -10,13 +10,17 @@ declare(strict_types=1);
 namespace SprykerTest\ApiPlatform\Test;
 
 use ApiPlatform\Symfony\Security\ResourceAccessChecker;
-use Spryker\ApiPlatform\DependencyInjection\Compiler\ApiResourceServiceRegistrationPass;
+use Spryker\ApiPlatform\DependencyInjection\Compiler\ApiClassAutoDiscoveryPass;
+use Spryker\ApiPlatform\DependencyInjection\Compiler\SchemaServiceRegistrationPass;
 use SprykerTest\ApiPlatform\DependencyInjection\Compiler\FilterApiResourcesByTypePass;
 use SprykerTest\ApiPlatform\DependencyInjection\Compiler\RegisterGeneratedResourcesPass;
+use SprykerTest\ApiPlatform\DependencyInjection\Compiler\SuppressUnresolvableServicesPass;
 use SprykerTest\ApiPlatform\Test\Security\CustomerProvider;
 use SprykerTest\ApiPlatform\Test\Security\TokenAuthenticator;
 use SprykerTest\Shared\Testify\Helper\Kernel\TestKernel;
 use Symfony\Component\Config\Loader\LoaderInterface;
+use Symfony\Component\DependencyInjection\Compiler\CompilerPassInterface;
+use Symfony\Component\DependencyInjection\Compiler\PassConfig;
 use Symfony\Component\DependencyInjection\ContainerBuilder;
 use Symfony\Component\DependencyInjection\Definition;
 use Symfony\Component\DependencyInjection\Reference;
@@ -30,19 +34,27 @@ class ApiTestKernel extends TestKernel
 
     protected string $apiType = '';
 
+    /**
+     * @var array<\Symfony\Component\DependencyInjection\Compiler\CompilerPassInterface>
+     */
+    protected array $testCompilerPasses = [];
+
     protected function build(ContainerBuilder $container): void
     {
-        if (TestModeConfiguration::isProjectMode()) {
-            parent::build($container);
-
-            return;
-        }
-
         parent::build($container);
 
-        $container->addCompilerPass(new ApiResourceServiceRegistrationPass());
-        $container->addCompilerPass(new FilterApiResourcesByTypePass($this->apiType));
-        $container->addCompilerPass(new RegisterGeneratedResourcesPass($this->resourcePaths));
+        $container->addCompilerPass(new SchemaServiceRegistrationPass());
+        $container->addCompilerPass(new ApiClassAutoDiscoveryPass());
+
+        if (TestModeConfiguration::isCoreMode()) {
+            $container->addCompilerPass(new SuppressUnresolvableServicesPass(), PassConfig::TYPE_BEFORE_OPTIMIZATION, -100);
+            $container->addCompilerPass(new FilterApiResourcesByTypePass($this->apiType));
+            $container->addCompilerPass(new RegisterGeneratedResourcesPass($this->resourcePaths));
+        }
+
+        foreach ($this->testCompilerPasses as $pass) {
+            $container->addCompilerPass($pass);
+        }
     }
 
     public function setResourcePaths(array $resourcePaths): self
@@ -55,6 +67,13 @@ class ApiTestKernel extends TestKernel
     public function setApiType(string $apiType): self
     {
         $this->apiType = $apiType;
+
+        return $this;
+    }
+
+    public function addTestCompilerPass(CompilerPassInterface $pass): static
+    {
+        $this->testCompilerPasses[] = $pass;
 
         return $this;
     }
@@ -142,17 +161,21 @@ class ApiTestKernel extends TestKernel
     /**
      * Configures parameters for core mode.
      *
-     * Uses module-level test paths for resources and cache.
+     * Uses loadFromExtension so the SprykerApiPlatformExtension receives
+     * these values during its load() method instead of having its defaults
+     * overwrite raw setParameter() calls.
      */
     protected function configureCoreModeParameters(ContainerBuilder $container): void
     {
         $moduleRoot = $this->getProjectDir();
 
-        $container->setParameter('spryker_api_platform.api_types', [$this->apiType]);
-        $container->setParameter('spryker_api_platform.source_directories', [$moduleRoot]);
-        $container->setParameter('spryker_api_platform.cache_dir', sprintf('%s/tests/_data/cache', $moduleRoot));
-        $container->setParameter('spryker_api_platform.generated_dir', sprintf('%s/tests/_data/Api', $moduleRoot));
-        $container->setParameter('spryker_api_platform.debug', true);
+        $container->loadFromExtension('spryker_api_platform', [
+            'source_directories' => [$moduleRoot],
+            'api_types' => [$this->apiType],
+            'cache_dir' => sprintf('%s/tests/_data/cache', $moduleRoot),
+            'generated_dir' => sprintf('%s/tests/_data/Api', $moduleRoot),
+            'debug' => true,
+        ]);
     }
 
     public function getProjectDir(): string

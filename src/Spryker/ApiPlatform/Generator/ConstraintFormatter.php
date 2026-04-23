@@ -39,7 +39,7 @@ namespace Spryker\ApiPlatform\Generator;
  * ```
  *
  * Handles alias resolution for fully qualified class name constraints to prevent naming conflicts.
- * Supports composite constraints (All, Sequentially, Composite) with nested constraint arrays.
+ * Supports composite constraints (All, AtLeastOneOf, Sequentially, Composite) with nested constraint arrays.
  */
 class ConstraintFormatter
 {
@@ -48,8 +48,10 @@ class ConstraintFormatter
      */
     protected const array COMPOSITE_CONSTRAINTS_WITH_CONSTRAINTS_PARAMETER = [
         'All',
+        'AtLeastOneOf',
         'Sequentially',
         'Composite',
+        'When',
     ];
 
     /**
@@ -59,6 +61,8 @@ class ConstraintFormatter
 
     /**
      * @param array<string, array{fqcn: string, shortName: string, alias: string}> $fqcnConstraintMap
+     *
+     * @return void
      */
     public function setFqcnConstraintMap(array $fqcnConstraintMap): void
     {
@@ -98,7 +102,7 @@ class ConstraintFormatter
                 return sprintf("#[%s(groups: ['%s'])]", $alias, $groupsString);
             }
 
-            $formattedOptions = $this->formatConstraintOptions($options, $constraintName);
+            $formattedOptions = $this->formatConstraintOptions($options, $constraintName, $groups);
 
             if ($formattedOptions === '') {
                 return sprintf("#[%s(groups: ['%s'])]", $alias, $groupsString);
@@ -111,7 +115,7 @@ class ConstraintFormatter
             return sprintf("#[Assert\\%s(groups: ['%s'])]", $constraintName, $groupsString);
         }
 
-        $formattedOptions = $this->formatConstraintOptions($options, $constraintName);
+        $formattedOptions = $this->formatConstraintOptions($options, $constraintName, $groups);
 
         if ($formattedOptions === '') {
             return sprintf("#[Assert\\%s(groups: ['%s'])]", $constraintName, $groupsString);
@@ -122,16 +126,24 @@ class ConstraintFormatter
 
     /**
      * @param array<string, mixed> $options
+     * @param array<string> $groups
      */
-    protected function formatConstraintOptions(array $options, string $constraintName = ''): string
+    protected function formatConstraintOptions(array $options, string $constraintName = '', array $groups = []): string
     {
         $parts = [];
 
         foreach ($options as $key => $value) {
             if (is_array($value)) {
                 if ($key === 'constraints' && in_array($constraintName, static::COMPOSITE_CONSTRAINTS_WITH_CONSTRAINTS_PARAMETER, true)) {
-                    $formattedConstraints = $this->formatNestedConstraints($value);
+                    $formattedConstraints = $this->formatNestedConstraints($value, $groups);
                     $parts[] = sprintf('%s: %s', $key, $formattedConstraints);
+
+                    continue;
+                }
+
+                if ($key === 'fields' && $constraintName === 'Collection') {
+                    $formattedFields = $this->formatCollectionFields($value, $groups);
+                    $parts[] = sprintf('%s: %s', $key, $formattedFields);
 
                     continue;
                 }
@@ -163,13 +175,14 @@ class ConstraintFormatter
 
     /**
      * @param array<mixed> $constraints
+     * @param array<string> $groups
      */
-    protected function formatNestedConstraints(array $constraints): string
+    protected function formatNestedConstraints(array $constraints, array $groups = []): string
     {
         $formattedConstraints = [];
 
         foreach ($constraints as $constraint) {
-            $formattedConstraint = $this->formatSingleNestedConstraint($constraint);
+            $formattedConstraint = $this->formatSingleNestedConstraint($constraint, $groups);
 
             if ($formattedConstraint !== '') {
                 $formattedConstraints[] = $formattedConstraint;
@@ -179,17 +192,22 @@ class ConstraintFormatter
         return '[' . implode(', ', $formattedConstraints) . ']';
     }
 
-    protected function formatSingleNestedConstraint(mixed $constraint): string
+    /**
+     * @param array<string> $groups
+     */
+    protected function formatSingleNestedConstraint(mixed $constraint, array $groups = []): string
     {
+        $groupsArgument = $this->formatGroupsArgument($groups);
+
         if (is_string($constraint)) {
             if ($this->isFqcn($constraint)) {
                 $normalized = $this->normalizeFqcn($constraint);
                 $alias = $this->fqcnConstraintMap[$normalized]['alias'] ?? $this->parseConstraintFqcn($constraint)['shortName'];
 
-                return sprintf('new %s()', $alias);
+                return sprintf('new %s(%s)', $alias, $groupsArgument);
             }
 
-            return sprintf('new Assert\%s()', $constraint);
+            return sprintf('new Assert\%s(%s)', $constraint, $groupsArgument);
         }
 
         if (!is_array($constraint)) {
@@ -204,29 +222,95 @@ class ConstraintFormatter
             $alias = $this->fqcnConstraintMap[$normalized]['alias'] ?? $this->parseConstraintFqcn($constraintName)['shortName'];
 
             if (!is_array($options)) {
-                return sprintf('new %s()', $alias);
+                return sprintf('new %s(%s)', $alias, $groupsArgument);
             }
 
-            $formattedOptions = $this->formatConstraintOptions($options, $constraintName);
+            $formattedOptions = $this->formatConstraintOptions($options, $constraintName, $groups);
 
             if ($formattedOptions === '') {
-                return sprintf('new %s()', $alias);
+                return sprintf('new %s(%s)', $alias, $groupsArgument);
             }
 
-            return sprintf('new %s(%s)', $alias, $formattedOptions);
+            return sprintf('new %s(%s%s)', $alias, $formattedOptions, $this->appendGroupsArgument($groups));
         }
 
         if (!is_array($options)) {
-            return sprintf('new Assert\%s()', $constraintName);
+            return sprintf('new Assert\%s(%s)', $constraintName, $groupsArgument);
         }
 
-        $formattedOptions = $this->formatConstraintOptions($options, $constraintName);
+        $formattedOptions = $this->formatConstraintOptions($options, $constraintName, $groups);
 
         if ($formattedOptions === '') {
-            return sprintf('new Assert\%s()', $constraintName);
+            return sprintf('new Assert\%s(%s)', $constraintName, $groupsArgument);
         }
 
-        return sprintf('new Assert\%s(%s)', $constraintName, $formattedOptions);
+        return sprintf('new Assert\%s(%s%s)', $constraintName, $formattedOptions, $this->appendGroupsArgument($groups));
+    }
+
+    /**
+     * @param array<string, array<mixed>> $fields
+     * @param array<string> $groups
+     */
+    protected function formatCollectionFields(array $fields, array $groups = []): string
+    {
+        $fieldParts = [];
+
+        foreach ($fields as $fieldName => $constraints) {
+            $fieldConstraints = $this->formatFieldConstraints($constraints, $groups);
+            $fieldParts[] = sprintf("'%s' => %s", addslashes($fieldName), $fieldConstraints);
+        }
+
+        return '[' . implode(', ', $fieldParts) . ']';
+    }
+
+    /**
+     * @param array<mixed> $constraints
+     * @param array<string> $groups
+     */
+    protected function formatFieldConstraints(array $constraints, array $groups = []): string
+    {
+        if (count($constraints) === 1) {
+            $constraint = $constraints[0];
+
+            if (is_array($constraint) && (isset($constraint['Optional']) || isset($constraint['Required']))) {
+                $wrapperName = isset($constraint['Optional']) ? 'Optional' : 'Required';
+                $innerConfig = $constraint[$wrapperName];
+                $innerConstraints = $innerConfig['constraints'] ?? [];
+                $formattedInner = $this->formatNestedConstraints($innerConstraints, $groups);
+
+                return sprintf('new Assert\%s(%s)', $wrapperName, $formattedInner);
+            }
+        }
+
+        return $this->formatNestedConstraints($constraints, $groups);
+    }
+
+    /**
+     * @param array<string> $groups
+     */
+    protected function formatGroupsArgument(array $groups): string
+    {
+        if ($groups === []) {
+            return '';
+        }
+
+        $groupsString = implode("', '", $groups);
+
+        return sprintf("groups: ['%s']", $groupsString);
+    }
+
+    /**
+     * @param array<string> $groups
+     */
+    protected function appendGroupsArgument(array $groups): string
+    {
+        if ($groups === []) {
+            return '';
+        }
+
+        $groupsString = implode("', '", $groups);
+
+        return sprintf(", groups: ['%s']", $groupsString);
     }
 
     /**

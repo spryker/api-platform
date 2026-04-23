@@ -73,6 +73,7 @@ class ClassGenerator
         'boolean' => 'bool',
         'array' => 'array',
         'object' => 'object',
+        'map' => 'array',
         'mixed' => 'mixed',
     ];
 
@@ -248,6 +249,9 @@ class ClassGenerator
                 'phpDoc' => $phpDoc,
                 'default' => $property['default'] ?? null,
                 'hasDefault' => array_key_exists('default', $property),
+                'serializedName' => $property['serializedName'] ?? null,
+                'serializedPath' => $property['serializedPath'] ?? null,
+                'nullable' => !empty($property['nullable']),
             ];
         }
 
@@ -489,6 +493,8 @@ class ClassGenerator
 
     /**
      * @param array<string, array{fqcn: string, shortName: string, alias: string, namespaceParts: array<string>}> $fqcnConstraints
+     *
+     * @return void
      */
     protected function extractFqcnFromConstraint(mixed $constraint, array &$fqcnConstraints): void
     {
@@ -587,6 +593,8 @@ class ClassGenerator
     /**
      * @param array<string, array<string>> $vendorGroups
      * @param array<string, array{fqcn: string, shortName: string, alias: string, namespaceParts: array<string>}> $fqcnConstraints
+     *
+     * @return void
      */
     protected function resolveVendorGroupAliases(array $vendorGroups, string $shortName, array &$fqcnConstraints): void
     {
@@ -602,6 +610,8 @@ class ClassGenerator
     /**
      * @param array<string> $vendorFqcns
      * @param array<string, array{fqcn: string, shortName: string, alias: string, namespaceParts: array<string>}> $fqcnConstraints
+     *
+     * @return void
      */
     protected function resolveVendorAliases(array $vendorFqcns, string $vendor, string $shortName, array &$fqcnConstraints): void
     {
@@ -617,6 +627,8 @@ class ClassGenerator
     /**
      * @param array<string> $vendorFqcns
      * @param array<string, array{fqcn: string, shortName: string, alias: string, namespaceParts: array<string>}> $fqcnConstraints
+     *
+     * @return void
      */
     protected function resolveVendorCollisionAliases(array $vendorFqcns, string $vendor, string $shortName, array &$fqcnConstraints): void
     {

@@ -54,6 +54,10 @@ class ValidationSchemaFinder implements ValidationSchemaFinderInterface
             static::VALIDATION_FILE_SUFFIX,
         );
 
+        if ($this->isExcluded($pattern)) {
+            return null;
+        }
+
         if (file_exists($pattern)) {
             return new SplFileInfo($pattern);
         }
@@ -67,6 +71,8 @@ class ValidationSchemaFinder implements ValidationSchemaFinderInterface
      * The API type is normalized to lowercase to match the directory structure convention.
      *
      * @param string $apiType The API type (normalized to lowercase automatically)
+     *
+     * @return \Generator<\SplFileInfo>
      */
     public function findAllValidationSchemas(string $apiType): Generator
     {
@@ -86,8 +92,23 @@ class ValidationSchemaFinder implements ValidationSchemaFinderInterface
             ->sortByName();
 
         foreach ($finder as $file) {
+            if ($this->isExcluded((string)$file->getRealPath())) {
+                continue;
+            }
+
             yield $file;
         }
+    }
+
+    protected function isExcluded(string $realPath): bool
+    {
+        foreach ($this->config->getExcludedPathFragments() as $fragment) {
+            if ($fragment !== '' && str_contains($realPath, $fragment)) {
+                return true;
+            }
+        }
+
+        return false;
     }
 
     /**

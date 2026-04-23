@@ -83,8 +83,14 @@ class PropertyAttributeGenerator
             $apiPropertyParts[] = 'required: true';
         }
 
-        if (isset($property['openapiContext']) && $property['openapiContext'] !== []) {
-            $formattedContext = $this->formatOpenapiContext($property['openapiContext']);
+        $openapiContext = $property['openapiContext'] ?? [];
+
+        if (isset($property['type']) && $property['type'] === 'map') {
+            $openapiContext = array_merge(['type' => 'object'], $openapiContext);
+        }
+
+        if ($openapiContext !== []) {
+            $formattedContext = $this->formatOpenapiContext($openapiContext);
             $apiPropertyParts[] = sprintf('openapiContext: %s', $formattedContext);
         }
 

@@ -47,7 +47,7 @@ namespace Spryker\ApiPlatform\Generator\Template;
 class PhpTemplateRenderer
 {
     /**
-     * @param array{className: string, namespace: string, uses: array<string>, resourceAttribute: string, properties: array<array{name: string, type: string, phpType: string, attributes: string, description: string, phpDoc: string}>, codeBucket: ?string, metadata: array{timestamp: string, sourceFiles: array<string>, validationSourceFiles: array<string>}}|array $templateData
+     * @param array{className: string, namespace: string, uses: array<string>, resourceAttribute: string, properties: array<array{name: string, type: string, phpType: string, attributes: string, description: string, phpDoc: string, serializedName?: string, serializedPath?: string, nullable?: bool}>, codeBucket: ?string, metadata: array{timestamp: string, sourceFiles: array<string>, validationSourceFiles: array<string>}}|array $templateData
      *
      * @return string
      */
@@ -155,7 +155,7 @@ PHP;
     }
 
     /**
-     * @param array<array{name: string, type: string, phpType: string, attributes: string, description: string, phpDoc: string}> $properties
+     * @param array<array{name: string, type: string, phpType: string, attributes: string, description: string, phpDoc: string, serializedName?: string, serializedPath?: string, nullable?: bool}> $properties
      */
     protected function renderProperties(array $properties): string
     {
@@ -178,20 +178,46 @@ PHP;
                 $propertyLines[] = "    {$property['attributes']}";
             }
 
-            // required arrays need to have an empty array as default, so the validation is triggered for it when not send via the API
-            if ($property['phpType'] === 'array') {
-                $propertyLines[] = "    public {$property['phpType']} \${$property['name']} = [];";
-                $rendered[] = implode("\n", $propertyLines);
-
-                continue;
-            }
-
-            $defaultValue = $this->formatPropertyDefault($property);
-            $propertyLines[] = "    public ?{$property['phpType']} \${$property['name']} = {$defaultValue};";
-            $rendered[] = implode("\n", $propertyLines);
+            $propertyLines[] = $this->renderSerializationAttribute($property);
+            $propertyLines[] = $this->renderPropertyDeclaration($property);
+            $rendered[] = implode("\n", array_filter($propertyLines));
         }
 
         return implode("\n\n", $rendered);
+    }
+
+    /**
+     * @param array<string, mixed> $property
+     */
+    protected function renderSerializationAttribute(array $property): string
+    {
+        if (!empty($property['serializedPath'])) {
+            return sprintf("    #[SerializedPath('%s')]", $property['serializedPath']);
+        }
+
+        if (!empty($property['serializedName'])) {
+            return sprintf("    #[SerializedName('%s')]", $property['serializedName']);
+        }
+
+        return '';
+    }
+
+    /**
+     * @param array<string, mixed> $property
+     */
+    protected function renderPropertyDeclaration(array $property): string
+    {
+        if ($property['phpType'] === 'array') {
+            $default = !empty($property['nullable']) ? 'null' : '[]';
+            $typePrefix = !empty($property['nullable']) ? '?' : '';
+
+            return sprintf('    public %sarray $%s = %s;', $typePrefix, $property['name'], $default);
+        }
+
+        $defaultValue = $this->formatPropertyDefault($property);
+        $nullablePrefix = $property['phpType'] === 'mixed' ? '' : '?';
+
+        return sprintf('    public %s%s $%s = %s;', $nullablePrefix, $property['phpType'], $property['name'], $defaultValue);
     }
 
     /**
@@ -225,7 +251,7 @@ PHP;
     }
 
     /**
-     * @param array<array{name: string, type: string, phpType: string, attributes: string, description: string, phpDoc: string}> $properties
+     * @param array<array{name: string, type: string, phpType: string, attributes: string, description: string, phpDoc: string, serializedName?: string, serializedPath?: string, nullable?: bool}> $properties
      */
     protected function renderGettersAndSetters(array $properties): string
     {
@@ -239,15 +265,17 @@ PHP;
             $setterName = 'set' . ucfirst($property['name']);
             $getterName = 'get' . ucfirst($property['name']);
 
+            $nullablePrefix = $property['phpType'] === 'mixed' ? '' : '?';
+
             $rendered[] = <<<PHP
-    public function {$setterName}(?{$property['phpType']} \${$property['name']}): self
+    public function {$setterName}({$nullablePrefix}{$property['phpType']} \${$property['name']}): self
     {
         \$this->{$property['name']} = \${$property['name']};
 
         return \$this;
     }
 
-    public function {$getterName}(): ?{$property['phpType']}
+    public function {$getterName}(): {$nullablePrefix}{$property['phpType']}
     {
         return \$this->{$property['name']};
     }
@@ -258,7 +286,7 @@ PHP;
     }
 
     /**
-     * @param array<array{name: string, type: string, phpType: string, attributes: string, description: string, phpDoc: string}> $properties
+     * @param array<array{name: string, type: string, phpType: string, attributes: string, description: string, phpDoc: string, serializedName?: string, serializedPath?: string, nullable?: bool}> $properties
      */
     protected function renderToArray(array $properties): string
     {
@@ -289,7 +317,7 @@ PHP;
     }
 
     /**
-     * @param array<array{name: string, type: string, phpType: string, attributes: string, description: string, phpDoc: string}> $properties
+     * @param array<array{name: string, type: string, phpType: string, attributes: string, description: string, phpDoc: string, serializedName?: string, serializedPath?: string, nullable?: bool}> $properties
      */
     protected function renderFromArray(string $className, array $properties): string
     {
@@ -301,7 +329,8 @@ PHP;
 
         foreach ($properties as $property) {
             if ($property['phpType'] === 'array') {
-                $assignments[] = "        \$instance->{$property['name']} = \$data['{$property['name']}'] ?? [];";
+                $default = !empty($property['nullable']) ? 'null' : '[]';
+                $assignments[] = "        \$instance->{$property['name']} = \$data['{$property['name']}'] ?? {$default};";
 
                 continue;
             }

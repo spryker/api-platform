@@ -18,7 +18,6 @@ use Spryker\ApiPlatform\Provider\RelationshipProvider;
 use Spryker\ApiPlatform\Relationship\ApiPlatformRelationshipResolver;
 use SprykerTest\ApiPlatform\ApiIntegrationTester;
 use Symfony\Component\HttpFoundation\Request;
-use Symfony\Component\HttpFoundation\RequestStack;
 
 /**
  * Auto-generated group annotations
@@ -77,11 +76,10 @@ class RelationshipLoadingTest extends Unit
             ->willReturn($mainResource);
 
         $request = new Request(['include' => 'addresses']);
-        $requestStack = new RequestStack();
-        $requestStack->push($request);
+        $resolverLocator = $this->createMock(ContainerInterface::class);
 
-        $resolver = new ApiPlatformRelationshipResolver($relationships, $providerLocator);
-        $decorator = new RelationshipProvider($innerProvider, $resolver, $requestStack);
+        $resolver = new ApiPlatformRelationshipResolver($relationships, $providerLocator, $resolverLocator);
+        $decorator = new RelationshipProvider($innerProvider, $resolver);
 
         $operation = new Get(shortName: 'customers');
         $context = ['request' => $request];
@@ -91,8 +89,10 @@ class RelationshipLoadingTest extends Unit
 
         // Assert
         $this->assertSame($mainResource, $result);
-        $this->assertObjectHasProperty('addresses', $result);
-        $this->assertSame([$relatedResource], $result->addresses);
+
+        $storedRelationships = $request->attributes->get('_spryker_resolved_relationships', []);
+        $this->assertArrayHasKey('addresses', $storedRelationships);
+        $this->assertSame([$relatedResource], $storedRelationships['addresses']);
     }
 
     public function testGivenNoIncludeParameterWhenProvidingResourceThenNoRelationshipsAreLoaded(): void
@@ -110,11 +110,10 @@ class RelationshipLoadingTest extends Unit
         $providerLocator->expects($this->never())->method('get');
 
         $request = new Request();
-        $requestStack = new RequestStack();
-        $requestStack->push($request);
+        $resolverLocator = $this->createMock(ContainerInterface::class);
 
-        $resolver = new ApiPlatformRelationshipResolver([], $providerLocator);
-        $decorator = new RelationshipProvider($innerProvider, $resolver, $requestStack);
+        $resolver = new ApiPlatformRelationshipResolver([], $providerLocator, $resolverLocator);
+        $decorator = new RelationshipProvider($innerProvider, $resolver);
 
         $operation = new Get(shortName: 'customers');
         $context = ['request' => $request];
@@ -178,11 +177,10 @@ class RelationshipLoadingTest extends Unit
             ->willReturn($mainResource);
 
         $request = new Request(['include' => 'addresses,orders']);
-        $requestStack = new RequestStack();
-        $requestStack->push($request);
+        $resolverLocator = $this->createMock(ContainerInterface::class);
 
-        $resolver = new ApiPlatformRelationshipResolver($relationships, $providerLocator);
-        $decorator = new RelationshipProvider($innerProvider, $resolver, $requestStack);
+        $resolver = new ApiPlatformRelationshipResolver($relationships, $providerLocator, $resolverLocator);
+        $decorator = new RelationshipProvider($innerProvider, $resolver);
 
         $operation = new Get(shortName: 'customers');
         $context = ['request' => $request];
@@ -192,10 +190,12 @@ class RelationshipLoadingTest extends Unit
 
         // Assert
         $this->assertSame($mainResource, $result);
-        $this->assertObjectHasProperty('addresses', $result);
-        $this->assertObjectHasProperty('orders', $result);
-        $this->assertSame([$addressResource], $result->addresses);
-        $this->assertSame([$orderResource], $result->orders);
+
+        $storedRelationships = $request->attributes->get('_spryker_resolved_relationships', []);
+        $this->assertArrayHasKey('addresses', $storedRelationships);
+        $this->assertArrayHasKey('orders', $storedRelationships);
+        $this->assertSame([$addressResource], $storedRelationships['addresses']);
+        $this->assertSame([$orderResource], $storedRelationships['orders']);
     }
 
     public function testGivenInvalidRelationshipNameWhenProvidingResourceThenGracefullyIgnored(): void
@@ -211,11 +211,10 @@ class RelationshipLoadingTest extends Unit
         $providerLocator = $this->createMock(ContainerInterface::class);
 
         $request = new Request(['include' => 'nonexistent']);
-        $requestStack = new RequestStack();
-        $requestStack->push($request);
+        $resolverLocator = $this->createMock(ContainerInterface::class);
 
-        $resolver = new ApiPlatformRelationshipResolver([], $providerLocator);
-        $decorator = new RelationshipProvider($innerProvider, $resolver, $requestStack);
+        $resolver = new ApiPlatformRelationshipResolver([], $providerLocator, $resolverLocator);
+        $decorator = new RelationshipProvider($innerProvider, $resolver);
 
         $operation = new Get(shortName: 'customers');
         $context = ['request' => $request];
@@ -268,11 +267,10 @@ class RelationshipLoadingTest extends Unit
             ->willReturn($resources);
 
         $request = new Request(['include' => 'addresses']);
-        $requestStack = new RequestStack();
-        $requestStack->push($request);
+        $resolverLocator = $this->createMock(ContainerInterface::class);
 
-        $resolver = new ApiPlatformRelationshipResolver($relationships, $providerLocator);
-        $decorator = new RelationshipProvider($innerProvider, $resolver, $requestStack);
+        $resolver = new ApiPlatformRelationshipResolver($relationships, $providerLocator, $resolverLocator);
+        $decorator = new RelationshipProvider($innerProvider, $resolver);
 
         $operation = new GetCollection(shortName: 'customers');
         $context = ['request' => $request];

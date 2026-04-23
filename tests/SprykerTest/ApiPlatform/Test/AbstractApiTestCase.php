@@ -18,10 +18,11 @@ use ReflectionProperty;
 use Spryker\ApiPlatform\SprykerApiPlatformBundle;
 use Spryker\Service\Container\ContainerDelegator;
 use Spryker\Shared\Kernel\Container\ContainerProxy;
-use SprykerTest\ApiPlatform\Helper\ApiResourceGeneratorHelper;
+use SprykerTest\ApiPlatform\DependencyInjection\Compiler\MockServiceCompilerPass;
 use SprykerTest\Shared\Testify\Helper\BootstrapHelper;
 use Symfony\Bundle\FrameworkBundle\FrameworkBundle;
 use Symfony\Bundle\SecurityBundle\SecurityBundle;
+use Symfony\Component\DependencyInjection\Compiler\CompilerPassInterface;
 use Symfony\Component\DependencyInjection\ContainerInterface;
 use Symfony\Component\DependencyInjection\Exception\ServiceNotFoundException;
 use Symfony\Component\HttpKernel\KernelInterface;
@@ -51,72 +52,19 @@ abstract class AbstractApiTestCase extends Unit
 
     protected const string API_TYPE = 'undefined';
 
+    /**
+     * @var array<\Symfony\Component\DependencyInjection\Compiler\CompilerPassInterface>
+     */
+    protected array $testCompilerPasses = [];
+
+    /**
+     * @var array<string, object>
+     */
+    protected array $serviceMocks = [];
+
     protected const string MEDIA_TYPE_JSON_LD = 'application/ld+json';
 
     protected const string MEDIA_TYPE_JSON_API = 'application/vnd.api+json';
-
-    protected static ?ApiResourceGeneratorHelper $resourceHelper = null;
-
-    public static function setUpBeforeClass(): void
-    {
-        parent::setUpBeforeClass();
-
-        if (TestModeConfiguration::isProjectMode()) {
-            static::validateProjectModeResources();
-
-            return;
-        }
-
-        // Register custom autoloader BEFORE generating resources
-        // This ensures Generated\Api\* classes are always loaded from tests/_data/ instead of src/Generated/
-        static::registerTestAutoloader();
-
-        static::$resourceHelper = new ApiResourceGeneratorHelper();
-        $moduleRoot = static::getModuleRoot();
-
-        static::$resourceHelper->cleanup($moduleRoot, static::API_TYPE);
-        static::$resourceHelper->generate($moduleRoot, static::API_TYPE);
-    }
-
-    /**
-     * Validates that API resources exist in project mode and prints informational message.
-     */
-    protected static function validateProjectModeResources(): void
-    {
-        $projectRoot = defined('APPLICATION_ROOT_DIR')
-            ? APPLICATION_ROOT_DIR
-            : dirname(codecept_data_dir(), 3);
-
-        $resourcePath = sprintf('%s/src/Generated/Api/%s', $projectRoot, static::API_TYPE);
-
-        echo sprintf(
-            "\n[ApiPlatformTest] Running in PROJECT mode for %s API.\n",
-            static::API_TYPE,
-        );
-
-        if (!is_dir($resourcePath) || count(glob($resourcePath . '/*.php')) === 0) {
-            echo sprintf(
-                "[ApiPlatformTest] WARNING: No resources found at %s\n" .
-                "[ApiPlatformTest] Generate resources with: vendor/bin/console api:generate %s\n\n",
-                $resourcePath,
-                strtolower(static::API_TYPE),
-            );
-        } else {
-            echo sprintf(
-                "[ApiPlatformTest] Resources found at %s\n\n",
-                $resourcePath,
-            );
-        }
-    }
-
-    public static function tearDownAfterClass(): void
-    {
-        if (TestModeConfiguration::isCoreMode() && static::$resourceHelper !== null) {
-            static::$resourceHelper->cleanup(static::getModuleRoot(), static::API_TYPE);
-        }
-
-        parent::tearDownAfterClass();
-    }
 
     protected static function getModuleRoot(): string
     {
@@ -130,49 +78,6 @@ abstract class AbstractApiTestCase extends Unit
         $dataDir = realpath($dataDir);
 
         return dirname($dataDir, 2);
-    }
-
-    /**
-     * Registers a custom autoloader that intercepts Generated\Api\* class loading.
-     *
-     * When running tests in core mode, this autoloader ensures that resource classes
-     * are always loaded from tests/_data/Api/ instead of src/Generated/Api/,
-     * preventing "Cannot redeclare class" errors when multiple test classes run
-     * in sequence within the same PHP process.
-     *
-     * The autoloader is prepended to the autoload queue (high priority) so it
-     * takes precedence over Composer's autoloader.
-     */
-    protected static function registerTestAutoloader(): void
-    {
-        $moduleRoot = static::getModuleRoot();
-        $testResourceBasePath = sprintf('%s/tests/_data/Api', $moduleRoot);
-
-        spl_autoload_register(
-            function (string $className) use ($testResourceBasePath): void {
-                // Only intercept Generated\Api\* classes
-                if (!str_starts_with($className, 'Generated\\Api\\')) {
-                    return;
-                }
-
-                // Convert class name to file path
-                // Example: Generated\Api\Storefront\TokensStorefrontResource
-                // -> tests/_data/Api/Storefront/TokensStorefrontResource.php
-                $classNameWithoutPrefix = substr($className, strlen('Generated\\Api\\'));
-                $filePath = sprintf(
-                    '%s/%s.php',
-                    $testResourceBasePath,
-                    str_replace('\\', DIRECTORY_SEPARATOR, $classNameWithoutPrefix),
-                );
-
-                // Load from test directory if file exists
-                if (file_exists($filePath)) {
-                    require_once $filePath;
-                }
-            },
-            true, // Throw exception on failure
-            true, // Prepend to autoloader queue (high priority)
-        );
     }
 
     /**
@@ -378,6 +283,46 @@ abstract class AbstractApiTestCase extends Unit
         ];
     }
 
+    public function setService(string $serviceId, object $service): void
+    {
+        $this->serviceMocks[$serviceId] = $service;
+    }
+
+    public function getService(string $serviceClass): object
+    {
+        $this->addTestCompilerPass(
+            new MockServiceCompilerPass(array_keys($this->serviceMocks)),
+        );
+
+        $testContainer = $this->getTestContainer();
+        $realContainer = $this->getTestKernel()->getContainer();
+
+        foreach ($this->serviceMocks as $serviceId => $mock) {
+            $realContainer->set($serviceId, $mock);
+        }
+
+        return $testContainer->get($serviceClass);
+    }
+
+    public function addTestCompilerPass(CompilerPassInterface $pass): void
+    {
+        $this->testCompilerPasses[] = $pass;
+    }
+
+    public function getTestContainer(): ContainerInterface
+    {
+        return $this->getContainer();
+    }
+
+    public function getTestKernel(): KernelInterface
+    {
+        if (!$this->booted) {
+            $this->bootKernel();
+        }
+
+        return $this->kernel;
+    }
+
     protected function createKernel(): KernelInterface
     {
         $container = new ContainerProxy(['test' => true, 'debug' => true, 'environment' => 'test']);
@@ -396,6 +341,10 @@ abstract class AbstractApiTestCase extends Unit
         $kernel->setApiType(static::API_TYPE);
 
         $kernel->addBundleConfigurations($this->getTestKernelBundleConfigurations($resourcePaths));
+
+        foreach ($this->testCompilerPasses as $pass) {
+            $kernel->addTestCompilerPass($pass);
+        }
 
         return $kernel;
     }
@@ -444,6 +393,8 @@ abstract class AbstractApiTestCase extends Unit
         $this->class = null;
         $this->kernel = null;
         $this->booted = false;
+        $this->testCompilerPasses = [];
+        $this->serviceMocks = [];
 
         parent::tearDown();
     }

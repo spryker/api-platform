@@ -82,6 +82,8 @@ class YamlSchemaLoader implements SchemaLoaderInterface
      * @param array<string, mixed> $data
      *
      * @throws \Spryker\ApiPlatform\Exception\ApiSchemaValidationException
+     *
+     * @return void
      */
     protected function validateStructure(array $data, string $filePath): void
     {

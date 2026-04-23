@@ -12,6 +12,7 @@ namespace Spryker\ApiPlatform\Security;
 use Generated\Shared\Transfer\AuditLoggerConfigCriteriaTransfer;
 use Generated\Shared\Transfer\OauthAccessTokenValidationRequestTransfer;
 use Generated\Shared\Transfer\OauthAccessTokenValidationResponseTransfer;
+use JsonException;
 use Spryker\Client\Oauth\OauthClientInterface;
 use Spryker\Shared\Log\AuditLoggerTrait;
 use Symfony\Component\HttpFoundation\JsonResponse;
@@ -61,7 +62,7 @@ class OauthAuthenticator extends AbstractAuthenticator
     protected const string ERROR_CODE_UNAUTHORIZED = '001';
 
     // Key used in the JWT sub claim to identify the user
-    protected const string OAUTH_USER_DATA_KEY = 'id_user';
+    protected const string OAUTH_USER_DATA_KEY = 'uuid';
 
     /**
      * @uses \Spryker\Shared\Log\LogConfig::AUDIT_LOGGER_CHANNEL_NAME_SECURITY
@@ -79,15 +80,26 @@ class OauthAuthenticator extends AbstractAuthenticator
     ) {
     }
 
+    protected const string PATH_ACCESS_TOKENS = '/access-tokens';
+
+    protected const string PATH_REFRESH_TOKENS = '/refresh-tokens';
+
     public function supports(Request $request): ?bool
     {
         $authorizationHeader = $request->headers->get(static::AUTHORIZATION_HEADER);
 
-        if ($authorizationHeader === null) {
+        if ($authorizationHeader === null || $authorizationHeader === '') {
             return false;
         }
 
-        return str_starts_with($authorizationHeader, static::BEARER_PREFIX);
+        // Token endpoints handle their own credential validation — skip Bearer token auth
+        $path = $request->getPathInfo();
+
+        if ($path === static::PATH_ACCESS_TOKENS || $path === static::PATH_REFRESH_TOKENS) {
+            return false;
+        }
+
+        return true;
     }
 
     public function authenticate(Request $request): Passport
@@ -126,7 +138,7 @@ class OauthAuthenticator extends AbstractAuthenticator
                 'errors' => [
                     [
                         'code' => static::ERROR_CODE_UNAUTHORIZED,
-                        'status' => (string)Response::HTTP_UNAUTHORIZED,
+                        'status' => Response::HTTP_UNAUTHORIZED,
                         'title' => static::ERROR_TITLE_UNAUTHORIZED,
                         'detail' => static::ERROR_DETAIL_INVALID_TOKEN,
                     ],
@@ -181,7 +193,11 @@ class OauthAuthenticator extends AbstractAuthenticator
             return '';
         }
 
-        $userData = json_decode($oauthUserId, true);
+        try {
+            $userData = json_decode($oauthUserId, true, 512, JSON_THROW_ON_ERROR);
+        } catch (JsonException) {
+            return $oauthUserId;
+        }
 
         if (!is_array($userData) || !isset($userData[static::OAUTH_USER_DATA_KEY])) {
             return $oauthUserId;

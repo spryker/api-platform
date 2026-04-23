@@ -13,9 +13,6 @@ use InvalidArgumentException;
 use SplFileInfo;
 use Symfony\Component\DependencyInjection\Compiler\CompilerPassInterface;
 use Symfony\Component\DependencyInjection\ContainerBuilder;
-use Symfony\Component\Finder\Finder;
-use Symfony\Component\Yaml\Yaml;
-use Throwable;
 
 /**
  * Validates that SecurityBundle is registered when resource schemas use security expressions.
@@ -28,12 +25,16 @@ class SecurityServiceRegistrationPass implements CompilerPassInterface
 {
     protected const string SECURITY_BUNDLE_NAME = 'SecurityBundle';
 
-    protected const string RESOURCE_FILE_PATTERN_YML = '*.resource.yml';
+    public function __construct(
+        protected SchemaFileDiscovery $schemaFileDiscovery = new SchemaFileDiscovery(),
+    ) {
+    }
 
-    protected const string RESOURCE_FILE_PATTERN_YAML = '*.resource.yaml';
-
-    protected const string RESOURCE_API_PATH_FORMAT = 'resources/api/%s';
-
+    /**
+     * @throws \InvalidArgumentException
+     *
+     * @return void
+     */
     public function process(ContainerBuilder $container): void
     {
         if ($this->isSecurityBundleRegistered($container)) {
@@ -79,7 +80,7 @@ class SecurityServiceRegistrationPass implements CompilerPassInterface
         $resourcesWithSecurity = [];
 
         foreach ($apiTypes as $apiType) {
-            $schemaFiles = $this->findSchemaFiles($sourceDirectories, (string)$apiType);
+            $schemaFiles = $this->schemaFileDiscovery->findSchemaFiles($sourceDirectories, (string)$apiType);
 
             foreach ($schemaFiles as $schemaFile) {
                 if ($this->schemaHasSecurityExpressions($schemaFile)) {
@@ -91,102 +92,48 @@ class SecurityServiceRegistrationPass implements CompilerPassInterface
         return $resourcesWithSecurity;
     }
 
-    /**
-     * @param array<string> $sourceDirectories
-     *
-     * @return array<\SplFileInfo>
-     */
-    protected function findSchemaFiles(array $sourceDirectories, string $apiType): array
-    {
-        $apiType = strtolower($apiType);
-        $searchDirectories = $this->getSearchDirectories($sourceDirectories, $apiType);
-
-        if ($searchDirectories === []) {
-            return [];
-        }
-
-        $schemaFiles = [];
-
-        $finder = new Finder();
-        $finder->files()
-            ->in($searchDirectories)
-            ->name(static::RESOURCE_FILE_PATTERN_YML)
-            ->name(static::RESOURCE_FILE_PATTERN_YAML);
-
-        foreach ($finder as $file) {
-            $schemaFiles[] = $file;
-        }
-
-        return $schemaFiles;
-    }
-
-    /**
-     * @param array<string> $sourceDirectories
-     *
-     * @return array<string>
-     */
-    protected function getSearchDirectories(array $sourceDirectories, string $apiType): array
-    {
-        $directories = [];
-
-        foreach ($sourceDirectories as $sourceDirectory) {
-            if (!is_dir($sourceDirectory)) {
-                continue;
-            }
-
-            try {
-                $directoryFinder = new Finder();
-                $directoryFinder
-                    ->directories()
-                    ->in($sourceDirectory)
-                    ->name($apiType)
-                    ->filter(function (SplFileInfo $file) use ($apiType): bool {
-                        $path = $file->getRelativePathname();
-
-                        return str_ends_with($path, sprintf(static::RESOURCE_API_PATH_FORMAT, $apiType));
-                    });
-
-                foreach ($directoryFinder as $directory) {
-                    $directories[] = $directory->getRealPath();
-                }
-            } catch (InvalidArgumentException) {
-                continue;
-            }
-        }
-
-        return $directories;
-    }
-
     protected function schemaHasSecurityExpressions(SplFileInfo $schemaFile): bool
     {
-        try {
-            $schema = Yaml::parseFile($schemaFile->getPathname());
+        $schema = $this->schemaFileDiscovery->parseSchemaFile($schemaFile);
 
-            if (!is_array($schema) || !isset($schema['resource'])) {
-                return false;
-            }
+        if ($schema === null) {
+            return false;
+        }
 
-            $resource = $schema['resource'];
+        $resourceDefinitions = $this->schemaFileDiscovery->extractResourceDefinitions($schema);
 
-            if (isset($resource['security']) || isset($resource['securityPostDenormalize']) || isset($resource['securityPostValidation'])) {
+        foreach ($resourceDefinitions as $resource) {
+            if ($this->resourceHasSecurityExpressions($resource)) {
                 return true;
             }
+        }
 
-            if (!isset($resource['operations'])) {
-                return false;
-            }
+        return false;
+    }
 
-            foreach ($resource['operations'] as $operation) {
-                if (!is_array($operation)) {
-                    continue;
-                }
+    /**
+     * @param array<string, mixed> $resource
+     *
+     * @return bool
+     */
+    protected function resourceHasSecurityExpressions(array $resource): bool
+    {
+        if (isset($resource['security']) || isset($resource['securityPostDenormalize']) || isset($resource['securityPostValidation'])) {
+            return true;
+        }
 
-                if (isset($operation['security']) || isset($operation['securityPostDenormalize']) || isset($operation['securityPostValidation'])) {
-                    return true;
-                }
-            }
-        } catch (Throwable) {
+        if (!isset($resource['operations'])) {
             return false;
+        }
+
+        foreach ($resource['operations'] as $operation) {
+            if (!is_array($operation)) {
+                continue;
+            }
+
+            if (isset($operation['security']) || isset($operation['securityPostDenormalize']) || isset($operation['securityPostValidation'])) {
+                return true;
+            }
         }
 
         return false;

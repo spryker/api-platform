@@ -42,7 +42,7 @@ class RelationshipPhpDocGenerator
      *
      * @param array<string, mixed> $property The property schema definition
      * @param string $propertyName The property name to match against includes
-     * @param array<array{relationshipName: string, targetResource: string}> $includes List of relationship definitions
+     * @param array<array{relationshipName: string, targetResource: string, resolverClass?: string}> $includes List of relationship definitions
      * @param string $apiType The API type (e.g., 'Storefront', 'Backoffice')
      *
      * @return string The PHPDoc annotation or empty string if not a relationship
@@ -60,7 +60,25 @@ class RelationshipPhpDocGenerator
         $targetResource = null;
 
         foreach ($includes as $include) {
-            if ($include['relationshipName'] === $propertyName) {
+            // Resolver-based relationships hold raw data arrays by default
+            // and only receive resource objects when ?include= is used.
+            // Adding the @var docblock would cause the serializer to fail
+            // when processing the raw data without ?include=.
+            if (isset($include['resolverClass'])) {
+                continue;
+            }
+
+            // Writable properties hold raw input data from the request body.
+            // Adding the @var docblock for a writable property that also matches
+            // a relationship name causes the serializer to fail when deserializing
+            // the raw input array as a typed resource collection.
+            if ($property['writable'] ?? false) {
+                continue;
+            }
+
+            $normalizedRelationshipName = $this->kebabToCamelCase($include['relationshipName']);
+
+            if ($normalizedRelationshipName === $propertyName) {
                 $targetResource = $include['targetResource'];
 
                 break;
@@ -81,5 +99,14 @@ class RelationshipPhpDocGenerator
         );
 
         return sprintf('@var %s', $fqcn);
+    }
+
+    protected function kebabToCamelCase(string $value): string
+    {
+        if (!str_contains($value, '-')) {
+            return $value;
+        }
+
+        return lcfirst(str_replace('-', '', ucwords($value, '-')));
     }
 }

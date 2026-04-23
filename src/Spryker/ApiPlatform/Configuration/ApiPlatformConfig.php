@@ -16,6 +16,7 @@ class ApiPlatformConfig
     /**
      * @param array<string> $sourceDirectories
      * @param array<string> $apiTypes
+     * @param array<string> $excludedPathFragments
      */
     public function __construct(
         protected readonly array $sourceDirectories,
@@ -23,6 +24,7 @@ class ApiPlatformConfig
         protected readonly string $generatedDir,
         protected readonly array $apiTypes,
         protected readonly bool $debug,
+        protected readonly array $excludedPathFragments = [],
     ) {
     }
 
@@ -59,6 +61,16 @@ class ApiPlatformConfig
     public function isDebug(): bool
     {
         return $this->debug;
+    }
+
+    /**
+     * @api
+     *
+     * @return array<string>
+     */
+    public function getExcludedPathFragments(): array
+    {
+        return $this->excludedPathFragments;
     }
 
     /**

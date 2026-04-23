@@ -8,6 +8,7 @@
 namespace Spryker\ApiPlatform\OpenApi\Normalizer;
 
 use ApiPlatform\Metadata\IdentifiersExtractorInterface;
+use RuntimeException;
 use Symfony\Component\Serializer\Normalizer\NormalizerAwareInterface;
 use Symfony\Component\Serializer\Normalizer\NormalizerAwareTrait;
 use Symfony\Component\Serializer\Normalizer\NormalizerInterface;
@@ -37,8 +38,12 @@ class IdNormalizer implements NormalizerInterface, NormalizerAwareInterface
         // When gen_id is disabled, pre-set the IRI with the entity identifier
         // to prevent the JSON:API ItemNormalizer from calling the IRI converter
         if (($context['gen_id'] ?? true) === false) {
-            $identifiers = $this->identifiersExtractor->getIdentifiersFromItem($object);
+            $identifiers = $this->extractIdentifiersSafely($object);
             $identifier = array_pop($identifiers);
+
+            if ($identifier === null) {
+                $identifier = $this->extractFallbackIdentifier($object);
+            }
 
             if ($identifier !== null) {
                 $context['iri'] = (string)$identifier;
@@ -52,9 +57,21 @@ class IdNormalizer implements NormalizerInterface, NormalizerAwareInterface
         }
 
         if (isset($data['data']['type']) && isset($data['data']['id'])) {
-            $identifiers = $this->identifiersExtractor->getIdentifiersFromItem($object);
+            $identifiers = $this->extractIdentifiersSafely($object);
+            $identifier = array_pop($identifiers);
 
-            $data['data']['id'] = array_pop($identifiers);
+            // Singleton resources (e.g. catalog-search, checkout-data) use the type name
+            // as a synthetic identifier for API Platform IRI generation.
+            // The old Glue REST API returned null IDs for these resources.
+            if ($identifier !== null && $identifier === $data['data']['type']) {
+                $identifier = null;
+
+                // Strip the synthetic identifier suffix from the self-link
+                // (e.g. "/checkout-data/checkout-data" → "/checkout-data")
+                $this->stripSyntheticIdentifierFromSelfLink($data['data'], $data['data']['type']);
+            }
+
+            $data['data']['id'] = $identifier;
         }
 
         return $data;
@@ -78,5 +95,86 @@ class IdNormalizer implements NormalizerInterface, NormalizerAwareInterface
         return [
             'object' => false,
         ];
+    }
+
+    /**
+     * Extracts identifiers from the object, returning an empty array if extraction
+     * fails (e.g. for sub-resources where uriVariable identifiers like customerReference
+     * don't exist on the resource itself).
+     *
+     * @return array<string, mixed>
+     */
+    protected function extractIdentifiersSafely(object $object): array
+    {
+        try {
+            return $this->identifiersExtractor->getIdentifiersFromItem($object);
+        } catch (RuntimeException) {
+            return [];
+        }
+    }
+
+    /**
+     * Tries to read the identifier-marked property (typically `uuid` or `id`) directly
+     * from the resource object as a fallback when IdentifiersExtractor fails.
+     */
+    protected function extractFallbackIdentifier(object $object): ?string
+    {
+        foreach (['uuid', 'id'] as $propertyName) {
+            if (property_exists($object, $propertyName)) {
+                $value = $object->{$propertyName};
+
+                if ($value !== null) {
+                    return (string)$value;
+                }
+            }
+        }
+
+        return null;
+    }
+
+    /**
+     * @param array<string, mixed> $resourceData
+     *
+     * @return void
+     */
+    protected function stripSyntheticIdentifierFromSelfLink(array &$resourceData, string $syntheticIdentifier): void
+    {
+        if (!isset($resourceData['links']['self']) || !is_string($resourceData['links']['self'])) {
+            return;
+        }
+
+        $suffix = '/' . $syntheticIdentifier;
+        $selfLink = $resourceData['links']['self'];
+
+        // Separate query string before checking the path suffix
+        $queryString = '';
+        $questionMarkPosition = strpos($selfLink, '?');
+
+        if ($questionMarkPosition !== false) {
+            $queryString = substr($selfLink, $questionMarkPosition);
+            $selfLink = substr($selfLink, 0, $questionMarkPosition);
+        }
+
+        if (!str_ends_with($selfLink, $suffix)) {
+            return;
+        }
+
+        $basePath = substr($selfLink, 0, -strlen($suffix));
+
+        // API Platform may pluralize the collection segment (e.g. "checkout-datas")
+        // which differs from the actual resource type name ("checkout-data").
+        // Detect and replace the pluralized segment so the self-link matches
+        // the canonical endpoint path.
+        $lastSlashPosition = strrpos($basePath, '/');
+
+        if ($lastSlashPosition !== false) {
+            $collectionSegment = substr($basePath, $lastSlashPosition + 1);
+
+            if ($collectionSegment !== '' && $collectionSegment !== $syntheticIdentifier) {
+                $basePath = substr($basePath, 0, $lastSlashPosition + 1) . $syntheticIdentifier;
+            }
+        }
+
+        $resourceData['links']['self'] = $basePath . $queryString;
     }
 }

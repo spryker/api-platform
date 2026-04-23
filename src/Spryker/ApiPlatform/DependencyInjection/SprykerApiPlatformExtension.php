@@ -39,6 +39,8 @@ class SprykerApiPlatformExtension extends Extension implements PrependExtensionI
 
     /**
      * @param array<mixed> $configs
+     *
+     * @return void
      */
     public function load(array $configs, ContainerBuilder $container): void
     {
@@ -57,6 +59,7 @@ class SprykerApiPlatformExtension extends Extension implements PrependExtensionI
         $container->setParameter('spryker_api_platform.cache_dir', $config['cache_dir']);
         $container->setParameter('spryker_api_platform.generated_dir', $config['generated_dir']);
         $container->setParameter('spryker_api_platform.api_types', $config['api_types']);
+        $container->setParameter('spryker_api_platform.excluded_path_fragments', $config['excluded_path_fragments']);
         $container->setParameter('spryker_api_platform.debug', $config['debug']);
 
         // Registers the #[ApiType] attribute for autoconfiguration. Any service class annotated with
@@ -127,6 +130,8 @@ class SprykerApiPlatformExtension extends Extension implements PrependExtensionI
 
     /**
      * @param array<string> $apiTypes
+     *
+     * @return void
      */
     protected function ensureGeneratedDirectoriesExist(ContainerBuilder $container, string $generatedDir, array $apiTypes): void
     {
@@ -153,6 +158,8 @@ class SprykerApiPlatformExtension extends Extension implements PrependExtensionI
     /**
      * We need to ensure that for the currently running application the assets directory exists. This is needed for the
      * `assets:install` command to work properly.
+     *
+     * @return void
      */
     protected function ensureAssetsDirectoryExist(ContainerBuilder $container): void
     {

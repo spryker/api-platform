@@ -81,6 +81,8 @@ class ResourceAttributeGenerator
             $indent2 = $this->indent(2);
             $operationsContent = $indent2 . implode(",\n" . $indent2, $operationsParts);
             $attributeParts[] = sprintf("operations: [\n%s,\n%s]", $operationsContent, $this->indent(1));
+        } elseif (array_key_exists('operations', $schema)) {
+            $attributeParts[] = 'operations: []';
         }
 
         if (isset($schema['shortName']) && $schema['shortName'] !== '') {
@@ -123,7 +125,13 @@ class ResourceAttributeGenerator
         }
 
         if (isset($schema['security']) && is_string($schema['security'])) {
-            $escapedSecurity = str_replace("'", "\\'", $schema['security']);
+            $securityExpression = $schema['security'];
+
+            if (!empty($schema['securityAnonymousAuthRequired'])) {
+                $securityExpression .= " or request.headers.has('X-Anonymous-Customer-Unique-Id')";
+            }
+
+            $escapedSecurity = str_replace("'", "\\'", $securityExpression);
             $attributeParts[] = sprintf("security: '%s'", $escapedSecurity);
         }
 
@@ -150,6 +158,28 @@ class ResourceAttributeGenerator
         if (isset($schema['securityPostValidationMessage']) && is_string($schema['securityPostValidationMessage'])) {
             $escapedSecurityPostValidationMessage = str_replace("'", "\\'", $schema['securityPostValidationMessage']);
             $attributeParts[] = sprintf("securityPostValidationMessage: '%s'", $escapedSecurityPostValidationMessage);
+        }
+
+        $extraProperties = [];
+
+        if (isset($schema['securityCode']) && is_string($schema['securityCode'])) {
+            $extraProperties['securityCode'] = $schema['securityCode'];
+        }
+
+        if (isset($schema['securityGetStatusCode']) && is_numeric($schema['securityGetStatusCode'])) {
+            $extraProperties['securityGetStatusCode'] = (int)$schema['securityGetStatusCode'];
+        }
+
+        if (!empty($schema['securityBearerAuthRequired'])) {
+            $extraProperties['securityBearerAuthRequired'] = true;
+        }
+
+        if (!empty($schema['securityAnonymousAuthRequired'])) {
+            $extraProperties['securityAnonymousAuthRequired'] = true;
+        }
+
+        if ($extraProperties !== []) {
+            $attributeParts[] = sprintf('extraProperties: %s', $this->formatArrayParameter($extraProperties));
         }
 
         if (isset($schema['openapiContext']) && $schema['openapiContext'] !== []) {
@@ -221,16 +251,28 @@ class ResourceAttributeGenerator
             $parameters['securityPostValidationMessage'] = $operation['securityPostValidationMessage'];
         }
 
+        if (isset($operation['provider']) && is_string($operation['provider'])) {
+            $parameters['provider'] = $operation['provider'];
+        }
+
         if (isset($operation['processor']) && is_string($operation['processor'])) {
             $parameters['processor'] = $operation['processor'];
         }
 
-        if (isset($operation['output']) && is_array($operation['output'])) {
+        if (array_key_exists('output', $operation)) {
             $parameters['output'] = $operation['output'];
+        }
+
+        if (array_key_exists('deserialize', $operation) && is_bool($operation['deserialize'])) {
+            $parameters['deserialize'] = $operation['deserialize'];
         }
 
         if (isset($operation['normalizationContext']) && is_array($operation['normalizationContext'])) {
             $parameters['normalizationContext'] = $operation['normalizationContext'];
+        }
+
+        if (isset($operation['status']) && is_int($operation['status'])) {
+            $parameters['status'] = $operation['status'];
         }
 
         return $parameters;
@@ -258,7 +300,7 @@ class ResourceAttributeGenerator
                 continue;
             }
 
-            if ($key === 'processor' && is_string($value)) {
+            if (($key === 'provider' || $key === 'processor') && is_string($value)) {
                 $shortName = $this->extractShortClassName($value);
                 $parts[] = sprintf('%s: %s::class', $key, $shortName);
 
@@ -329,12 +371,16 @@ class ResourceAttributeGenerator
      */
     protected function buildUriVariablesParameter(array $uriVariables, int $keyIndentLevel): string
     {
+        if ($uriVariables === []) {
+            return '[]';
+        }
+
         $parts = [];
         $itemIndent = $this->indent($keyIndentLevel + 1);
         $linkParamIndent = $this->indent($keyIndentLevel + 2);
 
         foreach ($uriVariables as $variableName => $config) {
-            $linkParameters = $this->buildLinkParameters($variableName, $config);
+            $linkParameters = $this->buildLinkParameters($variableName, $config ?? []);
             $linkParamsContent = $linkParamIndent . implode(",\n" . $linkParamIndent, $linkParameters);
             $linkCode = sprintf("new Link(\n%s,\n%s)", $linkParamsContent, $itemIndent);
             $parts[] = sprintf("'%s' => %s", $variableName, $linkCode);
@@ -362,21 +408,19 @@ class ResourceAttributeGenerator
         }
 
         if (isset($config['fromClass']) && is_string($config['fromClass'])) {
-            $linkParameters[] = sprintf('fromClass: %s::class', $this->getShortClassName($config['fromClass']));
+            $linkParameters[] = sprintf('fromClass: %s::class', $this->extractShortClassName($config['fromClass']));
         }
 
         if (isset($config['toProperty']) && is_string($config['toProperty'])) {
             $linkParameters[] = sprintf("toProperty: '%s'", $config['toProperty']);
         }
 
+        if (isset($config['identifiers']) && is_array($config['identifiers'])) {
+            $identifiersList = implode("', '", $config['identifiers']);
+            $linkParameters[] = sprintf("identifiers: ['%s']", $identifiersList);
+        }
+
         return $linkParameters;
-    }
-
-    protected function getShortClassName(string $fullClassName): string
-    {
-        $parts = explode('\\', $fullClassName);
-
-        return end($parts);
     }
 
     /**
@@ -388,7 +432,12 @@ class ResourceAttributeGenerator
      */
     protected function generateOperationAttribute(array $schema, string $type, array $operation): string
     {
+        $operationClass = $operation['type'] ?? $type;
         $baseParameters = $this->buildOperationParameters($operation, static::OPERATION_PARAM_INDENT_LEVEL);
+
+        if (isset($operation['name'])) {
+            $baseParameters = array_merge(['name' => $operation['name']], $baseParameters);
+        }
 
         if (isset($operation['validationGroups']) && is_array($operation['validationGroups'])) {
             $validationGroups = $operation['validationGroups'];
@@ -397,13 +446,13 @@ class ResourceAttributeGenerator
 
         $tags = $this->determineTagsForOperation($schema, $operation);
 
-        $needsOpenApiOperation = in_array($type, ['Post', 'Patch', 'Put'], true);
+        $needsOpenApiOperation = in_array($operationClass, ['Post', 'Patch', 'Put'], true);
 
         if ($needsOpenApiOperation) {
             $openApiOperation = $this->openApiOperationBuilder->generateOpenApiOperation(
                 $schema,
                 $operation,
-                $type,
+                $operationClass,
                 $tags,
                 static::OPERATION_PARAM_INDENT_LEVEL,
             );
@@ -416,12 +465,12 @@ class ResourceAttributeGenerator
         }
 
         if ($baseParameters === []) {
-            return sprintf('new %s()', $type);
+            return sprintf('new %s()', $operationClass);
         }
 
         $parametersString = $this->formatOperationParameters($baseParameters, static::OPERATION_PARAM_INDENT_LEVEL);
 
-        return sprintf("new %s(\n%s,\n%s)", $type, $parametersString, $this->indent(2));
+        return sprintf("new %s(\n%s,\n%s)", $operationClass, $parametersString, $this->indent(2));
     }
 
     /**
@@ -471,83 +520,39 @@ class ResourceAttributeGenerator
      */
     protected function addOperationUseStatements(array $schema, array $operations, array &$uses): void
     {
-        $needsOpenApiImports = false;
         $needsLinkImport = false;
         $needsOperationImport = false;
 
         $hasSchemaLevelTags = isset($schema['tags']) && is_array($schema['tags']) && $schema['tags'] !== [];
 
-        if (isset($operations['Get'])) {
-            $uses[] = 'ApiPlatform\Metadata\Get';
+        $typeImportMap = [
+            'Get' => 'ApiPlatform\Metadata\Get',
+            'GetCollection' => 'ApiPlatform\Metadata\GetCollection',
+            'Post' => 'ApiPlatform\Metadata\Post',
+            'Put' => 'ApiPlatform\Metadata\Put',
+            'Patch' => 'ApiPlatform\Metadata\Patch',
+            'Delete' => 'ApiPlatform\Metadata\Delete',
+        ];
 
-            if (isset($operations['Get']['uriVariables'])) {
+        $addedTypes = [];
+
+        foreach ($operations as $operation) {
+            if (!is_array($operation)) {
+                continue;
+            }
+
+            $operationType = $operation['type'] ?? '';
+
+            if (isset($typeImportMap[$operationType]) && !isset($addedTypes[$operationType])) {
+                $uses[] = $typeImportMap[$operationType];
+                $addedTypes[$operationType] = true;
+            }
+
+            if (isset($operation['uriVariables'])) {
                 $needsLinkImport = true;
             }
 
-            if (isset($operations['Get']['tags']) || $hasSchemaLevelTags) {
-                $needsOperationImport = true;
-            }
-        }
-
-        if (isset($operations['GetCollection'])) {
-            $uses[] = 'ApiPlatform\Metadata\GetCollection';
-
-            if (isset($operations['GetCollection']['uriVariables'])) {
-                $needsLinkImport = true;
-            }
-
-            if (isset($operations['GetCollection']['tags']) || $hasSchemaLevelTags) {
-                $needsOperationImport = true;
-            }
-        }
-
-        if (isset($operations['Post'])) {
-            $uses[] = 'ApiPlatform\Metadata\Post';
-            $needsOpenApiImports = true;
-
-            if (isset($operations['Post']['tags']) || $hasSchemaLevelTags) {
-                $needsOperationImport = true;
-            }
-
-            if (isset($operations['Post']['uriVariables'])) {
-                $needsLinkImport = true;
-            }
-        }
-
-        if (isset($operations['Put'])) {
-            $uses[] = 'ApiPlatform\Metadata\Put';
-            $needsOpenApiImports = true;
-
-            if (isset($operations['Put']['tags']) || $hasSchemaLevelTags) {
-                $needsOperationImport = true;
-            }
-
-            if (isset($operations['Put']['uriVariables'])) {
-                $needsLinkImport = true;
-            }
-        }
-
-        if (isset($operations['Patch'])) {
-            $uses[] = 'ApiPlatform\Metadata\Patch';
-            $needsOpenApiImports = true;
-
-            if (isset($operations['Patch']['tags']) || $hasSchemaLevelTags) {
-                $needsOperationImport = true;
-            }
-
-            if (isset($operations['Patch']['uriVariables'])) {
-                $needsLinkImport = true;
-            }
-        }
-
-        if (isset($operations['Delete'])) {
-            $uses[] = 'ApiPlatform\Metadata\Delete';
-
-            if (isset($operations['Delete']['uriVariables'])) {
-                $needsLinkImport = true;
-            }
-
-            if (isset($operations['Delete']['tags']) || $hasSchemaLevelTags) {
+            if (isset($operation['tags']) || $hasSchemaLevelTags) {
                 $needsOperationImport = true;
             }
         }
@@ -560,30 +565,34 @@ class ResourceAttributeGenerator
             $uses[] = 'ApiPlatform\OpenApi\Model\Operation';
         }
 
-        $this->collectOperationProcessorUseStatements($operations, $uses);
+        $this->collectOperationServiceUseStatements($operations, $uses);
     }
 
     /**
      * @param array<string, mixed> $operations
      * @param array<string> $uses
+     *
+     * @return void
      */
-    protected function collectOperationProcessorUseStatements(array $operations, array &$uses): void
+    protected function collectOperationServiceUseStatements(array $operations, array &$uses): void
     {
         $collected = [];
 
         foreach ($operations as $operation) {
-            if (!isset($operation['processor']) || !is_string($operation['processor'])) {
-                continue;
+            foreach (['provider', 'processor'] as $serviceKey) {
+                if (!isset($operation[$serviceKey]) || !is_string($operation[$serviceKey])) {
+                    continue;
+                }
+
+                $serviceFqcn = $operation[$serviceKey];
+
+                if (!str_contains($serviceFqcn, '\\') || isset($collected[$serviceFqcn])) {
+                    continue;
+                }
+
+                $collected[$serviceFqcn] = true;
+                $uses[] = $serviceFqcn;
             }
-
-            $processorFqcn = $operation['processor'];
-
-            if (!str_contains($processorFqcn, '\\') || isset($collected[$processorFqcn])) {
-                continue;
-            }
-
-            $collected[$processorFqcn] = true;
-            $uses[] = $processorFqcn;
         }
     }
 

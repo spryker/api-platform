@@ -108,6 +108,8 @@ properties:
 
 Define relationships between resources to enable `?include=` parameter support with JSON:API compliance.
 
+**IMPORTANT** Never add the {API type}Resource as suffix to the target resource, only ever use the pure resource name.
+
 **Parent resource defines includes:**
 ```yaml
 resource:

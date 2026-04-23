@@ -13,7 +13,9 @@ class PropertyValidationRule implements ValidationRuleInterface
 {
     protected const string VALID_PROPERTY_NAME_PATTERN = '/^[a-zA-Z_][a-zA-Z0-9_]*$/';
 
-    protected const array VALID_PROPERTY_TYPES = ['string', 'integer', 'number', 'boolean', 'array', 'object', 'mixed'];
+    protected const string VALID_SERIALIZED_PATH_PATTERN = '/^\[[\w]+\](\[[\w]+\])*$/';
+
+    protected const array VALID_PROPERTY_TYPES = ['string', 'integer', 'number', 'boolean', 'array', 'object', 'map', 'mixed'];
 
     /**
      * @param array<string, mixed> $schema
@@ -34,6 +36,7 @@ class PropertyValidationRule implements ValidationRuleInterface
         $errors = array_merge($errors, $this->validateBooleanAttributes($properties, $schema));
         $errors = array_merge($errors, $this->validateDefaultValues($properties, $schema));
         $errors = array_merge($errors, $this->validateOpenapiContext($properties, $schema));
+        $errors = array_merge($errors, $this->validateSerializedPathAttributes($properties, $schema));
 
         return $errors;
     }
@@ -213,9 +216,45 @@ class PropertyValidationRule implements ValidationRuleInterface
             'boolean' => is_bool($value),
             'array' => is_array($value),
             'object' => is_object($value) || is_array($value),
+            'map' => is_array($value),
             'mixed' => true,
             default => true,
         };
+    }
+
+    /**
+     * @param array<string, array<string, mixed>> $properties
+     * @param array<string, mixed> $schema
+     *
+     * @return array<string>
+     */
+    protected function validateSerializedPathAttributes(array $properties, array $schema): array
+    {
+        $errors = [];
+
+        foreach ($properties as $propertyName => $property) {
+            if (isset($property['serializedPath']) && isset($property['serializedName'])) {
+                $errors[] = sprintf(
+                    'Property "%s" cannot have both "serializedPath" and "serializedName" in %s',
+                    $propertyName,
+                    $schema['sourceFile'] ?? 'unknown file',
+                );
+            }
+
+            if (!isset($property['serializedPath'])) {
+                continue;
+            }
+
+            if (!is_string($property['serializedPath']) || !preg_match(static::VALID_SERIALIZED_PATH_PATTERN, $property['serializedPath'])) {
+                $errors[] = sprintf(
+                    'Property "%s" serializedPath must use bracket notation (e.g., "[key][nested]") in %s',
+                    $propertyName,
+                    $schema['sourceFile'] ?? 'unknown file',
+                );
+            }
+        }
+
+        return $errors;
     }
 
     /**

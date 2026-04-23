@@ -229,6 +229,8 @@ class ApiGenerateCommand extends Command
 
     /**
      * @param array<array{resource: string, file: string, className: string, sourceFiles: array<string>, validationSourceFiles: array<string>}> $generatedResources
+     *
+     * @return void
      */
     protected function displayGenerationResults(
         array $generatedResources,
