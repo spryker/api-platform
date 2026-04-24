@@ -148,11 +148,13 @@ class ResourceGenerator implements ResourceGeneratorInterface
         }
 
         if ($generatedCount === 0) {
+            // No resources to generate is a valid state when all schemas are excluded via
+            // excludedPathFragments. Emit a warning (non-failing) so deploy pipelines continue.
             $diagnostics = $this->schemaFinder->getDiagnosticInfo($apiType);
             $validationDiagnostics = $this->validationSchemaFinder->getValidationDiagnosticInfo($apiType);
 
             yield [
-                'status' => 'error',
+                'status' => 'warning',
                 'message' => 'No resources were generated',
                 'diagnostics' => [
                     ...$diagnostics,

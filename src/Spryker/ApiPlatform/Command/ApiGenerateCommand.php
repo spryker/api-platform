@@ -167,6 +167,7 @@ class ApiGenerateCommand extends Command
         $generatedResources = [];
         $errorCount = 0;
         $errors = [];
+        $warnings = [];
 
         foreach ($generator as $result) {
             $status = $result['status'];
@@ -193,6 +194,10 @@ class ApiGenerateCommand extends Command
                 $errorCount++;
                 $errors[] = $result;
             }
+
+            if ($status === 'warning') {
+                $warnings[] = $result;
+            }
         }
 
         if ($errorCount > 0) {
@@ -212,6 +217,14 @@ class ApiGenerateCommand extends Command
             }
 
             return static::CODE_ERROR;
+        }
+
+        foreach ($warnings as $warning) {
+            $io->warning($warning['message'] ?? 'Unknown warning');
+
+            if (isset($warning['suggestion'])) {
+                $io->writeln(sprintf('  <comment>%s</comment>', $warning['suggestion']));
+            }
         }
 
         if ($isDryRun && $verbosity >= OutputInterface::VERBOSITY_VERBOSE) {

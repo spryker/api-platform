@@ -374,9 +374,18 @@ class JsonApiRequestValidatorSubscriber implements EventSubscriberInterface
         $reflection->setValue($request, $normalized);
     }
 
+    /**
+     * Detects empty segments BETWEEN path parts (e.g. `/customers//addresses`), which indicate
+     * a missing required path parameter.
+     *
+     * Leading `//` is ignored — it's a URL-concatenation artifact (HTTP clients / test harnesses
+     * joining a baseUrl with trailing `/` and a path with leading `/`), not a missing segment.
+     */
     protected function hasEmptyPathSegment(string $pathInfo): bool
     {
-        return str_contains($pathInfo, '//');
+        $normalized = '/' . ltrim($pathInfo, '/');
+
+        return str_contains($normalized, '//');
     }
 
     /**
