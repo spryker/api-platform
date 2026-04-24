@@ -29,6 +29,7 @@
     </transfer>
 
     <transfer name="Store">
+        <property name="name" type="string"/>
         <property name="availableLocaleIsoCodes" type="array" singular="availableLocaleCode"/>
         <property name="defaultLocaleIsoCode" type="string"/>
     </transfer>

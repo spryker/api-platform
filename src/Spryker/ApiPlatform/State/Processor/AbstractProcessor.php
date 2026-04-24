@@ -15,9 +15,9 @@ use ApiPlatform\Metadata\Patch;
 use ApiPlatform\Metadata\Post;
 use ApiPlatform\State\ProcessorInterface;
 use BadMethodCallException;
-use Generated\Shared\Transfer\LocaleTransfer;
-use Generated\Shared\Transfer\StoreTransfer;
-use Spryker\ApiPlatform\Exception\ApiPlatformContextException;
+use Spryker\ApiPlatform\State\Trait\LocaleAwareTrait;
+use Spryker\ApiPlatform\State\Trait\StoreAwareTrait;
+use Spryker\ApiPlatform\State\Trait\UriVariableAwareTrait;
 use Symfony\Component\HttpFoundation\Request;
 
 /**
@@ -25,18 +25,13 @@ use Symfony\Component\HttpFoundation\Request;
  */
 abstract class AbstractProcessor implements ProcessorInterface
 {
-    protected const string ATTRIBUTE_LOCALE_TRANSFER = 'LocaleTransfer';
-
-    protected const string ATTRIBUTE_STORE_TRANSFER = 'StoreTransfer';
+    use LocaleAwareTrait;
+    use StoreAwareTrait;
+    use UriVariableAwareTrait;
 
     protected const string ATTRIBUTE_RESOLVED_RELATIONSHIPS = '_spryker_resolved_relationships';
 
     protected Operation $operation;
-
-    /**
-     * @var array<string, mixed>
-     */
-    protected array $uriVariables = [];
 
     /**
      * @var array<string, mixed>
@@ -118,43 +113,6 @@ abstract class AbstractProcessor implements ProcessorInterface
         return $this->operation;
     }
 
-    /**
-     * @return array<string, mixed>
-     */
-    protected function getUriVariables(): array
-    {
-        return $this->uriVariables;
-    }
-
-    protected function hasUriVariable(string $name): bool
-    {
-        return array_key_exists($name, $this->uriVariables);
-    }
-
-    protected function getUriVariable(string $name): mixed
-    {
-        if (!$this->hasUriVariable($name)) {
-            throw new ApiPlatformContextException(sprintf(
-                'The uri variable "%s" is missing. Either you have to make sure you call `%s::hasUriVariable()` before or there is a major issue in your setup.',
-                $name,
-                static::class,
-            ));
-        }
-
-        return $this->uriVariables[$name];
-    }
-
-    protected function hasLocale(): bool
-    {
-        return $this->hasRequest()
-            && $this->getRequest()->attributes->get(static::ATTRIBUTE_LOCALE_TRANSFER) !== null;
-    }
-
-    protected function getLocale(): LocaleTransfer
-    {
-        return $this->getRequest()->attributes->get(static::ATTRIBUTE_LOCALE_TRANSFER);
-    }
-
     protected function hasRequest(): bool
     {
         return isset($this->context['request']);
@@ -163,17 +121,6 @@ abstract class AbstractProcessor implements ProcessorInterface
     protected function getRequest(): Request
     {
         return $this->context['request'];
-    }
-
-    protected function hasStore(): bool
-    {
-        return $this->hasRequest()
-            && $this->getRequest()->attributes->get(static::ATTRIBUTE_STORE_TRANSFER) !== null;
-    }
-
-    protected function getStore(): StoreTransfer
-    {
-        return $this->getRequest()->attributes->get(static::ATTRIBUTE_STORE_TRANSFER);
     }
 
     /**
