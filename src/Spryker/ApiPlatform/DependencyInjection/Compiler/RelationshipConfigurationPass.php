@@ -68,7 +68,7 @@ class RelationshipConfigurationPass implements CompilerPassInterface
             $this->buildProviderIndex($schemaFiles);
 
             foreach ($schemaFiles as $schemaFile) {
-                $relationshipConfigs = $this->extractRelationshipsFromSchema($schemaFile);
+                $relationshipConfigs = $this->extractRelationshipsFromSchema($schemaFile, $container);
 
                 $relationships = array_merge($relationships, $relationshipConfigs);
             }
@@ -154,11 +154,9 @@ class RelationshipConfigurationPass implements CompilerPassInterface
     }
 
     /**
-     * @param \SplFileInfo $schemaFile
-     *
      * @return array<string, array<string, mixed>>
      */
-    protected function extractRelationshipsFromSchema(SplFileInfo $schemaFile): array
+    protected function extractRelationshipsFromSchema(SplFileInfo $schemaFile, ContainerBuilder $container): array
     {
         $schema = $this->schemaFileDiscovery->parseSchemaFile($schemaFile);
 
@@ -187,7 +185,7 @@ class RelationshipConfigurationPass implements CompilerPassInterface
                     continue;
                 }
 
-                $relationshipConfig = $this->buildRelationshipConfig($include, $resourceShortName);
+                $relationshipConfig = $this->buildRelationshipConfig($include, $resourceShortName, $container);
 
                 if ($relationshipConfig === null) {
                     continue;
@@ -207,13 +205,19 @@ class RelationshipConfigurationPass implements CompilerPassInterface
      * - Provider-based: uses targetResource to find a provider via the global index
      * - Resolver-based: uses resolverClass for complex relationships requiring custom logic
      *
+     * Returns null when the include is incomplete (no relationshipName), when a
+     * provider-based relationship cannot resolve its target, or when a resolver-based
+     * relationship references a resolver class that does not exist (partial migration).
+     *
      * @param array<string, mixed> $include
-     * @param string $resourceShortName
      *
      * @return array{key: string, config: array<string, mixed>}|null
      */
-    protected function buildRelationshipConfig(array $include, string $resourceShortName): ?array
-    {
+    protected function buildRelationshipConfig(
+        array $include,
+        string $resourceShortName,
+        ContainerBuilder $container,
+    ): ?array {
         $relationshipName = $include['relationshipName'] ?? null;
 
         if ($relationshipName === null) {
@@ -223,7 +227,7 @@ class RelationshipConfigurationPass implements CompilerPassInterface
         $resolverClass = $include['resolverClass'] ?? null;
 
         if (is_string($resolverClass)) {
-            return $this->buildResolverRelationshipConfig($include, $resourceShortName, $resolverClass);
+            return $this->buildResolverRelationshipConfig($include, $resourceShortName, $resolverClass, $container);
         }
 
         return $this->buildProviderRelationshipConfig($include, $resourceShortName);
@@ -231,17 +235,28 @@ class RelationshipConfigurationPass implements CompilerPassInterface
 
     /**
      * @param array<string, mixed> $include
-     * @param string $resourceShortName
-     * @param string $resolverClass
      *
-     * @return array{key: string, config: array<string, mixed>}
+     * @return array{key: string, config: array<string, mixed>}|null
      */
     protected function buildResolverRelationshipConfig(
         array $include,
         string $resourceShortName,
         string $resolverClass,
-    ): array {
+        ContainerBuilder $container,
+    ): ?array {
         $relationshipName = $include['relationshipName'];
+
+        if (!class_exists($resolverClass)) {
+            $container->log($this, sprintf(
+                'Relationship "%s.%s" references resolver class "%s" which does not exist. Skipping — register the class or remove the include from the schema.',
+                $resourceShortName,
+                $relationshipName,
+                $resolverClass,
+            ));
+
+            return null;
+        }
+
         $targetResource = $include['targetResource'] ?? null;
         $targetResourceType = $relationshipName;
 
@@ -335,10 +350,6 @@ class RelationshipConfigurationPass implements CompilerPassInterface
             $resolverClass = $config['resolver_class'] ?? null;
 
             if (!is_string($resolverClass) || $container->has($resolverClass)) {
-                continue;
-            }
-
-            if (!class_exists($resolverClass)) {
                 continue;
             }
 
