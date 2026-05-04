@@ -9,6 +9,7 @@ declare(strict_types=1);
 
 namespace Spryker\ApiPlatform\Cache;
 
+use Generated\Shared\Transfer\ApiPlatformResourceGenerationRequestTransfer;
 use Spryker\ApiPlatform\Configuration\ApiPlatformConfig;
 use Spryker\ApiPlatform\Generator\ResourceGeneratorInterface;
 use Spryker\ApiPlatform\Utility\ApiTypeNormalizer;
@@ -37,7 +38,9 @@ class ApiResourceCacheWarmer implements CacheWarmerInterface
         foreach ($apiTypes as $apiType) {
             $apiType = ApiTypeNormalizer::normalizeForGeneration($apiType);
 
-            foreach ($this->resourceGenerator->generateResources($apiType) as $result) {
+            $request = (new ApiPlatformResourceGenerationRequestTransfer())->setApiType($apiType);
+
+            foreach ($this->resourceGenerator->generateResources($request) as $result) {
                 if (isset($result['file'])) {
                     $warmedFiles[] = $result['file'];
                 }

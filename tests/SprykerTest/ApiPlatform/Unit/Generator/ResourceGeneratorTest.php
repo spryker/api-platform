@@ -10,6 +10,7 @@ declare(strict_types=1);
 namespace SprykerTest\ApiPlatform\Unit\Generator;
 
 use Codeception\Test\Unit;
+use Generated\Shared\Transfer\ApiPlatformResourceGenerationRequestTransfer;
 use Spryker\ApiPlatform\Configuration\ApiPlatformConfig;
 use Spryker\ApiPlatform\Generator\ResourceGenerator;
 use Spryker\ApiPlatform\Generator\ResourceGeneratorInterface;
@@ -46,7 +47,10 @@ class ResourceGeneratorTest extends Unit
         $generator = $this->createResourceGenerator();
 
         // Act
-        $results = iterator_to_array($generator->generateResources('Storefront', true));
+        $request = (new ApiPlatformResourceGenerationRequestTransfer())
+            ->setApiType('Storefront')
+            ->setIsKeepExisting(true);
+        $results = iterator_to_array($generator->generateResources($request));
 
         // Assert
         $this->assertNotEmpty($results);
@@ -58,7 +62,10 @@ class ResourceGeneratorTest extends Unit
         $generator = $this->createResourceGenerator();
 
         // Act
-        $results = iterator_to_array($generator->generateResources('NonExistent', true));
+        $request = (new ApiPlatformResourceGenerationRequestTransfer())
+            ->setApiType('NonExistent')
+            ->setIsKeepExisting(true);
+        $results = iterator_to_array($generator->generateResources($request));
 
         // Assert
         $this->assertCount(1, $results);

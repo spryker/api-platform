@@ -9,6 +9,7 @@ declare(strict_types=1);
 
 namespace Spryker\ApiPlatform\Generator;
 
+use Generated\Shared\Transfer\ApiPlatformResourceGenerationRequestTransfer;
 use Generator;
 use Psr\Log\LoggerInterface;
 
@@ -19,5 +20,5 @@ interface ResourceGeneratorInterface
     /**
      * @return \Generator<array{status: string, resource?: string, file?: string, className?: string, sourceFiles?: array<string>, validationSourceFiles?: array<string>, message?: string, diagnostics?: array<string, mixed>, suggestion?: string}>
      */
-    public function generateResources(string $apiType): Generator;
+    public function generateResources(ApiPlatformResourceGenerationRequestTransfer $apiPlatformResourceGenerationRequestTransfer): Generator;
 }

@@ -9,6 +9,7 @@ declare(strict_types=1);
 
 namespace Spryker\ApiPlatform\Command;
 
+use Generated\Shared\Transfer\ApiPlatformResourceGenerationRequestTransfer;
 use Spryker\ApiPlatform\Configuration\ApiPlatformConfig;
 use Spryker\ApiPlatform\Generator\ResourceGeneratorInterface;
 use Spryker\ApiPlatform\Utility\ApiTypeNormalizer;
@@ -67,6 +68,12 @@ class ApiGenerateCommand extends Command
                 null,
                 InputOption::VALUE_NONE,
                 'Enable debug mode with verbose logging',
+            )
+            ->addOption(
+                'keep-existing',
+                null,
+                InputOption::VALUE_NONE,
+                'Keep previously generated files instead of dropping them before generation',
             );
     }
 
@@ -92,6 +99,7 @@ class ApiGenerateCommand extends Command
         $isDryRun = $input->getOption('dry-run');
         $isValidateOnly = $input->getOption('validate-only');
         $resourceFilter = $input->getOption('resource');
+        $isKeepExisting = $input->getOption('keep-existing');
 
         $totalApiTypes = count($apiTypes);
         $failedApiTypes = [];
@@ -106,6 +114,7 @@ class ApiGenerateCommand extends Command
                 $isDryRun,
                 $isValidateOnly,
                 $resourceFilter,
+                $isKeepExisting,
                 $io,
                 $output,
             );
@@ -143,6 +152,7 @@ class ApiGenerateCommand extends Command
         bool $isDryRun,
         bool $isValidateOnly,
         ?string $resourceFilter,
+        bool $isKeepExisting,
         SymfonyStyle $io,
         OutputInterface $output,
     ): int {
@@ -162,7 +172,11 @@ class ApiGenerateCommand extends Command
             $io->title(implode(' ', $headerParts));
         }
 
-        $generator = $this->resourceGenerator->generateResources($apiType);
+        $apiPlatformResourceGenerationRequestTransfer = (new ApiPlatformResourceGenerationRequestTransfer())
+            ->setApiType($apiType)
+            ->setIsKeepExisting($isKeepExisting);
+
+        $generator = $this->resourceGenerator->generateResources($apiPlatformResourceGenerationRequestTransfer);
 
         $generatedResources = [];
         $errorCount = 0;

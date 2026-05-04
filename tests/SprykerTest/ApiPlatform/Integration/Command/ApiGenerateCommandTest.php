@@ -124,6 +124,44 @@ class ApiGenerateCommandTest extends ApiIntegrationTestCase
         ]);
     }
 
+    public function testGivenPreexistingFileWhenGeneratingWithoutNoDropThenFileIsRemoved(): void
+    {
+        // Arrange
+        $this->tester->createSchemaFile('backend', 'Customers', $this->getCustomerSchema());
+        $exitCode = $this->executeCommand(['api-type' => 'backend']);
+        $this->assertSame(Command::SUCCESS, $exitCode);
+
+        $sentinelPath = $this->getSentinelFilePath('backend');
+        file_put_contents($sentinelPath, '<?php // sentinel');
+
+        // Act
+        $exitCode = $this->executeCommand(['api-type' => 'backend']);
+
+        // Assert
+        $this->assertSame(Command::SUCCESS, $exitCode);
+        $this->assertFileDoesNotExist($sentinelPath);
+        $this->tester->assertGeneratedClassExists('backend', 'Customers');
+    }
+
+    public function testGivenPreexistingFileWhenGeneratingWithNoDropThenFileIsPreserved(): void
+    {
+        // Arrange
+        $this->tester->createSchemaFile('backend', 'Customers', $this->getCustomerSchema());
+        $exitCode = $this->executeCommand(['api-type' => 'backend']);
+        $this->assertSame(Command::SUCCESS, $exitCode);
+
+        $sentinelPath = $this->getSentinelFilePath('backend');
+        file_put_contents($sentinelPath, '<?php // sentinel');
+
+        // Act
+        $exitCode = $this->executeCommand(['api-type' => 'backend'], ['--keep-existing' => true]);
+
+        // Assert
+        $this->assertSame(Command::SUCCESS, $exitCode);
+        $this->assertFileExists($sentinelPath);
+        $this->tester->assertGeneratedClassExists('backend', 'Customers');
+    }
+
     public function testGivenValidInputWhenGeneratingThenCreatesClassesWithCorrectNamespace(): void
     {
         // Arrange
@@ -189,8 +227,9 @@ class ApiGenerateCommandTest extends ApiIntegrationTestCase
 
     /**
      * @param array<string, mixed> $arguments
+     * @param array<string, mixed> $options
      */
-    protected function executeCommand(array $arguments): int
+    protected function executeCommand(array $arguments, array $options = []): int
     {
         $command = $this->getService(ApiGenerateCommand::class);
 
@@ -200,6 +239,10 @@ class ApiGenerateCommandTest extends ApiIntegrationTestCase
 
         if (isset($arguments['api-type'])) {
             $commandArgs['api-type'] = $arguments['api-type'];
+        }
+
+        foreach ($options as $optionName => $optionValue) {
+            $commandArgs[$optionName] = $optionValue;
         }
 
         $exitCode = $commandTester->execute($commandArgs, ['interactive' => false]);
@@ -218,5 +261,13 @@ class ApiGenerateCommandTest extends ApiIntegrationTestCase
     {
         $this->cleanupGeneratedFiles();
         $this->tester->cleanupSchemaFiles();
+    }
+
+    protected function getSentinelFilePath(string $apiType): string
+    {
+        return sprintf(
+            '%s/SentinelPreexistingResource.php',
+            $this->tester->getTestConfig()->getApiResourceDirectory($apiType),
+        );
     }
 }

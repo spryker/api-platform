@@ -10,6 +10,7 @@ declare(strict_types=1);
 namespace SprykerTest\ApiPlatform\Helper;
 
 use ApiPlatform\Symfony\Bundle\ApiPlatformBundle;
+use Generated\Shared\Transfer\ApiPlatformResourceGenerationRequestTransfer;
 use RuntimeException;
 use Spryker\ApiPlatform\Generator\ResourceGeneratorInterface;
 use Spryker\ApiPlatform\SprykerApiPlatformBundle;
@@ -169,7 +170,9 @@ class ApiResourceGeneratorHelper
         $errors = [];
         $generatedCount = 0;
 
-        foreach ($generator->generateResources($apiType) as $result) {
+        $request = (new ApiPlatformResourceGenerationRequestTransfer())->setApiType($apiType);
+
+        foreach ($generator->generateResources($request) as $result) {
             $status = $result['status'];
 
             if ($status === 'generated') {

@@ -131,9 +131,7 @@ class ValidationSchemaFinder implements ValidationSchemaFinderInterface
                     ->in($sourceDirectory)
                     ->name($apiType)
                     ->filter(function (SplFileInfo $file) use ($apiType): bool {
-                        $path = $file->getRelativePathname();
-
-                        return str_ends_with($path, sprintf('resources/api/%s', $apiType));
+                        return str_ends_with($file->getPathname(), sprintf('/resources/api/%s', $apiType));
                     });
 
                 foreach ($directoryFinder as $directory) {
@@ -190,9 +188,7 @@ class ValidationSchemaFinder implements ValidationSchemaFinderInterface
                     ->in($sourceDirectory)
                     ->name($apiType)
                     ->filter(function (SplFileInfo $file) use ($apiType): bool {
-                        $path = $file->getRelativePathname();
-
-                        return str_ends_with($path, sprintf('/resources/api/%s', $apiType));
+                        return str_ends_with($file->getPathname(), sprintf('/resources/api/%s', $apiType));
                     });
 
                 foreach ($directoryFinder as $directory) {
@@ -211,6 +207,7 @@ class ValidationSchemaFinder implements ValidationSchemaFinderInterface
             'existing_directories' => $existingDirectories,
             'skipped_directories' => $skippedDirectories,
             'directories_found_count' => count($existingDirectories),
+            'excluded_path_fragments' => $this->config->getExcludedPathFragments(),
         ];
     }
 

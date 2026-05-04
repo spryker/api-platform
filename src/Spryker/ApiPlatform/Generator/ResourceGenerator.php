@@ -9,6 +9,7 @@ declare(strict_types=1);
 
 namespace Spryker\ApiPlatform\Generator;
 
+use Generated\Shared\Transfer\ApiPlatformResourceGenerationRequestTransfer;
 use Generator;
 use Psr\Log\LoggerInterface;
 use Psr\Log\NullLogger;
@@ -94,9 +95,12 @@ class ResourceGenerator implements ResourceGeneratorInterface
     /**
      * @return \Generator<array{status: string, resource?: string, file?: string, className?: string, sourceFiles?: array<string>, validationSourceFiles?: array<string>, message?: string, diagnostics?: array<string, mixed>, suggestion?: string}>
      */
-    public function generateResources(string $apiType): Generator
+    public function generateResources(ApiPlatformResourceGenerationRequestTransfer $apiPlatformResourceGenerationRequestTransfer): Generator
     {
-        $apiType = $this->prepareGeneration($apiType);
+        $apiType = $this->prepareGeneration(
+            $apiPlatformResourceGenerationRequestTransfer->getApiTypeOrFail(),
+            (bool)$apiPlatformResourceGenerationRequestTransfer->getIsKeepExisting(),
+        );
 
         $parseResult = $this->parseSchemas($apiType);
 
@@ -331,7 +335,7 @@ class ResourceGenerator implements ResourceGeneratorInterface
         return $key;
     }
 
-    protected function prepareGeneration(string $apiType): string
+    protected function prepareGeneration(string $apiType, bool $isKeepExisting = false): string
     {
         $normalizedApiType = ApiTypeNormalizer::normalizeForGeneration($apiType);
 
@@ -341,7 +345,9 @@ class ResourceGenerator implements ResourceGeneratorInterface
             $normalizedApiType,
         ));
 
-        $this->cleanOutputDirectory($normalizedApiType);
+        if (!$isKeepExisting) {
+            $this->cleanOutputDirectory($normalizedApiType);
+        }
 
         return $normalizedApiType;
     }

@@ -11,10 +11,10 @@ namespace Spryker\ApiPlatform\Schema\Finder;
 
 use Generator;
 use InvalidArgumentException;
-use SplFileInfo;
 use Spryker\ApiPlatform\Configuration\ApiPlatformConfig;
 use Spryker\ApiPlatform\Utility\ApiTypeNormalizer;
 use Symfony\Component\Finder\Finder;
+use Symfony\Component\Finder\SplFileInfo;
 
 /**
  * Finds API schema files using Symfony Finder component.
@@ -190,6 +190,7 @@ class SchemaFinder implements SchemaFinderInterface
             'existing_directories' => $existingDirectories,
             'skipped_directories' => $skippedDirectories,
             'directories_found_count' => count($existingDirectories),
+            'excluded_path_fragments' => $this->config->getExcludedPathFragments(),
         ];
     }
 

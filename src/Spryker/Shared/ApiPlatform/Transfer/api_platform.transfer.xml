@@ -40,11 +40,20 @@
 
     <transfer name="Customer">
         <property name="customerReference" type="string"/>
+        <property name="isGuest" type="bool"/>
     </transfer>
 
     <transfer name="Pagination">
         <property name="page" type="int"/>
         <property name="maxPerPage" type="int"/>
+    </transfer>
+
+    <transfer name="ApiPlatformResourceGenerationRequest" strict="true">
+        <property name="apiType" type="string"/>
+        <property name="isKeepExisting" type="bool"/>
+    </transfer>
+
+    <transfer name="Filter">
     </transfer>
 
 </transfers>

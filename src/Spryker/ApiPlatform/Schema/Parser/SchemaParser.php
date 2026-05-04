@@ -316,6 +316,10 @@ class SchemaParser implements SchemaParserInterface
                 $normalizedOperation['normalizationContext'] = $operation['normalizationContext'];
             }
 
+            if (array_key_exists('read', $operation)) {
+                $normalizedOperation['read'] = (bool)$operation['read'];
+            }
+
             $normalized[$operationName ?? $operationType] = $normalizedOperation;
         }
 

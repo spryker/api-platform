@@ -275,6 +275,10 @@ class ResourceAttributeGenerator
             $parameters['status'] = $operation['status'];
         }
 
+        if (array_key_exists('read', $operation) && is_bool($operation['read'])) {
+            $parameters['read'] = $operation['read'];
+        }
+
         return $parameters;
     }
 

@@ -145,14 +145,19 @@ class SchemaFinderTest extends Unit
         $this->assertCount(4, $files);
     }
 
-    public function createSchemaFinder(): SchemaFinder
-    {
+    /**
+     * @param array<string> $excludedPathFragments
+     */
+    public function createSchemaFinder(
+        array $excludedPathFragments = [],
+    ): SchemaFinder {
         $config = new ApiPlatformConfig(
             sourceDirectories: [$this->tester->getVirtualFilesystemPath()],
             cacheDir: sys_get_temp_dir(),
             generatedDir: sys_get_temp_dir(),
             apiTypes: ['Storefront', 'Backend'],
             debug: false,
+            excludedPathFragments: $excludedPathFragments,
         );
 
         $this->tester->getContainer()->set(ApiPlatformConfig::class, $config);
