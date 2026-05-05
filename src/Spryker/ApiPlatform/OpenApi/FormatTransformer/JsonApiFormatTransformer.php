@@ -129,12 +129,14 @@ class JsonApiFormatTransformer implements FormatTransformerInterface
     /**
      * Adds example values to type and id fields in JSON:API schema.
      *
-     * @param array<string, mixed> $schemaDefinition
+     * @param \ArrayObject<string, mixed>|array<string, mixed> $schemaDefinition
      *
      * @return array<string, mixed>
      */
-    protected function addExampleValues(array $schemaDefinition, string $resourceShortName): array
+    protected function addExampleValues(array|ArrayObject $schemaDefinition, string $resourceShortName): array
     {
+        $schemaDefinition = $schemaDefinition instanceof ArrayObject ? $schemaDefinition->getArrayCopy() : $schemaDefinition;
+
         if (!isset($schemaDefinition['properties']['data']['properties'])) {
             return $schemaDefinition;
         }
