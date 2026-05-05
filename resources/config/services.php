@@ -78,6 +78,7 @@ use Spryker\ApiPlatform\Schema\Validator\Rules\ResourceNamingValidationRule;
 use Spryker\ApiPlatform\Schema\Validator\Rules\SecurityExpressionValidationRule;
 use Spryker\ApiPlatform\Schema\Validator\SchemaValidator;
 use Spryker\ApiPlatform\Schema\Validator\SchemaValidatorInterface;
+use Spryker\ApiPlatform\Serializer\Denormalizer\WriteOnlyOperationDenormalizer;
 use Spryker\ApiPlatform\Serializer\Encoder\CXmlEncoder;
 use Spryker\ApiPlatform\Serializer\Normalizer\CXmlNormalizer;
 use Spryker\ApiPlatform\Serializer\TranslatingConstraintViolationListNormalizer;
@@ -373,4 +374,19 @@ return static function (ContainerConfigurator $container): void {
     $services->set(CXmlEncoder::class)
         ->autoconfigure(false)
         ->decorate('serializer.encoder.xml');
+
+    /**
+     * Pre-populates `OBJECT_TO_POPULATE` for write-only operations (`read: false`) when the
+     * JSON:API request body carries `data.id`. Without this decorator the JSON:API
+     * ItemNormalizer would try to resolve `data.id` as an IRI and fail with a 400 error,
+     * because write-only resources have no Get operation that could resolve the IRI.
+     *
+     * `IGNORE_ON_INVALID_REFERENCE` skips registration when the JSON:API bundle is not
+     * loaded (e.g. in unit/functional test kernels) — the inner service does not exist
+     * there and the decoration would otherwise fail at compile time.
+     */
+    $services->set(WriteOnlyOperationDenormalizer::class)
+        ->autoconfigure(false)
+        ->decorate('api_platform.jsonapi.normalizer.item', null, 0, ContainerInterface::IGNORE_ON_INVALID_REFERENCE)
+        ->arg('$decorated', service('.inner'));
 };
