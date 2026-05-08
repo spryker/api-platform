@@ -32,6 +32,8 @@ abstract class AbstractStorefrontProvider extends AbstractProvider
 
     protected const int DEFAULT_OFFSET = 0;
 
+    protected const int DEFAULT_LIMIT = 10;
+
     protected const string PAGINATION_KEY_NUM_FOUND = 'numFound';
 
     protected const string PAGINATION_KEY_CURRENT_PAGE = 'currentPage';
@@ -68,22 +70,26 @@ abstract class AbstractStorefrontProvider extends AbstractProvider
     }
 
     /**
-     * Returns the JSON:API `?page[limit]=N` value from the current request, or `null` when
+     * Returns the JSON:API `?page[limit]=N` value from the current request, or the default when
      * the parameter is not present. Used to push the page size onto data-layer transfers
      * (`FilterTransfer`, `PaginationTransfer`, etc.) so the SQL fetch is bounded.
+     *
+     *  Users can also overwrite the limit by passing it as argument to this method.
      */
-    protected function getPaginationLimit(): ?int
+    protected function getPaginationLimit(int $limit = self::DEFAULT_LIMIT): int
     {
-        return $this->getPaginationParameter(static::QUERY_PARAMETER_LIMIT);
+        return $this->getPaginationParameter(static::QUERY_PARAMETER_LIMIT) ?? $this->getOperation()->getPaginationItemsPerPage() ?? $limit;
     }
 
     /**
-     * Returns the JSON:API `?page[offset]=N` value from the current request, or `null` when
+     * Returns the JSON:API `?page[offset]=N` value from the current request, or the default when
      * the parameter is not present. Used to push the page offset onto data-layer transfers.
+     *
+     * Users can also overwrite the offset by passing it as argument to this method.
      */
-    protected function getPaginationOffset(): ?int
+    protected function getPaginationOffset(int $offset = self::DEFAULT_OFFSET): int
     {
-        return $this->getPaginationParameter(static::QUERY_PARAMETER_OFFSET);
+        return $this->getPaginationParameter(static::QUERY_PARAMETER_OFFSET) ?? $offset;
     }
 
     /**
@@ -91,11 +97,11 @@ abstract class AbstractStorefrontProvider extends AbstractProvider
      * from the current request. Convenience helper for criteria-style facades/clients that
      * accept a `PaginationTransfer` (e.g. `$criteria->setPagination($this->buildPaginationTransfer())`).
      */
-    protected function buildPaginationTransfer(): PaginationTransfer
+    protected function buildPaginationTransfer(int $limit = self::DEFAULT_LIMIT, int $offset = self::DEFAULT_OFFSET): PaginationTransfer
     {
         return (new PaginationTransfer())
-            ->setLimit($this->getPaginationLimit())
-            ->setOffset($this->getPaginationOffset());
+            ->setLimit($this->getPaginationLimit($limit))
+            ->setOffset($this->getPaginationOffset($offset));
     }
 
     /**
@@ -104,11 +110,11 @@ abstract class AbstractStorefrontProvider extends AbstractProvider
      * `FilterTransfer` with limit/offset (e.g.
      * `$collectionRequest->setFilter($this->buildFilterTransfer())`).
      */
-    protected function buildFilterTransfer(): FilterTransfer
+    protected function buildFilterTransfer(int $limit = self::DEFAULT_LIMIT, int $offset = self::DEFAULT_OFFSET): FilterTransfer
     {
         return (new FilterTransfer())
-            ->setLimit($this->getPaginationLimit())
-            ->setOffset($this->getPaginationOffset());
+            ->setLimit($this->getPaginationLimit($limit))
+            ->setOffset($this->getPaginationOffset($offset));
     }
 
     /**
@@ -121,8 +127,9 @@ abstract class AbstractStorefrontProvider extends AbstractProvider
      */
     protected function buildSearchPaginationRequestParams(int $defaultItemsPerPage): array
     {
-        $itemsPerPage = $this->getPaginationLimit() ?? $defaultItemsPerPage;
-        $offset = $this->getPaginationOffset() ?? static::DEFAULT_OFFSET;
+        $itemsPerPage = $this->getPaginationLimit($defaultItemsPerPage);
+        $offset = $this->getPaginationOffset();
+
         $page = $itemsPerPage > 0
             ? (int)floor($offset / $itemsPerPage) + static::DEFAULT_PAGE_NUMBER
             : static::DEFAULT_PAGE_NUMBER;

@@ -45,6 +45,8 @@
 
     <transfer name="Pagination">
         <property name="page" type="int"/>
+        <property name="limit" type="int"/>
+        <property name="offset" type="int"/>
         <property name="maxPerPage" type="int"/>
     </transfer>
 
@@ -54,6 +56,8 @@
     </transfer>
 
     <transfer name="Filter">
+        <property name="limit" type="int"/>
+        <property name="offset" type="int"/>
     </transfer>
 
 </transfers>
