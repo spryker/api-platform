@@ -169,6 +169,31 @@ class GlueApiExceptionSubscriber implements EventSubscriberInterface
             return;
         }
 
+        // PropertyAccessor throws a raw InvalidArgumentException when JSON:API ItemNormalizer
+        // tries to assign a non-numeric string to a typed `?int`/`?float` property. Without
+        // this branch the kernel renders a 500. Legacy Glue returned 422 / code 901 with
+        // "<property> => This value should be of type numeric." — restore that contract.
+        if ($event->getRequest()->attributes->has('_api_resource_class')) {
+            $propertyTypeError = $this->matchPropertyTypeError($exception->getMessage());
+
+            if ($propertyTypeError !== null) {
+                $event->setResponse($this->createJsonApiResponse(
+                    [
+                        'errors' => [
+                            [
+                                'code' => static::ERROR_CODE_VALIDATION,
+                                'status' => Response::HTTP_UNPROCESSABLE_ENTITY,
+                                'detail' => $propertyTypeError,
+                            ],
+                        ],
+                    ],
+                    Response::HTTP_UNPROCESSABLE_ENTITY,
+                ));
+
+                return;
+            }
+        }
+
         // Convert routing-level 405 to 404 for backward compatibility with the old Glue REST API,
         // which returned 404 for unsupported HTTP methods. This only applies when _api_resource_class
         // is not set (i.e. Symfony Router rejected the method before API Platform resolved the resource).
@@ -609,14 +634,16 @@ class GlueApiExceptionSubscriber implements EventSubscriberInterface
             return;
         }
 
-        // Check if errors need reformatting: single error with "property: message" format
+        // Check if errors need reformatting: single error with "property: message" format.
+        // Property may be a nested path produced by Collection/All constraints, e.g.
+        // `parent[child][0][leaf]` — accept word characters and bracket-segment notation.
         if (count($data['errors']) !== 1) {
             return;
         }
 
         $detail = $data['errors'][0]['detail'] ?? '';
 
-        if (!is_string($detail) || $detail === '' || !preg_match('/^\w+: /', $detail)) {
+        if (!is_string($detail) || $detail === '' || !preg_match('/^[\w\[\]]+: /', $detail)) {
             return;
         }
 
@@ -629,8 +656,20 @@ class GlueApiExceptionSubscriber implements EventSubscriberInterface
             $fieldName = $colonPos !== false ? substr($line, 0, $colonPos) : null;
             $message = $colonPos !== false ? substr($line, $colonPos + 2) : $line;
 
-            // Detect missing fields: "not blank/null" errors for fields not submitted in the request
-            if ($fieldName !== null && $submittedFields !== null && !in_array($fieldName, $submittedFields, true)) {
+            if ($fieldName !== null) {
+                // Convert Symfony's bracket path notation `parent[child][0]` to Spryker's
+                // dot notation `parent.child.0` to match legacy Glue REST error format.
+                $fieldName = $this->normalizePropertyPath($fieldName);
+            }
+
+            // Detect missing fields: "not blank/null" errors for fields not submitted in the request.
+            // Only top-level fields are considered submitted — nested paths bypass this check.
+            if (
+                $fieldName !== null
+                && $submittedFields !== null
+                && !str_contains($fieldName, '.')
+                && !in_array($fieldName, $submittedFields, true)
+            ) {
                 $message = 'This field is missing.';
             }
 
@@ -649,6 +688,18 @@ class GlueApiExceptionSubscriber implements EventSubscriberInterface
             ['errors' => $errors],
             JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES,
         ));
+    }
+
+    /**
+     * Converts Symfony Validator's bracket property-path notation to Spryker's dot notation.
+     * Examples:
+     *  - `parent` → `parent`
+     *  - `parent[child]` → `parent.child`
+     *  - `parent[items][0][sku]` → `parent.items.0.sku`
+     */
+    protected function normalizePropertyPath(string $propertyPath): string
+    {
+        return rtrim(str_replace(['[', ']'], ['.', ''], $propertyPath), '.');
     }
 
     /**
@@ -881,6 +932,28 @@ class GlueApiExceptionSubscriber implements EventSubscriberInterface
      * Becomes:
      *   quantity => This value should be of type numeric.
      */
+
+    /**
+     * Matches the PropertyAccessor message
+     * `Expected argument of type "<type>", "<given>" given at property path "<path>".`
+     * and returns the legacy-formatted detail (or null when not a match).
+     *
+     * Numeric target types (`int`, `float`, optional variants) map to `should be of type numeric.`;
+     * other targets fall back to `should be of type <type>.` mirroring legacy Glue behaviour.
+     */
+    protected function matchPropertyTypeError(string $message): ?string
+    {
+        if (!preg_match('/Expected argument of type "(\??\w+)", "[^"]+" given at property path "([\w\.\[\]]+)"/', $message, $matches)) {
+            return null;
+        }
+
+        $expectedType = ltrim($matches[1], '?');
+        $propertyPath = $this->normalizePropertyPath($matches[2]);
+        $reportedType = in_array($expectedType, ['int', 'integer', 'float', 'double'], true) ? 'numeric' : $expectedType;
+
+        return sprintf('%s => This value should be of type %s.', $propertyPath, $reportedType);
+    }
+
     protected function transformDenormalizationMessage(string $message): string
     {
         if (!preg_match('/denormalize attribute "(\w+)".*Expected argument of type/', $message, $matches)) {

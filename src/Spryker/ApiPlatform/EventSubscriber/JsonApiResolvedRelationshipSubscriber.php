@@ -340,8 +340,8 @@ class JsonApiResolvedRelationshipSubscriber implements EventSubscriberInterface
 
                 if ($apiProperty->isIdentifier()) {
                     $identifier = $value;
-
-                    continue;
+                    // Fall through: keep identifier in attributes too, matching the main-resource
+                    // serialization path and legacy Glue REST output (id duplicated in attributes).
                 }
             }
 
@@ -350,7 +350,7 @@ class JsonApiResolvedRelationshipSubscriber implements EventSubscriberInterface
                 continue;
             }
 
-            $serializedName = $this->resolveSerializedName($property) ?? $this->camelToKebabCase($name);
+            $serializedName = $this->resolveSerializedName($property) ?? $name;
             $attributes[$serializedName] = $value;
         }
 

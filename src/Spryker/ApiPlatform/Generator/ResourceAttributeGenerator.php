@@ -279,6 +279,10 @@ class ResourceAttributeGenerator
             $parameters['read'] = $operation['read'];
         }
 
+        if (isset($operation['extraProperties']) && is_array($operation['extraProperties']) && $operation['extraProperties'] !== []) {
+            $parameters['extraProperties'] = $operation['extraProperties'];
+        }
+
         return $parameters;
     }
 

@@ -154,11 +154,16 @@ class SchemaParser implements SchemaParserInterface
             return $parsedSchema;
         }
 
-        foreach ($parsedSchema['operations'] as $operationType => $operation) {
+        foreach ($parsedSchema['operations'] as $operationKey => $operation) {
             if (isset($operation['validationGroups']) && is_array($operation['validationGroups'])) {
                 continue;
             }
 
+            // The array key is the operation name (e.g. `createGuestCartItem`) when explicitly given
+            // in the YAML, otherwise the operation type (`Post`, `Patch`, …). Validation YAML files
+            // are keyed by HTTP method, so we must match against the type — not the array key —
+            // so named operations also receive the auto-generated group.
+            $operationType = is_string($operation['type'] ?? null) ? $operation['type'] : (string)$operationKey;
             $validationKey = strtolower($operationType);
 
             if (!in_array($validationKey, $validationOperationKeys, true)) {
@@ -167,7 +172,7 @@ class SchemaParser implements SchemaParserInterface
 
             $validationGroup = $this->validationGroupMapper->mapOperationToGroup($operationType, $resourceName);
 
-            $parsedSchema['operations'][$operationType]['validationGroups'] = [$validationGroup];
+            $parsedSchema['operations'][$operationKey]['validationGroups'] = [$validationGroup];
         }
 
         return $parsedSchema;
@@ -318,6 +323,10 @@ class SchemaParser implements SchemaParserInterface
 
             if (array_key_exists('read', $operation)) {
                 $normalizedOperation['read'] = (bool)$operation['read'];
+            }
+
+            if (isset($operation['extraProperties']) && is_array($operation['extraProperties'])) {
+                $normalizedOperation['extraProperties'] = $operation['extraProperties'];
             }
 
             $normalized[$operationName ?? $operationType] = $normalizedOperation;

@@ -208,9 +208,22 @@ class JsonApiRequestValidatorSubscriber implements EventSubscriberInterface
     }
 
     /**
+     * Request attribute name carrying the list of attribute keys whose value was sanitized
+     * from an empty string to `null` by {@see static::sanitizeRequestBody()}. Processors that
+     * need to reject empty-string input for typed properties (legacy 422 BC) can read this list
+     * to distinguish "field was sent as empty" from "field was omitted".
+     */
+    public const string ATTRIBUTE_SANITIZED_EMPTY_STRING_FIELDS = '_sanitized_empty_string_fields';
+
+    /**
      * Converts empty string values to null for properties that have non-string types
      * in the target resource class. This prevents deserialization TypeErrors and allows
      * validation constraints (NotBlank, Type, etc.) to generate proper error messages.
+     *
+     * Records sanitized field names in {@see static::ATTRIBUTE_SANITIZED_EMPTY_STRING_FIELDS}
+     * so processors can distinguish "field was sent as empty" from "field was omitted" — the
+     * legacy stack returned 422 for an empty-string typed field, callers that need to preserve
+     * that BC inspect this attribute.
      *
      * @param array<string, mixed> $body
      *
@@ -226,6 +239,7 @@ class JsonApiRequestValidatorSubscriber implements EventSubscriberInterface
 
         $attributes = $body['data']['attributes'];
         $modified = false;
+        $sanitizedFields = [];
 
         foreach ($attributes as $key => $value) {
             if ($value !== '') {
@@ -238,6 +252,7 @@ class JsonApiRequestValidatorSubscriber implements EventSubscriberInterface
 
                 if ($propertyType instanceof ReflectionNamedType && !in_array($propertyType->getName(), ['string', 'mixed'], true)) {
                     $body['data']['attributes'][$key] = null;
+                    $sanitizedFields[] = (string)$key;
                     $modified = true;
                 }
             } catch (ReflectionException) {
@@ -254,6 +269,7 @@ class JsonApiRequestValidatorSubscriber implements EventSubscriberInterface
                 $request->server->all(),
                 (string)json_encode($body),
             );
+            $request->attributes->set(static::ATTRIBUTE_SANITIZED_EMPTY_STRING_FIELDS, $sanitizedFields);
         }
     }
 

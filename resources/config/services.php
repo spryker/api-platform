@@ -18,6 +18,7 @@ use Spryker\ApiPlatform\Command\ApiDebugCommand;
 use Spryker\ApiPlatform\Command\ApiGenerateCommand;
 use Spryker\ApiPlatform\Configuration\ApiPlatformConfig;
 use Spryker\ApiPlatform\EventSubscriber\AcceptLanguageLocaleSubscriber;
+use Spryker\ApiPlatform\EventSubscriber\EntityTagSubscriber;
 use Spryker\ApiPlatform\EventSubscriber\ETagResponseSubscriber;
 use Spryker\ApiPlatform\EventSubscriber\GlueApiExceptionSubscriber;
 use Spryker\ApiPlatform\EventSubscriber\JsonApiContentTypeCleanupSubscriber;
@@ -26,6 +27,7 @@ use Spryker\ApiPlatform\EventSubscriber\JsonApiRequestValidatorSubscriber;
 use Spryker\ApiPlatform\EventSubscriber\JsonApiResolvedRelationshipSubscriber;
 use Spryker\ApiPlatform\EventSubscriber\OAuthExceptionSubscriber;
 use Spryker\ApiPlatform\EventSubscriber\PaginationLinksResponseSubscriber;
+use Spryker\ApiPlatform\EventSubscriber\PathNormalizationRequestSubscriber;
 use Spryker\ApiPlatform\Generator\ClassGenerator;
 use Spryker\ApiPlatform\Generator\ConstraintFormatter;
 use Spryker\ApiPlatform\Generator\FqcnConstraintResolver;
@@ -260,11 +262,31 @@ return static function (ContainerConfigurator $container): void {
     // Add ETag response header when providers store etag value in request attributes
     $services->set(ETagResponseSubscriber::class);
 
+    // Validate If-Match for ETag-protected operations and persist the resource ETag for emission
+    $services->set(EntityTagSubscriber::class);
+
     // Convert GlueApiException to JSON:API error response with Glue error codes
     $services->set(GlueApiExceptionSubscriber::class);
 
     // Convert OAuthServerException to HttpException with correct status code
     $services->set(OAuthExceptionSubscriber::class);
+
+    // Collapse consecutive slashes in the request path before routing for legacy test-helper BC
+    $services->set(PathNormalizationRequestSubscriber::class);
+
+    // Replays the legacy ControllerBeforeAction + RestUserValidator plugin chains for endpoints
+    // migrated to API Platform so that `getRestUserValidatorPlugins()`-registered plugins (MFA,
+    // Authorization, project-level customizations) keep working without per-endpoint porting.
+    // Classes live in the GlueApplication module — registered by string FQCN so api-platform's
+    // composer manifest stays free of a glue-application dependency.
+    $services->set(
+        'Spryker\\Glue\\GlueApplication\\Compatibility\\RequestBuilder\\SyntheticRestRequestBuilder',
+    );
+    $services->alias(
+        'Spryker\\Glue\\GlueApplication\\Compatibility\\RequestBuilder\\SyntheticRestRequestBuilderInterface',
+        'Spryker\\Glue\\GlueApplication\\Compatibility\\RequestBuilder\\SyntheticRestRequestBuilder',
+    );
+    $services->set('Spryker\\Glue\\GlueApplication\\Compatibility\\EventSubscriber\\LegacyPluginBridgeSubscriber');
 
     // Validate JSON:API request body (type field, resource ID presence)
     $services->set(JsonApiRequestValidatorSubscriber::class);
