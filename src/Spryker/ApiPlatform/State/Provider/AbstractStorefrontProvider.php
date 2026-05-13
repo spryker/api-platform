@@ -96,12 +96,22 @@ abstract class AbstractStorefrontProvider extends AbstractProvider
      * Builds a {@see PaginationTransfer} pre-populated with `?page[limit]` and `?page[offset]`
      * from the current request. Convenience helper for criteria-style facades/clients that
      * accept a `PaginationTransfer` (e.g. `$criteria->setPagination($this->buildPaginationTransfer())`).
+     *
+     * Sets all four equivalent representations of the page coordinate — `limit`/`offset` (search-style)
+     * and `maxPerPage`/`page` (1-based, legacy Zed-reader style) — so the transfer satisfies both
+     * reader flavours without the caller having to translate. Page is derived as
+     * `floor(offset / limit) + 1`; the two pairs stay in sync.
      */
     protected function buildPaginationTransfer(int $limit = self::DEFAULT_LIMIT, int $offset = self::DEFAULT_OFFSET): PaginationTransfer
     {
+        $resolvedLimit = $this->getPaginationLimit($limit);
+        $resolvedOffset = $this->getPaginationOffset($offset);
+
         return (new PaginationTransfer())
-            ->setLimit($this->getPaginationLimit($limit))
-            ->setOffset($this->getPaginationOffset($offset));
+            ->setLimit($resolvedLimit)
+            ->setOffset($resolvedOffset)
+            ->setMaxPerPage($resolvedLimit)
+            ->setPage(intdiv($resolvedOffset, max($resolvedLimit, 1)) + 1);
     }
 
     /**
