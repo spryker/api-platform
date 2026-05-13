@@ -69,10 +69,28 @@ class ConstraintFormatter
         $this->fqcnConstraintMap = $fqcnConstraintMap;
     }
 
+    protected const string OPTIONAL_PAYLOAD_SUFFIX = ", payload: ['source' => 'optional']";
+
     /**
      * @param array<string> $groups
      */
     public function generateConstraintAttribute(mixed $constraint, array $groups): string
+    {
+        return $this->formatConstraintAttribute($constraint, $groups, '');
+    }
+
+    /**
+     * @param array<string> $groups
+     */
+    public function generateConstraintAttributeWithOptionalPayload(mixed $constraint, array $groups): string
+    {
+        return $this->formatConstraintAttribute($constraint, $groups, static::OPTIONAL_PAYLOAD_SUFFIX);
+    }
+
+    /**
+     * @param array<string> $groups
+     */
+    protected function formatConstraintAttribute(mixed $constraint, array $groups, string $payloadSuffix): string
     {
         $groupsString = implode("', '", $groups);
 
@@ -81,10 +99,10 @@ class ConstraintFormatter
                 $normalized = $this->normalizeFqcn($constraint);
                 $alias = $this->fqcnConstraintMap[$normalized]['alias'] ?? $this->parseConstraintFqcn($constraint)['shortName'];
 
-                return sprintf("#[%s(groups: ['%s'])]", $alias, $groupsString);
+                return sprintf("#[%s(groups: ['%s']%s)]", $alias, $groupsString, $payloadSuffix);
             }
 
-            return sprintf("#[Assert\\%s(groups: ['%s'])]", $constraint, $groupsString);
+            return sprintf("#[Assert\\%s(groups: ['%s']%s)]", $constraint, $groupsString, $payloadSuffix);
         }
 
         if (!is_array($constraint)) {
@@ -99,29 +117,29 @@ class ConstraintFormatter
             $alias = $this->fqcnConstraintMap[$normalized]['alias'] ?? $this->parseConstraintFqcn($constraintName)['shortName'];
 
             if (!is_array($options)) {
-                return sprintf("#[%s(groups: ['%s'])]", $alias, $groupsString);
+                return sprintf("#[%s(groups: ['%s']%s)]", $alias, $groupsString, $payloadSuffix);
             }
 
             $formattedOptions = $this->formatConstraintOptions($options, $constraintName, $groups);
 
             if ($formattedOptions === '') {
-                return sprintf("#[%s(groups: ['%s'])]", $alias, $groupsString);
+                return sprintf("#[%s(groups: ['%s']%s)]", $alias, $groupsString, $payloadSuffix);
             }
 
-            return sprintf("#[%s(%s, groups: ['%s'])]", $alias, $formattedOptions, $groupsString);
+            return sprintf("#[%s(%s, groups: ['%s']%s)]", $alias, $formattedOptions, $groupsString, $payloadSuffix);
         }
 
         if (!is_array($options)) {
-            return sprintf("#[Assert\\%s(groups: ['%s'])]", $constraintName, $groupsString);
+            return sprintf("#[Assert\\%s(groups: ['%s']%s)]", $constraintName, $groupsString, $payloadSuffix);
         }
 
         $formattedOptions = $this->formatConstraintOptions($options, $constraintName, $groups);
 
         if ($formattedOptions === '') {
-            return sprintf("#[Assert\\%s(groups: ['%s'])]", $constraintName, $groupsString);
+            return sprintf("#[Assert\\%s(groups: ['%s']%s)]", $constraintName, $groupsString, $payloadSuffix);
         }
 
-        return sprintf("#[Assert\\%s(%s, groups: ['%s'])]", $constraintName, $formattedOptions, $groupsString);
+        return sprintf("#[Assert\\%s(%s, groups: ['%s']%s)]", $constraintName, $formattedOptions, $groupsString, $payloadSuffix);
     }
 
     /**

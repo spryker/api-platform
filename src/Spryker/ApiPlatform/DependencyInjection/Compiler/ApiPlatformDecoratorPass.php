@@ -12,6 +12,7 @@ namespace Spryker\ApiPlatform\DependencyInjection\Compiler;
 use Spryker\ApiPlatform\Metadata\CodeBucketResourceClassResolver;
 use Spryker\ApiPlatform\Metadata\CodeBucketResourceNameCollectionFactory;
 use Spryker\ApiPlatform\OpenApi\Decorator\OpenApiDecorator;
+use Spryker\ApiPlatform\State\OptionalFieldFilteringValidateProvider;
 use Symfony\Component\DependencyInjection\Argument\TaggedIteratorArgument;
 use Symfony\Component\DependencyInjection\Compiler\CompilerPassInterface;
 use Symfony\Component\DependencyInjection\ContainerBuilder;
@@ -31,29 +32,47 @@ use Symfony\Component\DependencyInjection\Reference;
  */
 class ApiPlatformDecoratorPass implements CompilerPassInterface
 {
+    protected const string SERVICE_ID_RESOURCE_CLASS_RESOLVER = 'api_platform.resource_class_resolver';
+
+    protected const string SERVICE_ID_NAME_COLLECTION_FACTORY_CACHED = 'api_platform.metadata.resource.name_collection_factory.cached';
+
+    protected const string SERVICE_ID_OPENAPI_FACTORY = 'api_platform.openapi.factory';
+
+    protected const string SERVICE_ID_VALIDATE_STATE_PROVIDER = 'api_platform.state_provider.validate';
+
+    protected const string TAG_FORMAT_TRANSFORMER = 'spryker_api_platform.format_transformer';
+
+    protected const string REFERENCE_INNER = '.inner';
+
     public function process(ContainerBuilder $container): void
     {
-        if (!$container->has('api_platform.resource_class_resolver')) {
+        if (!$container->has(static::SERVICE_ID_RESOURCE_CLASS_RESOLVER)) {
             return;
         }
 
         $container->register(CodeBucketResourceClassResolver::class, CodeBucketResourceClassResolver::class)
-            ->setDecoratedService('api_platform.resource_class_resolver')
-            ->setArguments([new Reference('.inner')]);
+            ->setDecoratedService(static::SERVICE_ID_RESOURCE_CLASS_RESOLVER)
+            ->setArguments([new Reference(static::REFERENCE_INNER)]);
 
-        if ($container->has('api_platform.metadata.resource.name_collection_factory.cached')) {
+        if ($container->has(static::SERVICE_ID_NAME_COLLECTION_FACTORY_CACHED)) {
             $container->register(CodeBucketResourceNameCollectionFactory::class, CodeBucketResourceNameCollectionFactory::class)
-                ->setDecoratedService('api_platform.metadata.resource.name_collection_factory.cached')
-                ->setArguments([new Reference('.inner')]);
+                ->setDecoratedService(static::SERVICE_ID_NAME_COLLECTION_FACTORY_CACHED)
+                ->setArguments([new Reference(static::REFERENCE_INNER)]);
         }
 
-        if ($container->has('api_platform.openapi.factory')) {
+        if ($container->has(static::SERVICE_ID_OPENAPI_FACTORY)) {
             $container->register(OpenApiDecorator::class, OpenApiDecorator::class)
-                ->setDecoratedService('api_platform.openapi.factory')
+                ->setDecoratedService(static::SERVICE_ID_OPENAPI_FACTORY)
                 ->setArguments([
-                    new Reference('.inner'),
-                    new TaggedIteratorArgument('spryker_api_platform.format_transformer'),
+                    new Reference(static::REFERENCE_INNER),
+                    new TaggedIteratorArgument(static::TAG_FORMAT_TRANSFORMER),
                 ]);
+        }
+
+        if ($container->has(static::SERVICE_ID_VALIDATE_STATE_PROVIDER)) {
+            $container->register(OptionalFieldFilteringValidateProvider::class, OptionalFieldFilteringValidateProvider::class)
+                ->setDecoratedService(static::SERVICE_ID_VALIDATE_STATE_PROVIDER)
+                ->setArguments([new Reference(static::REFERENCE_INNER)]);
         }
     }
 }

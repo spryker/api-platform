@@ -45,7 +45,10 @@ use Spryker\ApiPlatform\Schema\Validation\Mapper\ValidationGroupMapperInterface;
  * Key behaviors:
  * - Maps operations to validation groups (Post → 'customers:create', Patch → 'customers:update')
  * - Deduplicates same constraints across groups (merges groups when constraint is identical)
- * - Unwraps Optional constraints and skips NotBlank inside Optional wrappers
+ * - Unwraps Optional constraints and emits their inner constraints as property attributes;
+ *   together with the ClassGenerator omitting `= null` defaults for `required: false` properties,
+ *   this preserves Optional semantics — Symfony Validator skips uninitialized properties,
+ *   so an absent field bypasses validation while an explicit-null field is validated.
  * - Handles fully qualified class name constraints with alias resolution
  */
 class ValidationAttributeGenerator
@@ -82,13 +85,10 @@ class ValidationAttributeGenerator
                     $nestedConstraints = $this->extractNestedConstraintsFromOptional($constraint);
 
                     foreach ($nestedConstraints as $nestedConstraint) {
-                        if ($this->shouldSkipConstraintForOptionalField($nestedConstraint)) {
-                            continue;
-                        }
-
                         $constraintsWithGroups[] = [
                             'constraint' => $nestedConstraint,
                             'group' => $group,
+                            'fromOptional' => true,
                         ];
                     }
 
@@ -98,6 +98,7 @@ class ValidationAttributeGenerator
                 $constraintsWithGroups[] = [
                     'constraint' => $constraint,
                     'group' => $group,
+                    'fromOptional' => false,
                 ];
             }
         }
@@ -107,16 +108,28 @@ class ValidationAttributeGenerator
         $attributes = [];
 
         foreach ($deduplicatedConstraints as $constraintData) {
-            $attributes[] = $this->constraintFormatter->generateConstraintAttribute($constraintData['constraint'], $constraintData['groups']);
+            if ($constraintData['fromOptional']) {
+                $attributes[] = $this->constraintFormatter->generateConstraintAttributeWithOptionalPayload(
+                    $constraintData['constraint'],
+                    $constraintData['groups'],
+                );
+
+                continue;
+            }
+
+            $attributes[] = $this->constraintFormatter->generateConstraintAttribute(
+                $constraintData['constraint'],
+                $constraintData['groups'],
+            );
         }
 
         return $attributes;
     }
 
     /**
-     * @param array<array{constraint: mixed, group: string}> $constraintsWithGroups
+     * @param array<array{constraint: mixed, group: string, fromOptional: bool}> $constraintsWithGroups
      *
-     * @return array<array{constraint: mixed, groups: array<string>}>
+     * @return array<array{constraint: mixed, groups: array<string>, fromOptional: bool}>
      */
     protected function deduplicateConstraintsByGroups(array $constraintsWithGroups): array
     {
@@ -125,13 +138,15 @@ class ValidationAttributeGenerator
         foreach ($constraintsWithGroups as $item) {
             $constraint = $item['constraint'];
             $group = $item['group'];
+            $fromOptional = $item['fromOptional'];
 
-            $key = $this->generateConstraintKey($constraint);
+            $key = $this->generateConstraintKey($constraint) . '|' . ($fromOptional ? 'optional' : 'required');
 
             if (!isset($groupedByConstraint[$key])) {
                 $groupedByConstraint[$key] = [
                     'constraint' => $constraint,
                     'groups' => [],
+                    'fromOptional' => $fromOptional,
                 ];
             }
 
@@ -192,19 +207,6 @@ class ValidationAttributeGenerator
         }
 
         return $constraint['Optional']['constraints'];
-    }
-
-    protected function shouldSkipConstraintForOptionalField(mixed $constraint): bool
-    {
-        if (is_string($constraint) && $constraint === 'NotBlank') {
-            return true;
-        }
-
-        if (is_array($constraint) && isset($constraint['NotBlank'])) {
-            return true;
-        }
-
-        return false;
     }
 
     protected function normalizeFqcn(string $fqcn): string
