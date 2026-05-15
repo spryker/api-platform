@@ -12,6 +12,7 @@ namespace Spryker\ApiPlatform\Relationship;
 use ApiPlatform\Metadata\ApiProperty;
 use ApiPlatform\Metadata\Get;
 use ApiPlatform\Metadata\GetCollection;
+use ApiPlatform\Metadata\IriConverterInterface;
 use ApiPlatform\State\ProviderInterface;
 use BadMethodCallException;
 use Psr\Container\ContainerInterface;
@@ -39,11 +40,13 @@ class ApiPlatformRelationshipResolver implements ApiPlatformRelationshipResolver
      * @param array<string, array<string, mixed>> $relationships
      * @param \Psr\Container\ContainerInterface $providerLocator
      * @param \Psr\Container\ContainerInterface $resolverLocator
+     * @param \Psr\Container\ContainerInterface $iriConverterLocator
      */
     public function __construct(
         protected array $relationships,
         protected ContainerInterface $providerLocator,
         protected ContainerInterface $resolverLocator,
+        protected ContainerInterface $iriConverterLocator,
     ) {
     }
 
@@ -546,9 +549,23 @@ class ApiPlatformRelationshipResolver implements ApiPlatformRelationshipResolver
             $this->perItemRelationshipData[$resolverClass] = $perItemData;
 
             $allResources = [];
+            $seenIris = [];
 
             foreach ($perItemData as $resources) {
-                $allResources = array_merge($allResources, $resources);
+                foreach ($resources as $resource) {
+                    try {
+                        $iri = $this->getIriConverter()->getIriFromResource($resource);
+                    } catch (Throwable) {
+                        $iri = spl_object_hash($resource);
+                    }
+
+                    if (isset($seenIris[$iri])) {
+                        continue;
+                    }
+
+                    $seenIris[$iri] = true;
+                    $allResources[] = $resource;
+                }
             }
 
             return $allResources;
@@ -871,5 +888,10 @@ class ApiPlatformRelationshipResolver implements ApiPlatformRelationshipResolver
         }
 
         return $uriVariables;
+    }
+
+    protected function getIriConverter(): IriConverterInterface
+    {
+        return $this->iriConverterLocator->get('iriConverter');
     }
 }

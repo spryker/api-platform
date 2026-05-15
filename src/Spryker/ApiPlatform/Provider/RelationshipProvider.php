@@ -9,10 +9,13 @@ declare(strict_types=1);
 
 namespace Spryker\ApiPlatform\Provider;
 
+use ApiPlatform\Metadata\IriConverterInterface;
 use ApiPlatform\Metadata\Operation;
 use ApiPlatform\State\ProviderInterface;
+use Psr\Container\ContainerInterface;
 use Spryker\ApiPlatform\Relationship\ApiPlatformRelationshipResolverInterface;
 use Symfony\Component\HttpFoundation\Request;
+use Throwable;
 
 /**
  * @implements \ApiPlatform\State\ProviderInterface<object>
@@ -27,6 +30,7 @@ class RelationshipProvider implements ProviderInterface
     public function __construct(
         protected ProviderInterface $decorated,
         protected ApiPlatformRelationshipResolverInterface $relationshipResolver,
+        protected ContainerInterface $iriConverterLocator,
     ) {
     }
 
@@ -114,7 +118,7 @@ class RelationshipProvider implements ProviderInterface
                     $flatResources = array_merge($flatResources, $parentResources);
                 }
 
-                if ($flatResources === $resources) {
+                if ($this->deduplicateByIri($flatResources) === $resources) {
                     $result[$path] = $parentMapping;
 
                     break;
@@ -123,5 +127,38 @@ class RelationshipProvider implements ProviderInterface
         }
 
         return $result;
+    }
+
+    /**
+     * @param array<object> $resources
+     *
+     * @return array<object>
+     */
+    protected function deduplicateByIri(array $resources): array
+    {
+        $seen = [];
+        $result = [];
+
+        foreach ($resources as $resource) {
+            try {
+                $iri = $this->getIriConverter()->getIriFromResource($resource);
+            } catch (Throwable) {
+                $iri = spl_object_hash($resource);
+            }
+
+            if (isset($seen[$iri])) {
+                continue;
+            }
+
+            $seen[$iri] = true;
+            $result[] = $resource;
+        }
+
+        return $result;
+    }
+
+    protected function getIriConverter(): IriConverterInterface
+    {
+        return $this->iriConverterLocator->get('iriConverter');
     }
 }

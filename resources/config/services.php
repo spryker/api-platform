@@ -326,7 +326,8 @@ return static function (ContainerConfigurator $container): void {
     $services->set(ApiPlatformRelationshipResolver::class)
         ->arg('$relationships', param('api_platform.relationships'))
         ->arg('$providerLocator', service_locator([]))
-        ->arg('$resolverLocator', service_locator([]));
+        ->arg('$resolverLocator', service_locator([]))
+        ->arg('$iriConverterLocator', service_locator(['iriConverter' => service('api_platform.iri_converter')]));
 
     $services->alias(ApiPlatformRelationshipResolverInterface::class, ApiPlatformRelationshipResolver::class);
 
@@ -348,7 +349,8 @@ return static function (ContainerConfigurator $container): void {
         ->autoconfigure(false)
         ->decorate(JsonApiProvider::class)
         ->arg('$decorated', service('.inner'))
-        ->arg('$relationshipResolver', service(ApiPlatformRelationshipResolverInterface::class));
+        ->arg('$relationshipResolver', service(ApiPlatformRelationshipResolverInterface::class))
+        ->arg('$iriConverterLocator', service_locator(['iriConverter' => service('api_platform.iri_converter')]));
 
     $services->set(RelationshipProcessor::class)
         ->autoconfigure(false)
