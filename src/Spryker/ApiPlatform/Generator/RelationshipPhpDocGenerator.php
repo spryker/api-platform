@@ -76,6 +76,16 @@ class RelationshipPhpDocGenerator
                 continue;
             }
 
+            // Properties explicitly declared as readable attributes carry plain
+            // array data that must be serialized into `data.attributes`. Adding
+            // `@var Resource[]` would retype them as relationship targets and
+            // shift them into `data.relationships`, dropping them from attributes.
+            // Relationship-target properties auto-generated for an include are
+            // always emitted with `readable: false`, so this check is safe.
+            if (($property['readable'] ?? null) === true) {
+                continue;
+            }
+
             $normalizedRelationshipName = $this->kebabToCamelCase($include['relationshipName']);
 
             if ($normalizedRelationshipName === $propertyName) {

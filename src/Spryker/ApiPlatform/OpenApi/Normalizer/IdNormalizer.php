@@ -161,6 +161,16 @@ class IdNormalizer implements NormalizerInterface, NormalizerAwareInterface
 
         $basePath = substr($selfLink, 0, -strlen($suffix));
 
+        // When basePath has no path component beyond the host (e.g. `http://host` after
+        // stripping `/<type>` from `http://host/<type>`), the original URL was already
+        // canonical — there is no collection segment to pluralization-fix and the host
+        // segment must NOT be touched. Leave the URL unchanged.
+        $basePathComponent = parse_url($basePath, PHP_URL_PATH);
+
+        if ($basePathComponent === null || $basePathComponent === '' || $basePathComponent === '/') {
+            return;
+        }
+
         // API Platform may pluralize the collection segment (e.g. "checkout-datas")
         // which differs from the actual resource type name ("checkout-data").
         // Detect and replace the pluralized segment so the self-link matches

@@ -13,6 +13,7 @@ use ApiPlatform\Metadata\ApiProperty;
 use ApiPlatform\Metadata\Get;
 use ApiPlatform\Metadata\GetCollection;
 use ApiPlatform\Metadata\IriConverterInterface;
+use ApiPlatform\Metadata\Operation;
 use ApiPlatform\State\ProviderInterface;
 use BadMethodCallException;
 use Psr\Container\ContainerInterface;
@@ -732,11 +733,58 @@ class ApiPlatformRelationshipResolver implements ApiPlatformRelationshipResolver
         foreach ($this->expandArrayUriVariables($uriVariables) as $singleUriVariables) {
             $itemResources = array_merge(
                 $itemResources,
-                $this->loadForSingleUriVariables($provider, $singleUriVariables, $context),
+                $this->loadSingleResourceByIdentifier($provider, $singleUriVariables, $context),
             );
         }
 
         return $itemResources;
+    }
+
+    /**
+     * After expansion of array URI variables each call targets ONE concrete resource by its
+     * identifier, so `Get` is the semantically correct operation. Falls back to `GetCollection`
+     * only when the provider does not implement `Get` for these variables. This is the opposite
+     * priority of {@see static::loadForSingleUriVariables()}, which keeps `GetCollection`-first
+     * because its call sites carry 1:N semantics (e.g. one parent sku → many product-labels).
+     *
+     * @param \ApiPlatform\State\ProviderInterface<object> $provider
+     * @param array<string, mixed> $uriVariables
+     * @param array<string, mixed> $context
+     *
+     * @return array<object>
+     */
+    protected function loadSingleResourceByIdentifier(
+        ProviderInterface $provider,
+        array $uriVariables,
+        array $context,
+    ): array {
+        $resource = $this->safelyProvide($provider, new Get(), $uriVariables, $context);
+
+        if (is_object($resource)) {
+            return [$resource];
+        }
+
+        $resources = $this->safelyProvide($provider, new GetCollection(), $uriVariables, $context);
+
+        return is_array($resources) ? $resources : [];
+    }
+
+    /**
+     * @param \ApiPlatform\State\ProviderInterface<object> $provider
+     * @param array<string, mixed> $uriVariables
+     * @param array<string, mixed> $context
+     */
+    protected function safelyProvide(
+        ProviderInterface $provider,
+        Operation $operation,
+        array $uriVariables,
+        array $context,
+    ): object|array|null {
+        try {
+            return $provider->provide($operation, $uriVariables, $context);
+        } catch (BadMethodCallException | GlueApiException) {
+            return null;
+        }
     }
 
     /**
