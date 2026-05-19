@@ -243,6 +243,130 @@ class ApiPlatformRelationshipResolverTest extends Unit
         $this->assertSame([$relatedResource1, $relatedResource2], $result['addresses']);
     }
 
+    public function testGivenNullMappedPropertyWhenResolvingRelationshipsThenSkipsProviderCall(): void
+    {
+        // Arrange — parent's mapped property is null; the relationship must be skipped entirely
+        // so the provider does not fall through to an unfiltered `GetCollection` and attach
+        // every available item as a relationship.
+        $mainResource = (object)['customerReference' => null];
+
+        $provider = $this->createMock(ProviderInterface::class);
+        $provider->expects($this->never())
+            ->method('provide');
+
+        $providerLocator = $this->createMock(ContainerInterface::class);
+        $providerLocator->method('has')->willReturn(true);
+        $providerLocator->method('get')->willReturn($provider);
+
+        $relationships = [
+            'customers.addresses' => [
+                'relationship_name' => 'addresses',
+                'target_resource_type' => 'addresses',
+                'provider_service_id' => 'AddressProvider',
+                'uri_variable_mappings' => [
+                    'customerReference' => 'customerReference',
+                ],
+            ],
+        ];
+
+        $resolver = new ApiPlatformRelationshipResolver($relationships, $providerLocator, $this->createMock(ContainerInterface::class));
+
+        // Act
+        $result = $resolver->resolveRelationships('customers', [$mainResource], ['addresses'], []);
+
+        // Assert
+        $this->assertArrayHasKey('addresses', $result);
+        $this->assertSame([], $result['addresses']);
+    }
+
+    public function testGivenMixedNullAndValidMappingsWhenResolvingRelationshipsThenSkipsOnlyNullParents(): void
+    {
+        // Arrange — only the resource with a populated mapping should reach the provider.
+        $relatedResource = (object)['id' => 'addr-1'];
+        $mainResourceWithNull = (object)['customerReference' => null];
+        $mainResourceWithValue = (object)['customerReference' => 'customer-001'];
+
+        $provider = $this->createMock(ProviderInterface::class);
+        $provider->expects($this->once())
+            ->method('provide')
+            ->with(
+                $this->isInstanceOf(GetCollection::class),
+                ['customerReference' => 'customer-001'],
+                [],
+            )
+            ->willReturn([$relatedResource]);
+
+        $providerLocator = $this->createMock(ContainerInterface::class);
+        $providerLocator->method('has')->willReturn(true);
+        $providerLocator->method('get')->willReturn($provider);
+
+        $relationships = [
+            'customers.addresses' => [
+                'relationship_name' => 'addresses',
+                'target_resource_type' => 'addresses',
+                'provider_service_id' => 'AddressProvider',
+                'uri_variable_mappings' => [
+                    'customerReference' => 'customerReference',
+                ],
+            ],
+        ];
+
+        $resolver = new ApiPlatformRelationshipResolver($relationships, $providerLocator, $this->createMock(ContainerInterface::class));
+
+        // Act
+        $result = $resolver->resolveRelationships('customers', [$mainResourceWithNull, $mainResourceWithValue], ['addresses'], []);
+
+        // Assert
+        $this->assertArrayHasKey('addresses', $result);
+        $this->assertSame([$relatedResource], $result['addresses']);
+    }
+
+    public function testGivenBatchLoadableProviderWithNullMappedPropertyWhenResolvingRelationshipsThenOmitsNullParentFromBatch(): void
+    {
+        // Arrange — only the resource with a populated mapping reaches the batch payload.
+        $relatedResource = (object)['id' => 'addr-1'];
+        $mainResourceWithNull = (object)['customerReference' => null];
+        $mainResourceWithValue = (object)['customerReference' => 'customer-001'];
+
+        $provider = $this->createMock(BatchLoadableProviderInterface::class);
+        $provider->expects($this->once())
+            ->method('provide')
+            ->with(
+                $this->isInstanceOf(GetCollection::class),
+                [
+                    BatchLoadableProviderInterface::BATCH_DATA_KEY => [
+                        ['customerReference' => 'customer-001'],
+                    ],
+                ],
+                [],
+            )
+            ->willReturn([[$relatedResource]]);
+
+        $providerLocator = $this->createMock(ContainerInterface::class);
+        $providerLocator->method('has')->willReturn(true);
+        $providerLocator->method('get')->willReturn($provider);
+
+        $relationships = [
+            'customers.addresses' => [
+                'relationship_name' => 'addresses',
+                'target_resource_type' => 'addresses',
+                'provider_service_id' => 'AddressProvider',
+                'uri_variable_mappings' => [
+                    'customerReference' => 'customerReference',
+                ],
+            ],
+        ];
+
+        $resolver = new ApiPlatformRelationshipResolver($relationships, $providerLocator, $this->createMock(ContainerInterface::class));
+
+        // Act
+        $result = $resolver->resolveRelationships('customers', [$mainResourceWithNull, $mainResourceWithValue], ['addresses'], []);
+
+        // Assert
+        $this->assertArrayHasKey('addresses', $result);
+        $this->assertCount(1, $result['addresses']);
+    }
+
     public function testGivenBatchLoadableProviderWhenResolvingRelationshipsThenCallsProvideWithBatchData(): void
     {
         // Arrange

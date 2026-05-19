@@ -976,8 +976,15 @@ class GlueApiExceptionSubscriber implements EventSubscriberInterface
         $extraProperties = $this->resolveResourceExtraProperties($resourceClass);
 
         // Resources that accept either bearer or anonymous customer auth (e.g. checkout)
-        // return 400 with a dedicated code when neither header is present.
-        if (!$hasValidBearerToken && !$hasAnonymousCustomerHeader && ($extraProperties['securityAnonymousAuthRequired'] ?? false)) {
+        // return 400 with a dedicated code when neither header is present — UNLESS the access denial
+        // was raised by the CustomerAccess voter (b2b projects restricting `order-place-submit`/`price`
+        // content types). In that case the legacy 403/002 "Missing access token." response takes
+        // precedence so customer-access protection keeps behaving the way Glue REST did before the
+        // API Platform migration. The flag is set in
+        // {@see \Spryker\Glue\CustomerAccessRestApi\Api\Storefront\Security\CustomerAccessVoter}.
+        $isCustomerAccessDenied = (bool)$request->attributes->get('_customer_access_denied', false);
+
+        if (!$hasValidBearerToken && !$hasAnonymousCustomerHeader && ($extraProperties['securityAnonymousAuthRequired'] ?? false) && !$isCustomerAccessDenied) {
             return $this->createJsonApiResponse(
                 [
                     'errors' => [

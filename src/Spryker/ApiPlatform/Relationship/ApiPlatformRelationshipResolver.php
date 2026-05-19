@@ -619,6 +619,10 @@ class ApiPlatformRelationshipResolver implements ApiPlatformRelationshipResolver
                 $config['uri_variable_mappings'],
             );
 
+            if ($uriVariables === null) {
+                continue;
+            }
+
             $batchUriVariables[] = $uriVariables;
         }
 
@@ -659,6 +663,12 @@ class ApiPlatformRelationshipResolver implements ApiPlatformRelationshipResolver
                 $mainResource,
                 $config['uri_variable_mappings'],
             );
+
+            if ($uriVariables === null) {
+                $this->trackPerItemData($config, $mainResource, []);
+
+                continue;
+            }
 
             $itemResources = $this->hasArrayUriVariable($uriVariables)
                 ? $this->loadForExpandedUriVariables($provider, $uriVariables, $context)
@@ -914,25 +924,32 @@ class ApiPlatformRelationshipResolver implements ApiPlatformRelationshipResolver
     }
 
     /**
+     * Returns `null` when the mapping is incomplete — i.e. any mapped source property is missing
+     * from the resource or resolves to `null`. The caller MUST skip the provider call in that case
+     * to avoid invoking it with empty URI variables, which would otherwise fall through to the
+     * provider's unfiltered `GetCollection` branch and attach every available item as relationships.
+     *
      * @param object $mainResource
      * @param array<string, string> $mappings
      *
-     * @return array<string, mixed>
+     * @return array<string, mixed>|null
      */
-    protected function buildUriVariables(object $mainResource, array $mappings): array
+    protected function buildUriVariables(object $mainResource, array $mappings): ?array
     {
         $uriVariables = [];
 
         foreach ($mappings as $sourceProperty => $targetParameter) {
             if (!property_exists($mainResource, $sourceProperty)) {
-                continue;
+                return null;
             }
 
             $value = $mainResource->$sourceProperty;
 
-            if ($value !== null) {
-                $uriVariables[$targetParameter] = $value;
+            if ($value === null) {
+                return null;
             }
+
+            $uriVariables[$targetParameter] = $value;
         }
 
         return $uriVariables;

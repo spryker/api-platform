@@ -72,7 +72,10 @@ class PaginationLinksResponseSubscriber implements EventSubscriberInterface
         $currentPage = (int)$pagination['currentPage'];
         $maxPage = (int)$pagination['maxPage'];
 
-        if ($maxPage <= 1) {
+        // Skip only when there is no result page at all. For a single-page result (maxPage == 1)
+        // JSON:API still requires `first` and `last` links (they coincide with `self`); legacy Glue
+        // emitted them and Robot tests assert their presence on 1-result responses.
+        if ($maxPage < 1) {
             return;
         }
 
