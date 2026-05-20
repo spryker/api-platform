@@ -3,88 +3,23 @@
 [![Latest Stable Version](https://poser.pugx.org/spryker/api-platform/v/stable.svg)](https://packagist.org/packages/spryker/api-platform)
 [![Minimum PHP Version](https://img.shields.io/badge/php-%3E%3D%208.3-8892BF.svg)](https://php.net/)
 
-## Spryker API Platform Module
-
-Use this module to integrate the [API Platform](https://api-platform.com/docs/symfony/) into a Spryker project.
-A schema-based code generator for API Platform resources in Spryker applications. Define your API resources using YAML schemas and automatically generate PHP classes with full API Platform attribute support.
-
-### Overview
-
-This module provides a developer-friendly way to define API Platform resources through declarative schema files, similar to Spryker's Transfer object pattern. Resources can be defined across core, feature, and project layers with automatic merging and validation.
-
-### Features
-
-- 📝 **Schema-based Definition**: Define resources using YAML
-- 🔄 **Multi-layer Support**: Core, Feature, and Project layer schemas
-- 🎯 **ApiType Isolation**: Separate configurations for Storefront, Backend, etc.
-- ✅ **Comprehensive Validation**: Post-merge validation with helpful errors
-- 🚀 **Efficient Generation**: Generator-based file discovery for memory efficiency
-- 💾 **Smart Caching**: Automatic cache invalidation based on file changes
-- 🔗 **Relationship System**: Include related resources via `?include=` parameter with JSON:API compliance
-
 ## Installation
 
 ```
 composer require spryker/api-platform
 ```
 
-### Configuration
+## Documentation
 
-Default configuration (can be overridden in the bundle config: '%kernel.project_dir%/config/Symfony/{APPLICATION}/packages/spryker_api_platform.php'):
+The authoritative documentation lives in spryker-docs. Start here:
 
-```yaml
-spryker_api_platform:
-  source_directories:
-    - src/Spryker
-    - src/Pyz
-  cache_dir: '%kernel.cache_dir%/api-generator'
-  generated_dir: '%kernel.project_dir%/src/Generated/Api'
-  debug: '%kernel.debug%'
-```
-
-## Usage
-
-```bash
-# Generate all ApiTypes
-docker/sdk glue api:generate
-
-# Generate specific ApiType
-docker/sdk glue api:generate Storefront
-
-# Debug a resource
-docker/sdk glue api:debug Customer --api-type=Storefront
-```
-
-## Relationships
-
-Enable resources to include related resources via the `?include=` query parameter with JSON:API compliance.
-
-### Quick Example
-
-```yaml
-# Define relationship in parent resource
-includes:
-  - relationshipName: addresses
-    targetResource: CustomersAddresses
-    uriVariableMappings:
-      customerReference: customerReference
-
-# Define reverse relationship in child resource
-includableIn:
-  - resource: Customers
-    relationshipName: addresses
-```
-
-**Request:**
-```
-GET /customers/customer--35?include=addresses
-```
-
-**Key Features:**
-- ✅ Declarative YAML configuration
-- ✅ Zero provider changes needed
-- ✅ Automatic validation
-- ✅ Format agnostic (JSON:API, JSON-LD, XML)
-- ✅ Performance optimized (compiled configuration)
-
-For comprehensive documentation, see [Relationships Guide](resources/docs/Relationships.md).
+- **[API Platform overview](https://docs.spryker.com/docs/dg/dev/architecture/api-platform.html)** — concepts, architecture, and the resource generation workflow.
+- **[Resource schemas](https://docs.spryker.com/docs/dg/dev/architecture/api-platform/resource-schemas.html)** — `*.resource.yml` reference.
+- **[Validation schemas](https://docs.spryker.com/docs/dg/dev/architecture/api-platform/validation-schemas.html)** — `*.validation.yml` reference.
+- **[Relationships](https://docs.spryker.com/docs/dg/dev/architecture/api-platform/relationships.html)** — declaring includes between resources.
+- **[CodeBucket support](https://docs.spryker.com/docs/dg/dev/architecture/api-platform/code-buckets.html)** — region-specific resource variants.
+- **[Testing](https://docs.spryker.com/docs/dg/dev/architecture/api-platform/testing.html)** — writing tests for API Platform resources.
+- **[IDE integration](https://docs.spryker.com/docs/dg/dev/architecture/api-platform/ide-integration.html)** — PHPStorm and VSCode setup for YAML autocomplete.
+- **[Integration guide](https://docs.spryker.com/docs/dg/dev/upgrade-and-migrate/integrate-api-platform.html)** — installing and configuring API Platform in a project.
+- **[Migration from Glue REST](https://docs.spryker.com/docs/dg/dev/upgrade-and-migrate/migrate-to-api-platform.html)** — moving legacy endpoints to API Platform.
+- **[Troubleshooting](https://docs.spryker.com/docs/dg/dev/architecture/api-platform/troubleshooting.html)** — common issues and solutions.
