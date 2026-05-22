@@ -86,7 +86,6 @@ class SchemaParser implements SchemaParserInterface
             'securityPostValidationMessage' => $this->getValue($resource, 'securityPostValidationMessage', null),
             'openapiContext' => $this->getValue($resource, 'openapiContext', []),
             'includes' => $includes,
-            'includableIn' => $this->normalizeIncludableIn($resource),
             'sourceFile' => $filePath,
             'sourceLayer' => $this->detectSourceLayer($filePath),
         ];
@@ -539,49 +538,6 @@ class SchemaParser implements SchemaParserInterface
             }
 
             $normalized[] = $normalizedInclude;
-        }
-
-        return $normalized;
-    }
-
-    /**
-     * @param array<string, mixed> $resource
-     *
-     * @return array<int, array<string, mixed>>
-     */
-    protected function normalizeIncludableIn(array $resource): array
-    {
-        $includableIn = $this->getValue($resource, 'includableIn', []);
-
-        if (!is_array($includableIn)) {
-            return [];
-        }
-
-        $normalized = [];
-
-        foreach ($includableIn as $includable) {
-            if (!is_array($includable)) {
-                continue;
-            }
-
-            $resourceName = $includable['resource'] ?? null;
-            $relationshipName = $includable['relationshipName'] ?? null;
-
-            if ($resourceName === null || $relationshipName === null) {
-                continue;
-            }
-
-            $normalizedIncludable = [
-                'resource' => $resourceName,
-                'relationshipName' => $relationshipName,
-                'uriVariableMappings' => [],
-            ];
-
-            if (isset($includable['uriVariableMappings']) && is_array($includable['uriVariableMappings'])) {
-                $normalizedIncludable['uriVariableMappings'] = $includable['uriVariableMappings'];
-            }
-
-            $normalized[] = $normalizedIncludable;
         }
 
         return $normalized;

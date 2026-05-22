@@ -114,15 +114,13 @@ class SchemaServiceRegistrationPass extends AbstractApiServiceRegistrationPass
      */
     protected function collectResolverClassesFromResource(array $resource, array &$services): void
     {
-        foreach (['includes', 'includableIn'] as $section) {
-            if (!isset($resource[$section]) || !is_array($resource[$section])) {
-                continue;
-            }
+        if (!isset($resource['includes']) || !is_array($resource['includes'])) {
+            return;
+        }
 
-            foreach ($resource[$section] as $entry) {
-                if (is_array($entry) && isset($entry['resolverClass']) && is_string($entry['resolverClass'])) {
-                    $services[] = $entry['resolverClass'];
-                }
+        foreach ($resource['includes'] as $entry) {
+            if (is_array($entry) && isset($entry['resolverClass']) && is_string($entry['resolverClass'])) {
+                $services[] = $entry['resolverClass'];
             }
         }
     }

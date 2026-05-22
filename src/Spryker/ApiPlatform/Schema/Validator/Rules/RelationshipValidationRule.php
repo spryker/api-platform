@@ -18,12 +18,7 @@ class RelationshipValidationRule implements ValidationRuleInterface
      */
     public function validate(array $schema): array
     {
-        $warnings = [];
-
-        $warnings = array_merge($warnings, $this->validateIncludes($schema));
-        $warnings = array_merge($warnings, $this->validateIncludableIn($schema));
-
-        return $warnings;
+        return $this->validateIncludes($schema);
     }
 
     /**
@@ -69,58 +64,6 @@ class RelationshipValidationRule implements ValidationRuleInterface
             if (isset($include['uriVariableMappings']) && !is_array($include['uriVariableMappings'])) {
                 $warnings[] = sprintf(
                     'Warning: includes[%d].uriVariableMappings must be an array in %s',
-                    $index,
-                    $schema['sourceFile'] ?? 'unknown file',
-                );
-            }
-        }
-
-        return $warnings;
-    }
-
-    /**
-     * @param array<string, mixed> $schema
-     *
-     * @return array<string>
-     */
-    protected function validateIncludableIn(array $schema): array
-    {
-        $warnings = [];
-
-        if (!isset($schema['includableIn']) || !is_array($schema['includableIn'])) {
-            return $warnings;
-        }
-
-        foreach ($schema['includableIn'] as $index => $includable) {
-            if (!is_array($includable)) {
-                $warnings[] = sprintf(
-                    'Warning: includableIn[%d] must be an array in %s',
-                    $index,
-                    $schema['sourceFile'] ?? 'unknown file',
-                );
-
-                continue;
-            }
-
-            if (!isset($includable['resource']) || !is_string($includable['resource'])) {
-                $warnings[] = sprintf(
-                    'Warning: includableIn[%d] is missing required field "resource" in %s',
-                    $index,
-                    $schema['sourceFile'] ?? 'unknown file',
-                );
-            }
-
-            if (!isset($includable['relationshipName']) || !is_string($includable['relationshipName'])) {
-                $warnings[] = sprintf(
-                    'Warning: includableIn[%d] is missing required field "relationshipName" in %s',
-                    $index,
-                    $schema['sourceFile'] ?? 'unknown file',
-                );
-            }
-
-            if (isset($includable['uriVariableMappings']) && !is_array($includable['uriVariableMappings'])) {
-                $warnings[] = sprintf(
-                    'Warning: includableIn[%d].uriVariableMappings must be an array in %s',
                     $index,
                     $schema['sourceFile'] ?? 'unknown file',
                 );

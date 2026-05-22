@@ -293,56 +293,6 @@
                         ]
                     ]
                 },
-                "includableIn": {
-                    "type": "array",
-                    "description": "List of parent resources that can include this resource via ?include= parameter",
-                    "items": {
-                        "type": "object",
-                        "required": ["resource", "relationshipName"],
-                        "properties": {
-                            "resource": {
-                                "type": "string",
-                                "description": "The name of the parent resource",
-                                "pattern": "^[A-Za-z][A-Za-z0-9]*$",
-                                "examples": ["Customers", "Orders"]
-                            },
-                            "relationshipName": {
-                                "type": "string",
-                                "description": "The relationship name used in parent's includes declaration",
-                                "pattern": "^[a-zA-Z][a-zA-Z0-9_-]*$",
-                                "examples": ["addresses", "items"]
-                            },
-                            "uriVariableMappings": {
-                                "type": "object",
-                                "description": "Mapping of properties (must match parent's declaration)",
-                                "patternProperties": {
-                                    "^[a-zA-Z][a-zA-Z0-9]*$": {
-                                        "type": "string",
-                                        "pattern": "^[a-zA-Z][a-zA-Z0-9]*$"
-                                    }
-                                },
-                                "additionalProperties": false,
-                                "examples": [
-                                    {
-                                        "customerReference": "customerReference"
-                                    }
-                                ]
-                            }
-                        },
-                        "additionalProperties": false
-                    },
-                    "examples": [
-                        [
-                            {
-                                "resource": "Customers",
-                                "relationshipName": "addresses",
-                                "uriVariableMappings": {
-                                    "customerReference": "customerReference"
-                                }
-                            }
-                        ]
-                    ]
-                },
                 "sourceFile": {
                     "type": "string",
                     "description": "Full path to the source YAML file (auto-generated, read-only)",

@@ -9,7 +9,7 @@ declare(strict_types=1);
 
 namespace Spryker\ApiPlatform\Schema\Validator\Rules;
 
-class OperationValidationRule implements ValidationRuleInterface
+class SchemaCompletenessValidationRule implements ValidationRuleInterface
 {
     protected const array VALID_OPERATIONS = ['Get', 'GetCollection', 'Post', 'Put', 'Patch', 'Delete'];
 
@@ -22,18 +22,23 @@ class OperationValidationRule implements ValidationRuleInterface
     {
         $errors = [];
         $operations = $schema['operations'] ?? [];
-        $includableIn = $schema['includableIn'] ?? [];
+        $properties = $schema['properties'] ?? [];
+        $includes = $schema['includes'] ?? [];
 
-        if ((!is_array($operations) || $operations === []) && (!is_array($includableIn) || $includableIn === [])) {
+        $hasOperations = is_array($operations) && $operations !== [];
+        $hasProperties = is_array($properties) && $properties !== [];
+        $hasIncludes = is_array($includes) && $includes !== [];
+
+        if (!$hasOperations && !$hasProperties && !$hasIncludes) {
             return [
                 sprintf(
-                    'At least one operation or includableIn must be defined in %s',
+                    'Schema in %s must define at least one of: operations, properties, includes.',
                     $schema['sourceFile'] ?? 'unknown file',
                 ),
             ];
         }
 
-        if (!is_array($operations) || $operations === []) {
+        if (!$hasOperations) {
             return $errors;
         }
 

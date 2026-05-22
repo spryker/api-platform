@@ -69,7 +69,6 @@ use Spryker\ApiPlatform\Schema\Validation\Merger\ValidationSchemaMergerInterface
 use Spryker\ApiPlatform\Schema\Validator\PreMergeValidator;
 use Spryker\ApiPlatform\Schema\Validator\PreMergeValidatorInterface;
 use Spryker\ApiPlatform\Schema\Validator\Rules\MergeValidationRule;
-use Spryker\ApiPlatform\Schema\Validator\Rules\OperationValidationRule;
 use Spryker\ApiPlatform\Schema\Validator\Rules\PaginationValidationRule;
 use Spryker\ApiPlatform\Schema\Validator\Rules\ProcessorValidationRule;
 use Spryker\ApiPlatform\Schema\Validator\Rules\PropertyValidationRule;
@@ -77,6 +76,7 @@ use Spryker\ApiPlatform\Schema\Validator\Rules\ProviderValidationRule;
 use Spryker\ApiPlatform\Schema\Validator\Rules\RelationshipValidationRule;
 use Spryker\ApiPlatform\Schema\Validator\Rules\ResourceNameValidationRule;
 use Spryker\ApiPlatform\Schema\Validator\Rules\ResourceNamingValidationRule;
+use Spryker\ApiPlatform\Schema\Validator\Rules\SchemaCompletenessValidationRule;
 use Spryker\ApiPlatform\Schema\Validator\Rules\SecurityExpressionValidationRule;
 use Spryker\ApiPlatform\Schema\Validator\SchemaValidator;
 use Spryker\ApiPlatform\Schema\Validator\SchemaValidatorInterface;
@@ -151,7 +151,7 @@ return static function (ContainerConfigurator $container): void {
     $services->set(PropertyValidationRule::class)
         ->tag('spryker_api_platform.validation_rule.post_merge');
 
-    $services->set(OperationValidationRule::class)
+    $services->set(SchemaCompletenessValidationRule::class)
         ->tag('spryker_api_platform.validation_rule.post_merge');
 
     $services->set(SecurityExpressionValidationRule::class)
