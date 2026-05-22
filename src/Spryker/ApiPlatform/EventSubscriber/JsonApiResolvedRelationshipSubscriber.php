@@ -157,42 +157,28 @@ class JsonApiResolvedRelationshipSubscriber implements EventSubscriberInterface
                 continue;
             }
 
-            // For nested paths (e.g. sales-units.product-measurement-units), use the leaf
-            // name for backward compatibility with the legacy Glue API which showed all
-            // resolved includes as direct relationships on the main resource.
-            $leafName = str_contains($relationshipName, '.')
-                ? substr($relationshipName, (int)strrpos($relationshipName, '.') + 1)
-                : $relationshipName;
+            // Nested paths (e.g. wishlist-items.concrete-products) are relationships of
+            // included resources, not of the main resource. They are injected into each
+            // included item's own relationships by injectNestedRelationshipsIntoIncluded.
+            if (str_contains($relationshipName, '.')) {
+                continue;
+            }
 
             // Skip self-referential relationships: when a nested include resolves to
             // the same type as the main resource (e.g. concrete-products as a child of
             // bundled-products on a concrete-products endpoint).
-            if ($leafName === $mainResourceType) {
+            if ($relationshipName === $mainResourceType) {
                 continue;
             }
 
-            // Also skip child relationships of resources that match the main type
-            // (e.g. concrete-product-availabilities from bundled-products.concrete-products
-            // when the main resource is concrete-products).
-            if (str_contains($relationshipName, '.')) {
-                $parentPath = substr($relationshipName, 0, (int)strrpos($relationshipName, '.'));
-                $parentLeafName = str_contains($parentPath, '.')
-                    ? substr($parentPath, (int)strrpos($parentPath, '.') + 1)
-                    : $parentPath;
-
-                if ($parentLeafName === $mainResourceType) {
-                    continue;
-                }
-            }
-
             // Don't overwrite relationships already set by AP-native property population
-            if ($this->hasExistingRelationship($data['data'], $leafName)) {
+            if ($this->hasExistingRelationship($data['data'], $relationshipName)) {
                 continue;
             }
 
             $perItemDataForRelationship = $this->findPerItemDataForRelationship($perItemRelationships, $relationshipName);
 
-            $this->attachRelationshipToData($data, $leafName, $relationshipRefs, $perItemDataForRelationship);
+            $this->attachRelationshipToData($data, $relationshipName, $relationshipRefs, $perItemDataForRelationship);
 
             $modified = true;
         }

@@ -79,6 +79,10 @@ class PropertyAttributeGenerator
             $apiPropertyParts[] = 'identifier: true';
         }
 
+        if (isset($property['identifier']) && $property['identifier'] === false) {
+            $apiPropertyParts[] = 'identifier: false';
+        }
+
         if (isset($property['required']) && $property['required'] === true) {
             $apiPropertyParts[] = 'required: true';
         }
