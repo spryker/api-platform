@@ -28,6 +28,10 @@ use Symfony\Component\HttpKernel\Exception\MethodNotAllowedHttpException;
 use Symfony\Component\HttpKernel\Exception\NotFoundHttpException;
 use Symfony\Component\HttpKernel\KernelEvents;
 use Symfony\Component\Security\Core\Exception\AccessDeniedException;
+use Symfony\Component\Validator\Constraint;
+use Symfony\Component\Validator\Constraints\AbstractComparison;
+use Symfony\Component\Validator\Constraints\Range;
+use Symfony\Component\Validator\Constraints\Type;
 use Symfony\Contracts\Translation\LocaleAwareInterface;
 use Symfony\Contracts\Translation\TranslatorInterface;
 use Throwable;
@@ -546,12 +550,9 @@ class GlueApiExceptionSubscriber implements EventSubscriberInterface
     }
 
     /**
-     * Synthetic error messages to add for empty-string values that were converted to null
-     * during deserialization of numeric-typed properties.
-     *
      * @var array<string>
      */
-    protected const array NUMERIC_EMPTY_STRING_ERRORS = [
+    protected const array NUMERIC_EMPTY_STRING_ERRORS_FALLBACK = [
         'This value should be of type numeric.',
         'This value should be greater than 0.',
     ];
@@ -774,7 +775,13 @@ class GlueApiExceptionSubscriber implements EventSubscriberInterface
                 continue;
             }
 
-            foreach (static::NUMERIC_EMPTY_STRING_ERRORS as $errorMessage) {
+            $messages = $this->buildSyntheticErrorsForEmptyNumericProperty($resourceClass, $fieldName);
+
+            if ($messages === []) {
+                $messages = static::NUMERIC_EMPTY_STRING_ERRORS_FALLBACK;
+            }
+
+            foreach ($messages as $errorMessage) {
                 $detail = sprintf('%s => %s', $fieldName, $errorMessage);
 
                 if (isset($existingDetails[$detail])) {
@@ -811,6 +818,78 @@ class GlueApiExceptionSubscriber implements EventSubscriberInterface
         }
 
         return in_array($type->getName(), ['int', 'float'], true);
+    }
+
+    /**
+     * @return array<int, string>
+     */
+    protected function buildSyntheticErrorsForEmptyNumericProperty(string $resourceClass, string $fieldName): array
+    {
+        if (!property_exists($resourceClass, $fieldName)) {
+            return [];
+        }
+
+        $errors = [];
+
+        /** @phpstan-var class-string $resourceClass */
+        $attributes = (new ReflectionProperty($resourceClass, $fieldName))->getAttributes();
+
+        foreach ($attributes as $attribute) {
+            if (!is_subclass_of($attribute->getName(), Constraint::class)) {
+                continue;
+            }
+
+            try {
+                $constraint = $attribute->newInstance();
+            } catch (Throwable) {
+                continue;
+            }
+
+            if (!$constraint instanceof Constraint) {
+                continue;
+            }
+
+            $message = $this->renderConstraintMessage($constraint);
+
+            if ($message !== null) {
+                $errors[] = $message;
+            }
+        }
+
+        return $errors;
+    }
+
+    protected function renderConstraintMessage(Constraint $constraint): ?string
+    {
+        if ($constraint instanceof Type) {
+            $types = is_array($constraint->type) ? implode('|', $constraint->type) : (string)$constraint->type;
+
+            return strtr($constraint->message, ['{{ type }}' => $types]);
+        }
+
+        if ($constraint instanceof AbstractComparison) {
+            return strtr($constraint->message, [
+                '{{ compared_value }}' => $this->formatConstraintValue($constraint->value),
+            ]);
+        }
+
+        if ($constraint instanceof Range) {
+            return strtr($constraint->notInRangeMessage, [
+                '{{ min }}' => $this->formatConstraintValue($constraint->min),
+                '{{ max }}' => $this->formatConstraintValue($constraint->max),
+            ]);
+        }
+
+        return null;
+    }
+
+    protected function formatConstraintValue(mixed $value): string
+    {
+        if (is_scalar($value)) {
+            return (string)$value;
+        }
+
+        return '';
     }
 
     protected function isRequiredApiProperty(ReflectionProperty $property): bool
