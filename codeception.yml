@@ -1,68 +1,13 @@
-namespace: SprykerTest\ApiPlatform
-
+namespace: ApiPlatform
+include:
+    - tests/SprykerTest/ApiPlatform
 paths:
-    tests: tests/
-    output: tests/SprykerTest/ApiPlatform/_output/
-    data: tests/SprykerTest/ApiPlatform/_data/
-    support: tests/SprykerTest/ApiPlatform/_support/
-    envs: tests/SprykerTest/ApiPlatform/_envs/
+    tests: tests
+    output: tests/_output
+    data: tests/_data
+    support: tests/_support
 settings:
     suite_class: \PHPUnit\Framework\TestSuite
     colors: true
     memory_limit: 1024M
     log: true
-
-suites:
-    Unit:
-        path: SprykerTest/ApiPlatform/Unit
-        actor: ApiUnitTester
-        modules:
-            enabled:
-                - Asserts
-                - \SprykerTest\ApiPlatform\Helper\ApiPlatformHelper:
-                      mode: 'core'
-                - \SprykerTest\Shared\Testify\Helper\SymfonyHelper:
-                      mode: 'core'
-                      environment: 'test'
-                      app_path: 'src'
-                      debug: true
-                      rebootable_client: true
-                      bundles:
-                          - Symfony\Bundle\FrameworkBundle\FrameworkBundle
-                          - ApiPlatform\Symfony\Bundle\ApiPlatformBundle
-                          - Spryker\ApiPlatform\SprykerApiPlatformBundle
-                      bundle_configurations:
-                          api_platform:
-                              doctrine:
-                                  enabled: false
-                              doctrine_mongodb_odm:
-                                  enabled: false
-                - \SprykerTest\ApiPlatform\Helper\ApiSchemaHelper
-                - \SprykerTest\Glue\Testify\Helper\GlueEnvironmentHelper
-    Integration:
-        path: SprykerTest/ApiPlatform/Integration
-        actor: ApiIntegrationTester
-        modules:
-            enabled:
-                - Asserts
-                - \SprykerTest\ApiPlatform\Helper\ApiPlatformHelper:
-                      mode: 'core'
-                - \SprykerTest\Shared\Testify\Helper\SymfonyHelper:
-                      mode: 'core'
-                      environment: 'test'
-                      app_path: 'src'
-                      debug: true
-                      rebootable_client: true
-                      bundles:
-                          - Symfony\Bundle\FrameworkBundle\FrameworkBundle
-                          - ApiPlatform\Symfony\Bundle\ApiPlatformBundle
-                          - Spryker\ApiPlatform\SprykerApiPlatformBundle
-                      bundle_configurations:
-                          api_platform:
-                              doctrine:
-                                  enabled: false
-                              doctrine_mongodb_odm:
-                                  enabled: false
-                - \SprykerTest\ApiPlatform\Helper\ApiSchemaHelper
-                - \SprykerTest\Shared\Console\Helper\ConsoleHelper
-                - \SprykerTest\Glue\Testify\Helper\GlueEnvironmentHelper

@@ -12,6 +12,7 @@ namespace SprykerTest\ApiPlatform\Unit\Provider;
 use ApiPlatform\Metadata\Get;
 use ApiPlatform\State\ProviderInterface;
 use Codeception\Test\Unit;
+use Psr\Container\ContainerInterface;
 use Spryker\ApiPlatform\Provider\RelationshipProvider;
 use Spryker\ApiPlatform\Relationship\ApiPlatformRelationshipResolverInterface;
 use SprykerTest\ApiPlatform\ApiUnitTester;
@@ -42,7 +43,7 @@ class RelationshipProviderDecoratorTest extends Unit
         $relationshipResolver = $this->createMock(ApiPlatformRelationshipResolverInterface::class);
         $relationshipResolver->expects($this->never())->method('parseIncludeParameter');
 
-        $decorator = new RelationshipProvider($innerProvider, $relationshipResolver);
+        $decorator = new RelationshipProvider($innerProvider, $relationshipResolver, $this->createMock(ContainerInterface::class));
 
         $operation = new Get(shortName: 'customers');
 
@@ -69,7 +70,7 @@ class RelationshipProviderDecoratorTest extends Unit
             ->willReturn([]);
         $relationshipResolver->expects($this->never())->method('resolveRelationships');
 
-        $decorator = new RelationshipProvider($innerProvider, $relationshipResolver);
+        $decorator = new RelationshipProvider($innerProvider, $relationshipResolver, $this->createMock(ContainerInterface::class));
 
         $operation = new Get(shortName: 'customers');
 
@@ -104,7 +105,7 @@ class RelationshipProviderDecoratorTest extends Unit
             }))
             ->willReturn($relationships);
 
-        $decorator = new RelationshipProvider($innerProvider, $relationshipResolver);
+        $decorator = new RelationshipProvider($innerProvider, $relationshipResolver, $this->createMock(ContainerInterface::class));
 
         $operation = new Get(shortName: 'customers');
 
@@ -145,7 +146,7 @@ class RelationshipProviderDecoratorTest extends Unit
             }))
             ->willReturn($relationships);
 
-        $decorator = new RelationshipProvider($innerProvider, $relationshipResolver);
+        $decorator = new RelationshipProvider($innerProvider, $relationshipResolver, $this->createMock(ContainerInterface::class));
 
         $operation = new Get(shortName: 'customers');
 
@@ -180,7 +181,7 @@ class RelationshipProviderDecoratorTest extends Unit
             ->method('resolveRelationships')
             ->willReturn($relationships);
 
-        $decorator = new RelationshipProvider($innerProvider, $relationshipResolver);
+        $decorator = new RelationshipProvider($innerProvider, $relationshipResolver, $this->createMock(ContainerInterface::class));
 
         $operation = new Get(shortName: 'customers');
 

@@ -35,7 +35,7 @@ class ApiPlatformRelationshipResolverTest extends Unit
     public function testGivenNoIncludeParameterWhenParsingIncludeParameterThenReturnsEmptyArray(): void
     {
         // Arrange
-        $resolver = new ApiPlatformRelationshipResolver([], $this->createMock(ContainerInterface::class), $this->createMock(ContainerInterface::class));
+        $resolver = new ApiPlatformRelationshipResolver([], $this->createMock(ContainerInterface::class), $this->createMock(ContainerInterface::class), $this->createMock(ContainerInterface::class));
         $context = ['request' => new Request()];
 
         // Act
@@ -48,7 +48,7 @@ class ApiPlatformRelationshipResolverTest extends Unit
     public function testGivenSingleIncludeParameterWhenParsingIncludeParameterThenReturnsSingleValue(): void
     {
         // Arrange
-        $resolver = new ApiPlatformRelationshipResolver([], $this->createMock(ContainerInterface::class), $this->createMock(ContainerInterface::class));
+        $resolver = new ApiPlatformRelationshipResolver([], $this->createMock(ContainerInterface::class), $this->createMock(ContainerInterface::class), $this->createMock(ContainerInterface::class));
         $request = new Request(['include' => 'addresses']);
         $context = ['request' => $request];
 
@@ -62,7 +62,7 @@ class ApiPlatformRelationshipResolverTest extends Unit
     public function testGivenMultipleIncludeParameterWhenParsingIncludeParameterThenReturnsMultipleValues(): void
     {
         // Arrange
-        $resolver = new ApiPlatformRelationshipResolver([], $this->createMock(ContainerInterface::class), $this->createMock(ContainerInterface::class));
+        $resolver = new ApiPlatformRelationshipResolver([], $this->createMock(ContainerInterface::class), $this->createMock(ContainerInterface::class), $this->createMock(ContainerInterface::class));
         $request = new Request(['include' => 'addresses,orders,wishlists']);
         $context = ['request' => $request];
 
@@ -76,7 +76,7 @@ class ApiPlatformRelationshipResolverTest extends Unit
     public function testGivenNestedIncludeParameterWhenParsingIncludeParameterThenFlattensNestedIncludes(): void
     {
         // Arrange
-        $resolver = new ApiPlatformRelationshipResolver([], $this->createMock(ContainerInterface::class), $this->createMock(ContainerInterface::class));
+        $resolver = new ApiPlatformRelationshipResolver([], $this->createMock(ContainerInterface::class), $this->createMock(ContainerInterface::class), $this->createMock(ContainerInterface::class));
         $request = new Request(['include' => 'addresses.country,orders.items']);
         $context = ['request' => $request];
 
@@ -90,7 +90,7 @@ class ApiPlatformRelationshipResolverTest extends Unit
     public function testGivenMixedIncludesWhenParsingIncludeParameterThenReturnsAllIncludesFlattened(): void
     {
         // Arrange
-        $resolver = new ApiPlatformRelationshipResolver([], $this->createMock(ContainerInterface::class), $this->createMock(ContainerInterface::class));
+        $resolver = new ApiPlatformRelationshipResolver([], $this->createMock(ContainerInterface::class), $this->createMock(ContainerInterface::class), $this->createMock(ContainerInterface::class));
         $request = new Request(['include' => 'addresses,orders.items,wishlists']);
         $context = ['request' => $request];
 
@@ -104,7 +104,7 @@ class ApiPlatformRelationshipResolverTest extends Unit
     public function testGivenNoRequestInContextWhenParsingIncludeParameterThenReturnsEmptyArray(): void
     {
         // Arrange
-        $resolver = new ApiPlatformRelationshipResolver([], $this->createMock(ContainerInterface::class), $this->createMock(ContainerInterface::class));
+        $resolver = new ApiPlatformRelationshipResolver([], $this->createMock(ContainerInterface::class), $this->createMock(ContainerInterface::class), $this->createMock(ContainerInterface::class));
         $context = [];
 
         // Act
@@ -117,7 +117,7 @@ class ApiPlatformRelationshipResolverTest extends Unit
     public function testGivenNoRelationshipConfigWhenResolvingRelationshipsThenReturnsEmptyArray(): void
     {
         // Arrange
-        $resolver = new ApiPlatformRelationshipResolver([], $this->createMock(ContainerInterface::class), $this->createMock(ContainerInterface::class));
+        $resolver = new ApiPlatformRelationshipResolver([], $this->createMock(ContainerInterface::class), $this->createMock(ContainerInterface::class), $this->createMock(ContainerInterface::class));
         $mainResources = [(object)['id' => 1]];
 
         // Act
@@ -164,7 +164,7 @@ class ApiPlatformRelationshipResolverTest extends Unit
             ],
         ];
 
-        $resolver = new ApiPlatformRelationshipResolver($relationships, $providerLocator, $this->createMock(ContainerInterface::class));
+        $resolver = new ApiPlatformRelationshipResolver($relationships, $providerLocator, $this->createMock(ContainerInterface::class), $this->createMock(ContainerInterface::class));
 
         // Act
         $result = $resolver->resolveRelationships('customers', [$mainResource], ['addresses'], []);
@@ -194,7 +194,7 @@ class ApiPlatformRelationshipResolverTest extends Unit
             ],
         ];
 
-        $resolver = new ApiPlatformRelationshipResolver($relationships, $providerLocator, $this->createMock(ContainerInterface::class));
+        $resolver = new ApiPlatformRelationshipResolver($relationships, $providerLocator, $this->createMock(ContainerInterface::class), $this->createMock(ContainerInterface::class));
 
         // Act
         $result = $resolver->resolveRelationships('customers', [$mainResource], ['addresses'], []);
@@ -232,7 +232,7 @@ class ApiPlatformRelationshipResolverTest extends Unit
             ],
         ];
 
-        $resolver = new ApiPlatformRelationshipResolver($relationships, $providerLocator, $this->createMock(ContainerInterface::class));
+        $resolver = new ApiPlatformRelationshipResolver($relationships, $providerLocator, $this->createMock(ContainerInterface::class), $this->createMock(ContainerInterface::class));
 
         // Act
         $result = $resolver->resolveRelationships('customers', [$mainResource1, $mainResource2], ['addresses'], []);
@@ -269,7 +269,7 @@ class ApiPlatformRelationshipResolverTest extends Unit
             ],
         ];
 
-        $resolver = new ApiPlatformRelationshipResolver($relationships, $providerLocator, $this->createMock(ContainerInterface::class));
+        $resolver = new ApiPlatformRelationshipResolver($relationships, $providerLocator, $this->createMock(ContainerInterface::class), $this->createMock(ContainerInterface::class));
 
         // Act
         $result = $resolver->resolveRelationships('customers', [$mainResource], ['addresses'], []);
@@ -311,7 +311,7 @@ class ApiPlatformRelationshipResolverTest extends Unit
             ],
         ];
 
-        $resolver = new ApiPlatformRelationshipResolver($relationships, $providerLocator, $this->createMock(ContainerInterface::class));
+        $resolver = new ApiPlatformRelationshipResolver($relationships, $providerLocator, $this->createMock(ContainerInterface::class), $this->createMock(ContainerInterface::class));
 
         // Act
         $result = $resolver->resolveRelationships('customers', [$mainResourceWithNull, $mainResourceWithValue], ['addresses'], []);
@@ -357,7 +357,7 @@ class ApiPlatformRelationshipResolverTest extends Unit
             ],
         ];
 
-        $resolver = new ApiPlatformRelationshipResolver($relationships, $providerLocator, $this->createMock(ContainerInterface::class));
+        $resolver = new ApiPlatformRelationshipResolver($relationships, $providerLocator, $this->createMock(ContainerInterface::class), $this->createMock(ContainerInterface::class));
 
         // Act
         $result = $resolver->resolveRelationships('customers', [$mainResourceWithNull, $mainResourceWithValue], ['addresses'], []);
@@ -405,7 +405,7 @@ class ApiPlatformRelationshipResolverTest extends Unit
             ],
         ];
 
-        $resolver = new ApiPlatformRelationshipResolver($relationships, $providerLocator, $this->createMock(ContainerInterface::class));
+        $resolver = new ApiPlatformRelationshipResolver($relationships, $providerLocator, $this->createMock(ContainerInterface::class), $this->createMock(ContainerInterface::class));
 
         // Act
         $result = $resolver->resolveRelationships('customers', [$mainResource1, $mainResource2], ['addresses'], []);
@@ -441,7 +441,7 @@ class ApiPlatformRelationshipResolverTest extends Unit
             ],
         ];
 
-        $resolver = new ApiPlatformRelationshipResolver($relationships, $providerLocator, $this->createMock(ContainerInterface::class));
+        $resolver = new ApiPlatformRelationshipResolver($relationships, $providerLocator, $this->createMock(ContainerInterface::class), $this->createMock(ContainerInterface::class));
 
         // Act
         $result1 = $resolver->resolveRelationships('customers', [$mainResource], ['addresses'], []);
@@ -460,7 +460,7 @@ class ApiPlatformRelationshipResolverTest extends Unit
 
         $relationships = [];
 
-        $resolver = new ApiPlatformRelationshipResolver($relationships, $providerLocator, $this->createMock(ContainerInterface::class));
+        $resolver = new ApiPlatformRelationshipResolver($relationships, $providerLocator, $this->createMock(ContainerInterface::class), $this->createMock(ContainerInterface::class));
 
         // Act
         $result = $resolver->resolveRelationships(

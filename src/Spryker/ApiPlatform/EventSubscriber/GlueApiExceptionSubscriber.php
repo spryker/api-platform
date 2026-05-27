@@ -10,6 +10,7 @@ declare(strict_types=1);
 namespace Spryker\ApiPlatform\EventSubscriber;
 
 use ApiPlatform\Metadata\ApiResource;
+use ApiPlatform\Metadata\Operation;
 use ApiPlatform\Metadata\Resource\Factory\ResourceMetadataCollectionFactoryInterface;
 use ReflectionClass;
 use ReflectionNamedType;
@@ -30,6 +31,8 @@ use Symfony\Component\HttpKernel\KernelEvents;
 use Symfony\Component\Security\Core\Exception\AccessDeniedException;
 use Symfony\Component\Validator\Constraint;
 use Symfony\Component\Validator\Constraints\AbstractComparison;
+use Symfony\Component\Validator\Constraints\GreaterThan;
+use Symfony\Component\Validator\Constraints\LessThan;
 use Symfony\Component\Validator\Constraints\Range;
 use Symfony\Component\Validator\Constraints\Type;
 use Symfony\Contracts\Translation\LocaleAwareInterface;
@@ -65,6 +68,8 @@ class GlueApiExceptionSubscriber implements EventSubscriberInterface
     protected const string ERROR_DETAIL_CHECKOUT_AUTH_REQUIRED = 'One of Authorization or X-Anonymous-Customer-Unique-Id headers is required.';
 
     protected const string ERROR_DETAIL_BAD_REQUEST = 'Post data missing or invalid.';
+
+    protected const string TYPE_INTEGER_ERROR_MESSAGE = 'This value should be of type integer.';
 
     public function __construct(
         protected TranslatorInterface $translator,
@@ -288,6 +293,7 @@ class GlueApiExceptionSubscriber implements EventSubscriberInterface
 
             if ($resourceClass !== '') {
                 $this->augmentValidationErrorsForEmptyStringValues($response, $request, $resourceClass);
+                $this->augmentValidationErrorsForStringNumericValues($response, $request, $resourceClass);
                 $this->augmentValidationErrorsForBoolFields($response, $request, $resourceClass);
             }
         }
@@ -551,6 +557,9 @@ class GlueApiExceptionSubscriber implements EventSubscriberInterface
 
     /**
      * @var array<string>
+     *
+     * Fallback synthetic errors for empty-string values sent to numeric properties
+     * when no Type/comparison constraints are declared on the property.
      */
     protected const array NUMERIC_EMPTY_STRING_ERRORS_FALLBACK = [
         'This value should be of type numeric.',
@@ -768,6 +777,7 @@ class GlueApiExceptionSubscriber implements EventSubscriberInterface
             return;
         }
 
+        $groups = $this->getActiveValidationGroups($request);
         $modified = false;
 
         foreach (array_keys($fieldsWithNotBlankOnly) as $fieldName) {
@@ -775,7 +785,7 @@ class GlueApiExceptionSubscriber implements EventSubscriberInterface
                 continue;
             }
 
-            $messages = $this->buildSyntheticErrorsForEmptyNumericProperty($resourceClass, $fieldName);
+            $messages = $this->buildSyntheticErrorsForEmptyNumericProperty($resourceClass, $fieldName, $groups);
 
             if ($messages === []) {
                 $messages = static::NUMERIC_EMPTY_STRING_ERRORS_FALLBACK;
@@ -804,6 +814,343 @@ class GlueApiExceptionSubscriber implements EventSubscriberInterface
         }
     }
 
+    /**
+     * Restores validation errors that the legacy REST API produced for non-empty string values
+     * submitted to typed integer fields. Two cases arise:
+     *
+     * 1. Numeric string (e.g. "-2"): AP coerces it to int before validation, so the Type constraint
+     *    passes on the already-cast value. "This value should be of type integer." is missing and
+     *    must be prepended to the existing comparison-constraint errors.
+     *
+     * 2. Non-numeric string (e.g. "test"): AP's PropertyAccessor cannot coerce the value and throws,
+     *    which the exception handler converts to a single "type numeric" error — bypassing Symfony
+     *    Validator entirely. "type numeric" must be replaced by "type integer", and any comparison
+     *    constraints that would have fired against the raw string (using PHP 8 semantics) are added.
+     */
+    protected function augmentValidationErrorsForStringNumericValues(Response $response, Request $request, string $resourceClass): void
+    {
+        if (!class_exists($resourceClass)) {
+            return;
+        }
+
+        $content = $response->getContent();
+
+        if ($content === false || $content === '') {
+            return;
+        }
+
+        $data = json_decode($content, true);
+
+        if (!is_array($data) || !isset($data['errors'])) {
+            return;
+        }
+
+        $rawAttributes = $this->extractRawAttributes($request);
+        $groups = $this->getActiveValidationGroups($request);
+        $modified = false;
+
+        foreach (array_keys($rawAttributes) as $fieldName) {
+            $rawValue = $rawAttributes[$fieldName];
+
+            if (!$this->isStringOrIntegerOverflowValue($rawValue)) {
+                continue;
+            }
+
+            if (!$this->isNumericProperty($resourceClass, $fieldName)) {
+                continue;
+            }
+
+            $typeNumericDetail = sprintf('%s => %s', $fieldName, static::NUMERIC_EMPTY_STRING_ERRORS_FALLBACK[0]);
+            $typeIntegerDetail = sprintf('%s => %s', $fieldName, static::TYPE_INTEGER_ERROR_MESSAGE);
+
+            $existingDetails = array_column($data['errors'], 'detail');
+            $hasTypeNumeric = in_array($typeNumericDetail, $existingDetails, true);
+            $hasTypeInteger = in_array($typeIntegerDetail, $existingDetails, true);
+
+            if ($hasTypeInteger) {
+                continue;
+            }
+
+            if ($hasTypeNumeric) {
+                $modified = $this->replaceTypeNumericWithTypeIntegerError($data['errors'], $resourceClass, $fieldName, (string)$rawValue, $groups, $typeNumericDetail, $typeIntegerDetail) || $modified;
+
+                continue;
+            }
+
+            if (is_string($rawValue) && $rawValue !== '') {
+                $modified = $this->prependTypeIntegerErrorForNumericString($data['errors'], $resourceClass, $fieldName, $rawValue, $groups) || $modified;
+            }
+        }
+
+        if ($modified) {
+            $response->setContent((string)json_encode($data, JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES));
+        }
+    }
+
+    /**
+     * @return array<string, mixed>
+     */
+    protected function extractRawAttributes(Request $request): array
+    {
+        $rawBody = json_decode((string)$request->getContent(), true);
+
+        return is_array($rawBody) && isset($rawBody['data']['attributes']) && is_array($rawBody['data']['attributes'])
+            ? $rawBody['data']['attributes']
+            : [];
+    }
+
+    /**
+     * Returns true for non-empty strings and for floats that result from JSON integer overflow
+     * (e.g. 99999999999999999999 decoded as float). PropertyAccessor cannot assign a float to ?int,
+     * so the exception handler produces "type numeric" — both cases need the same replacement logic.
+     */
+    protected function isStringOrIntegerOverflowValue(mixed $value): bool
+    {
+        return (is_string($value) && $value !== '') || is_float($value);
+    }
+
+    /**
+     * Replaces the generic "type numeric" error with "type integer" and appends any
+     * comparison constraint violations for fields where the Type constraint declares integer.
+     *
+     * @param array<array<string, mixed>> $errors
+     * @param array<string> $groups
+     */
+    protected function replaceTypeNumericWithTypeIntegerError(
+        array &$errors,
+        string $resourceClass,
+        string $fieldName,
+        string $rawValue,
+        array $groups,
+        string $typeNumericDetail,
+        string $typeIntegerDetail,
+    ): bool {
+        $declaredType = $this->getTypeConstraintTypeName($resourceClass, $fieldName, $groups);
+
+        if ($declaredType !== 'integer' && $declaredType !== 'int') {
+            return false;
+        }
+
+        $errors = array_values(array_filter(
+            $errors,
+            static fn (array $e): bool => ($e['detail'] ?? '') !== $typeNumericDetail,
+        ));
+
+        array_unshift($errors, [
+            'detail' => $typeIntegerDetail,
+            'code' => static::ERROR_CODE_VALIDATION,
+            'status' => Response::HTTP_UNPROCESSABLE_ENTITY,
+        ]);
+
+        $this->appendComparisonConstraintErrors($errors, $resourceClass, $fieldName, $rawValue, $groups);
+
+        return true;
+    }
+
+    /**
+     * Prepends a "type integer" error when the raw numeric string (e.g. "-2") fails the
+     * Assert\Type constraint declared on the property. API Platform silently coerced the value
+     * before validation, so the constraint never fired — this restores the legacy behavior.
+     *
+     * @param array<array<string, mixed>> $errors
+     * @param array<string> $groups
+     */
+    protected function prependTypeIntegerErrorForNumericString(
+        array &$errors,
+        string $resourceClass,
+        string $fieldName,
+        string $rawValue,
+        array $groups,
+    ): bool {
+        $typeError = $this->buildTypeErrorForRawStringValue($resourceClass, $fieldName, $rawValue, $groups);
+
+        if ($typeError === null) {
+            return false;
+        }
+
+        array_unshift($errors, [
+            'detail' => sprintf('%s => %s', $fieldName, $typeError),
+            'code' => static::ERROR_CODE_VALIDATION,
+            'status' => Response::HTTP_UNPROCESSABLE_ENTITY,
+        ]);
+
+        return true;
+    }
+
+    /**
+     * @param array<array<string, mixed>> $errors
+     * @param array<string> $groups
+     */
+    protected function appendComparisonConstraintErrors(array &$errors, string $resourceClass, string $fieldName, string $rawValue, array $groups): void
+    {
+        foreach ($this->evaluateComparisonConstraints($resourceClass, $fieldName, $rawValue, $groups) as $errorDetail) {
+            $errors[] = [
+                'detail' => sprintf('%s => %s', $fieldName, $errorDetail),
+                'code' => static::ERROR_CODE_VALIDATION,
+                'status' => Response::HTTP_UNPROCESSABLE_ENTITY,
+            ];
+        }
+    }
+
+    /**
+     * @param array<string> $groups
+     */
+    protected function buildTypeErrorForRawStringValue(string $resourceClass, string $fieldName, string $rawValue, array $groups): ?string
+    {
+        $constraint = $this->getTypeConstraintInstance($resourceClass, $fieldName, $groups);
+
+        if ($constraint === null || !isset($constraint->type, $constraint->message)) {
+            return null;
+        }
+
+        $type = is_array($constraint->type) ? $constraint->type[0] : (string)$constraint->type;
+
+        $passes = match ($type) {
+            'integer', 'int' => false,
+            'numeric' => is_numeric($rawValue),
+            'float', 'double' => false,
+            'string' => true,
+            'bool', 'boolean' => false,
+            default => true,
+        };
+
+        if ($passes) {
+            return null;
+        }
+
+        return strtr((string)$constraint->message, ['{{ type }}' => $type]);
+    }
+
+    /**
+     * Evaluates GreaterThan and LessThan constraints against the raw submitted string value
+     * using PHP 8 comparison semantics (non-numeric strings are compared as strings after
+     * converting the comparand to string). Returns the message for each failing constraint.
+     *
+     * @param array<string> $groups
+     *
+     * @return array<string>
+     */
+    protected function evaluateComparisonConstraints(string $resourceClass, string $fieldName, string $rawValue, array $groups): array
+    {
+        $errors = [];
+
+        foreach ($this->getPropertyConstraintsForGroups($resourceClass, $fieldName, $groups) as $constraint) {
+            if (!$constraint instanceof GreaterThan && !$constraint instanceof LessThan) {
+                continue;
+            }
+
+            if (!isset($constraint->value, $constraint->message)) {
+                continue;
+            }
+
+            $comparand = $constraint->value;
+            $violated = $constraint instanceof GreaterThan
+                ? !($rawValue > $comparand)
+                : !($rawValue < $comparand);
+
+            if (!$violated) {
+                continue;
+            }
+
+            $comparandString = is_scalar($constraint->value) ? (string)$constraint->value : '';
+            $msg = strtr((string)$constraint->message, ['{{ compared_value }}' => $comparandString]);
+
+            if (!in_array($msg, $errors, true)) {
+                $errors[] = $msg;
+            }
+        }
+
+        return $errors;
+    }
+
+    /**
+     * @param array<string> $groups
+     */
+    protected function getTypeConstraintTypeName(string $resourceClass, string $fieldName, array $groups): ?string
+    {
+        $constraint = $this->getTypeConstraintInstance($resourceClass, $fieldName, $groups);
+
+        if ($constraint === null || !isset($constraint->type)) {
+            return null;
+        }
+
+        return is_array($constraint->type) ? $constraint->type[0] : (string)$constraint->type;
+    }
+
+    /**
+     * @return array<\ReflectionAttribute<object>>
+     */
+    protected function getPropertyAttributes(string $resourceClass, string $fieldName): array
+    {
+        if (!property_exists($resourceClass, $fieldName)) {
+            return [];
+        }
+
+        /** @phpstan-var class-string $resourceClass */
+        return (new ReflectionProperty($resourceClass, $fieldName))->getAttributes();
+    }
+
+    /**
+     * Returns instantiated constraints for a property, filtered to those that apply to the given
+     * validation groups. When $groups is empty all constraints are returned.
+     *
+     * @param array<string> $groups
+     *
+     * @return array<\Symfony\Component\Validator\Constraint>
+     */
+    protected function getPropertyConstraintsForGroups(string $resourceClass, string $fieldName, array $groups): array
+    {
+        $constraints = [];
+
+        foreach ($this->getPropertyAttributes($resourceClass, $fieldName) as $attribute) {
+            try {
+                $constraint = $attribute->newInstance();
+            } catch (Throwable) {
+                continue;
+            }
+
+            if (!$constraint instanceof Constraint) {
+                continue;
+            }
+
+            if ($groups !== [] && array_intersect($constraint->groups, $groups) === []) {
+                continue;
+            }
+
+            $constraints[] = $constraint;
+        }
+
+        return $constraints;
+    }
+
+    /**
+     * @return array<string>
+     */
+    protected function getActiveValidationGroups(Request $request): array
+    {
+        $operation = $request->attributes->get('_api_operation');
+
+        if (!$operation instanceof Operation) {
+            return [];
+        }
+
+        return $operation->getValidationContext()['groups'] ?? [];
+    }
+
+    /**
+     * @param array<string> $groups
+     */
+    protected function getTypeConstraintInstance(string $resourceClass, string $fieldName, array $groups): ?Type
+    {
+        foreach ($this->getPropertyConstraintsForGroups($resourceClass, $fieldName, $groups) as $constraint) {
+            if ($constraint instanceof Type) {
+                return $constraint;
+            }
+        }
+
+        return null;
+    }
+
     protected function isNumericProperty(string $resourceClass, string $propertyName): bool
     {
         if (!property_exists($resourceClass, $propertyName)) {
@@ -821,34 +1168,15 @@ class GlueApiExceptionSubscriber implements EventSubscriberInterface
     }
 
     /**
+     * @param array<string> $groups
+     *
      * @return array<int, string>
      */
-    protected function buildSyntheticErrorsForEmptyNumericProperty(string $resourceClass, string $fieldName): array
+    protected function buildSyntheticErrorsForEmptyNumericProperty(string $resourceClass, string $fieldName, array $groups): array
     {
-        if (!property_exists($resourceClass, $fieldName)) {
-            return [];
-        }
-
         $errors = [];
 
-        /** @phpstan-var class-string $resourceClass */
-        $attributes = (new ReflectionProperty($resourceClass, $fieldName))->getAttributes();
-
-        foreach ($attributes as $attribute) {
-            if (!is_subclass_of($attribute->getName(), Constraint::class)) {
-                continue;
-            }
-
-            try {
-                $constraint = $attribute->newInstance();
-            } catch (Throwable) {
-                continue;
-            }
-
-            if (!$constraint instanceof Constraint) {
-                continue;
-            }
-
+        foreach ($this->getPropertyConstraintsForGroups($resourceClass, $fieldName, $groups) as $constraint) {
             $message = $this->renderConstraintMessage($constraint);
 
             if ($message !== null) {
@@ -1003,16 +1331,6 @@ class GlueApiExceptionSubscriber implements EventSubscriberInterface
     }
 
     /**
-     * Transforms raw API Platform denormalization error messages into the Spryker
-     * validation format: "propertyName => This value should be of type numeric."
-     *
-     * For example, the raw message:
-     *   Failed to denormalize attribute "quantity" value for class "...": Expected argument of type "?int", "string" given ...
-     * Becomes:
-     *   quantity => This value should be of type numeric.
-     */
-
-    /**
      * Matches the PropertyAccessor message
      * `Expected argument of type "<type>", "<given>" given at property path "<path>".`
      * and returns the legacy-formatted detail (or null when not a match).
@@ -1033,6 +1351,15 @@ class GlueApiExceptionSubscriber implements EventSubscriberInterface
         return sprintf('%s => This value should be of type %s.', $propertyPath, $reportedType);
     }
 
+    /**
+     * Transforms raw API Platform denormalization error messages into the Spryker
+     * validation format: "propertyName => This value should be of type numeric."
+     *
+     * For example, the raw message:
+     *   Failed to denormalize attribute "quantity" value for class "...": Expected argument of type "?int", "string" given ...
+     * Becomes:
+     *   quantity => This value should be of type numeric.
+     */
     protected function transformDenormalizationMessage(string $message): string
     {
         if (!preg_match('/denormalize attribute "(\w+)".*Expected argument of type/', $message, $matches)) {
