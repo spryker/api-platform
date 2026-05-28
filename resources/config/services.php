@@ -17,6 +17,7 @@ use Spryker\ApiPlatform\Cache\ApiResourceCacheWarmer;
 use Spryker\ApiPlatform\Command\ApiDebugCommand;
 use Spryker\ApiPlatform\Command\ApiGenerateCommand;
 use Spryker\ApiPlatform\Configuration\ApiPlatformConfig;
+use Spryker\ApiPlatform\EventSubscriber\AcceptHeaderFallbackSubscriber;
 use Spryker\ApiPlatform\EventSubscriber\AcceptLanguageLocaleSubscriber;
 use Spryker\ApiPlatform\EventSubscriber\EntityTagSubscriber;
 use Spryker\ApiPlatform\EventSubscriber\ETagResponseSubscriber;
@@ -245,19 +246,21 @@ return static function (ContainerConfigurator $container): void {
     $services->alias('console.command.api_debug', ApiDebugCommand::class)
         ->public();
 
-    // Override error provider to enable debug mode in development environment
-    // This shows full exception messages instead of "Internal Server Error"
-    if (APPLICATION_ENV === 'docker.dev') {
-        $services->set('api_platform.state.error_provider', ErrorProvider::class)
-            ->arg('$debug', true)
-            ->arg('$resourceClassResolver', service('api_platform.resource_class_resolver'))
-            ->arg('$resourceMetadataCollectionFactory', service('api_platform.metadata.resource.metadata_collection_factory'))
-            ->tag('api_platform.state_provider', ['key' => 'api_platform.state.error_provider']);
+    // Drive API Platform's error rendering off the single spryker_api_platform.debug
+    // signal (= %kernel.debug%) instead of a hard-coded environment name. In debug it
+    // shows full exception messages instead of "Internal Server Error"; in production
+    // ($debug = false) both services fall back to API Platform's default behaviour, which
+    // matches their own `$debug = false` constructor defaults. This keeps every debug gate
+    // — the GlueApiExceptionSubscriber last-resort guard included — flipped by one flag.
+    $services->set('api_platform.state.error_provider', ErrorProvider::class)
+        ->arg('$debug', param('spryker_api_platform.debug'))
+        ->arg('$resourceClassResolver', service('api_platform.resource_class_resolver'))
+        ->arg('$resourceMetadataCollectionFactory', service('api_platform.metadata.resource.metadata_collection_factory'))
+        ->tag('api_platform.state_provider', ['key' => 'api_platform.state.error_provider']);
 
-        $services->set('api_platform.serializer.context_builder', SerializerContextBuilder::class)
-            ->arg(0, service('api_platform.metadata.resource.metadata_collection_factory'))
-            ->arg('$debug', true);
-    }
+    $services->set('api_platform.serializer.context_builder', SerializerContextBuilder::class)
+        ->arg(0, service('api_platform.metadata.resource.metadata_collection_factory'))
+        ->arg('$debug', param('spryker_api_platform.debug'));
 
     // Add ETag response header when providers store etag value in request attributes
     $services->set(ETagResponseSubscriber::class);
@@ -265,14 +268,21 @@ return static function (ContainerConfigurator $container): void {
     // Validate If-Match for ETag-protected operations and persist the resource ETag for emission
     $services->set(EntityTagSubscriber::class);
 
-    // Convert GlueApiException to JSON:API error response with Glue error codes
-    $services->set(GlueApiExceptionSubscriber::class);
+    // Convert GlueApiException to JSON:API error response with Glue error codes.
+    // In production ($debug = false) the last-resort guard sanitises uncaught throwables
+    // to a generic 500; in debug it steps aside so traces reach the error renderer.
+    $services->set(GlueApiExceptionSubscriber::class)
+        ->arg('$debug', param('spryker_api_platform.debug'));
 
     // Convert OAuthServerException to HttpException with correct status code
     $services->set(OAuthExceptionSubscriber::class);
 
     // Collapse consecutive slashes in the request path before routing for legacy test-helper BC
     $services->set(PathNormalizationRequestSubscriber::class);
+
+    // Restore legacy Glue behavior of accepting requests without an Accept header
+    // by setting `Accept: application/vnd.api+json` before content negotiation runs.
+    $services->set(AcceptHeaderFallbackSubscriber::class);
 
     // Replays the legacy ControllerBeforeAction + RestUserValidator plugin chains for endpoints
     // migrated to API Platform so that `getRestUserValidatorPlugins()`-registered plugins (MFA,

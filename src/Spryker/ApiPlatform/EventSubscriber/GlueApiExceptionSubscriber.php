@@ -74,6 +74,7 @@ class GlueApiExceptionSubscriber implements EventSubscriberInterface
     public function __construct(
         protected TranslatorInterface $translator,
         protected ResourceMetadataCollectionFactoryInterface $resourceMetadataCollectionFactory,
+        protected bool $debug,
     ) {
     }
 
@@ -87,7 +88,10 @@ class GlueApiExceptionSubscriber implements EventSubscriberInterface
                 ['onKernelRequestForceEnglishValidation', 9],
                 ['onKernelRequest', 0],
             ],
-            KernelEvents::EXCEPTION => ['onKernelException', 256],
+            KernelEvents::EXCEPTION => [
+                ['onKernelException', 256],
+                ['onKernelExceptionLastResort', -90],
+            ],
             KernelEvents::RESPONSE => ['onKernelResponse', 0],
         ];
     }
@@ -229,6 +233,61 @@ class GlueApiExceptionSubscriber implements EventSubscriberInterface
                 $event->setResponse($this->createHttpExceptionResponse($exception, $event->getRequest()));
             }
         }
+    }
+
+    /**
+     * Last-resort guard against leaking exception details on API Platform requests.
+     *
+     * Runs after the application exception subscribers (priority 256 above,
+     * OAuthExceptionSubscriber at 10) but before API Platform's own exception
+     * listener (-96) and Symfony's ErrorListener (-128), both of which can embed
+     * the message, class name, file path, and stack trace in the response.
+     *
+     * In production ($debug = false) any uncaught non-HTTP throwable on a resolved
+     * API Platform request is replaced with a generic 500 so traces never reach the
+     * client. In development ($debug = true) the guard steps aside and lets the
+     * throwable propagate to API Platform's debug error renderer, so the developer
+     * sees the full message, file and stack trace right away.
+     *
+     * HTTP exceptions are intentionally skipped: direct ones are already handled
+     * at priority 256, and the OAuthExceptionSubscriber-converted one keeps its
+     * status code through API Platform's renderer.
+     */
+    public function onKernelExceptionLastResort(ExceptionEvent $event): void
+    {
+        if ($this->debug) {
+            return;
+        }
+
+        if ($event->getResponse() !== null) {
+            return;
+        }
+
+        if (!$event->getRequest()->attributes->has('_api_resource_class')) {
+            return;
+        }
+
+        if ($event->getThrowable() instanceof HttpExceptionInterface) {
+            return;
+        }
+
+        $event->setResponse($this->createInternalServerErrorResponse());
+    }
+
+    protected function createInternalServerErrorResponse(): JsonResponse
+    {
+        return $this->createJsonApiResponse(
+            [
+                'errors' => [
+                    [
+                        'code' => (string)Response::HTTP_INTERNAL_SERVER_ERROR,
+                        'status' => Response::HTTP_INTERNAL_SERVER_ERROR,
+                        'detail' => Response::$statusTexts[Response::HTTP_INTERNAL_SERVER_ERROR] ?? 'Internal Server Error',
+                    ],
+                ],
+            ],
+            Response::HTTP_INTERNAL_SERVER_ERROR,
+        );
     }
 
     protected function createGlueApiErrorResponse(GlueApiException $exception): JsonResponse
