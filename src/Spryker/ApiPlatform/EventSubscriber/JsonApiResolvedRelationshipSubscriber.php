@@ -895,7 +895,7 @@ class JsonApiResolvedRelationshipSubscriber implements EventSubscriberInterface
      */
     protected function sortIncludedResources(array $included): array
     {
-        $directItemTypes = ['items', 'guest-cart-items', 'bundle-items'];
+        $directItemTypes = ['items', 'guest-cart-items', 'bundle-items', 'configurable-bundle-template-image-sets'];
 
         usort($included, function (array $a, array $b) use ($directItemTypes): int {
             $aIsDirect = in_array($a['type'] ?? '', $directItemTypes, true);
