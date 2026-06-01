@@ -194,7 +194,7 @@ class GlueApiExceptionSubscriberOnKernelExceptionTest extends Unit
         return new GlueApiExceptionSubscriber(
             $this->createMock(TranslatorInterface::class),
             $this->createMock(ResourceMetadataCollectionFactoryInterface::class),
-            true
+            true,
         );
     }
 
