@@ -178,6 +178,10 @@ class ResourceAttributeGenerator
             $extraProperties['securityAnonymousAuthRequired'] = true;
         }
 
+        if (isset($schema['resourceAttributesClassName']) && is_string($schema['resourceAttributesClassName'])) {
+            $extraProperties['resourceAttributesClassName'] = $schema['resourceAttributesClassName'];
+        }
+
         if ($extraProperties !== []) {
             $attributeParts[] = sprintf('extraProperties: %s', $this->formatArrayParameter($extraProperties));
         }
