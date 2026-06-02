@@ -274,19 +274,20 @@ class GlueApiExceptionSubscriber implements EventSubscriberInterface
         $event->setResponse($this->createInternalServerErrorResponse());
     }
 
-    protected function createInternalServerErrorResponse(): JsonResponse
+    /**
+     * BC: legacy Spryker Glue REST framework returned `text/html` + plain "Internal Server Error"
+     * body for uncaught exceptions; consumers (incl. Robot's `I send a POST request:` keyword)
+     * rely on this shape to detect 500s by failed JSON parsing. All explicitly handled errors
+     * (4xx, GlueApiException-derived 5xx) still go through `createGlueApiErrorResponse()` /
+     * `createHttpExceptionResponse()` and return the JSON:API envelope — only the *uncaught*
+     * last-resort fallback keeps the legacy `text/html` format.
+     */
+    protected function createInternalServerErrorResponse(): Response
     {
-        return $this->createJsonApiResponse(
-            [
-                'errors' => [
-                    [
-                        'code' => (string)Response::HTTP_INTERNAL_SERVER_ERROR,
-                        'status' => Response::HTTP_INTERNAL_SERVER_ERROR,
-                        'detail' => Response::$statusTexts[Response::HTTP_INTERNAL_SERVER_ERROR] ?? 'Internal Server Error',
-                    ],
-                ],
-            ],
+        return new Response(
+            Response::$statusTexts[Response::HTTP_INTERNAL_SERVER_ERROR] ?? 'Internal Server Error',
             Response::HTTP_INTERNAL_SERVER_ERROR,
+            ['Content-Type' => 'text/html; charset=UTF-8'],
         );
     }
 
