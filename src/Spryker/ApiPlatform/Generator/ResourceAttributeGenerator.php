@@ -182,6 +182,10 @@ class ResourceAttributeGenerator
             $extraProperties['resourceAttributesClassName'] = $schema['resourceAttributesClassName'];
         }
 
+        if (isset($schema['includedSortPriority']) && is_numeric($schema['includedSortPriority'])) {
+            $extraProperties['includedSortPriority'] = (int)$schema['includedSortPriority'];
+        }
+
         if ($extraProperties !== []) {
             $attributeParts[] = sprintf('extraProperties: %s', $this->formatArrayParameter($extraProperties));
         }

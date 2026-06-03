@@ -86,6 +86,7 @@ class SchemaParser implements SchemaParserInterface
             'securityPostValidationMessage' => $this->getValue($resource, 'securityPostValidationMessage', null),
             'openapiContext' => $this->getValue($resource, 'openapiContext', []),
             'resourceAttributesClassName' => $this->getValue($resource, 'resourceAttributesClassName', null),
+            'includedSortPriority' => $this->getValue($resource, 'includedSortPriority', null),
             'includes' => $includes,
             'sourceFile' => $filePath,
             'sourceLayer' => $this->detectSourceLayer($filePath),

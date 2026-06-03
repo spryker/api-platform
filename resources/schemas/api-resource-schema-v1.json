@@ -215,6 +215,12 @@
                     "minimum": 1,
                     "examples": [100, 200]
                 },
+                "includedSortPriority": {
+                    "type": "integer",
+                    "description": "Sort priority for this resource type within the JSON:API 'included' array. Higher = later. Resources without an explicit priority default to 0.",
+                    "default": 0,
+                    "examples": [0, 100]
+                },
                 "paginationClientEnabled": {
                     "type": "boolean",
                     "description": "Whether client can control pagination",

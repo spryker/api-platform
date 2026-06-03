@@ -39,6 +39,11 @@ class JsonApiResolvedRelationshipSubscriber implements EventSubscriberInterface
      */
     protected ?array $resourceClassIndex = null;
 
+    /**
+     * @var array<string, int>|null
+     */
+    protected ?array $includedSortPriorityIndex = null;
+
     public function __construct(protected NormalizerInterface $normalizer)
     {
     }
@@ -884,10 +889,13 @@ class JsonApiResolvedRelationshipSubscriber implements EventSubscriberInterface
     }
 
     /**
-     * Sorts included resources so that direct cart item includes (items, guest-cart-items,
-     * bundle-items) appear at the end, matching the legacy REST API ordering
-     * where nested/child includes (abstract-products, concrete-products) come first.
-     * Within each group, resources are sorted alphabetically by type.
+     * Sorts included resources by `includedSortPriority` from each resource's
+     * `#[ApiResource(extraProperties: ['includedSortPriority' => N])]`. Resources
+     * with a higher priority appear later in the `included` array, matching the
+     * REST API ordering where nested/child includes (abstract-products,
+     * concrete-products) come first and direct cart-item-like resources come
+     * last. Resources without an explicit priority default to 0. Within the
+     * same priority, sort alphabetically by type.
      *
      * @param array<int, array<string, mixed>> $included
      *
@@ -895,20 +903,67 @@ class JsonApiResolvedRelationshipSubscriber implements EventSubscriberInterface
      */
     protected function sortIncludedResources(array $included): array
     {
-        $directItemTypes = ['items', 'guest-cart-items', 'bundle-items', 'configurable-bundle-template-image-sets'];
+        $priorityIndex = $this->getIncludedSortPriorityIndex();
 
-        usort($included, function (array $a, array $b) use ($directItemTypes): int {
-            $aIsDirect = in_array($a['type'] ?? '', $directItemTypes, true);
-            $bIsDirect = in_array($b['type'] ?? '', $directItemTypes, true);
+        usort($included, function (array $a, array $b) use ($priorityIndex): int {
+            $aPriority = $priorityIndex[$a['type'] ?? ''] ?? 0;
+            $bPriority = $priorityIndex[$b['type'] ?? ''] ?? 0;
 
-            if ($aIsDirect !== $bIsDirect) {
-                return $aIsDirect ? 1 : -1;
+            if ($aPriority !== $bPriority) {
+                return $aPriority <=> $bPriority;
             }
 
             return strcmp($a['type'] ?? '', $b['type'] ?? '');
         });
 
         return $included;
+    }
+
+    /**
+     * @return array<string, int>
+     */
+    protected function getIncludedSortPriorityIndex(): array
+    {
+        if ($this->includedSortPriorityIndex !== null) {
+            return $this->includedSortPriorityIndex;
+        }
+
+        if ($this->resourceClassIndex === null) {
+            $this->resourceClassIndex = $this->buildResourceClassIndex();
+        }
+
+        $this->includedSortPriorityIndex = [];
+
+        foreach ($this->resourceClassIndex as $shortName => $resourceClass) {
+            $priority = $this->resolveIncludedSortPriority($resourceClass);
+
+            if ($priority !== null) {
+                $this->includedSortPriorityIndex[$shortName] = $priority;
+            }
+        }
+
+        return $this->includedSortPriorityIndex;
+    }
+
+    /**
+     * @param class-string $resourceClass
+     */
+    protected function resolveIncludedSortPriority(string $resourceClass): ?int
+    {
+        try {
+            $apiResourceAttrs = (new ReflectionClass($resourceClass))->getAttributes(ApiResource::class);
+        } catch (Throwable) {
+            return null;
+        }
+
+        if ($apiResourceAttrs === []) {
+            return null;
+        }
+
+        $extraProperties = $apiResourceAttrs[0]->newInstance()->getExtraProperties() ?? [];
+        $priority = $extraProperties['includedSortPriority'] ?? null;
+
+        return is_int($priority) ? $priority : null;
     }
 
     protected function camelToKebabCase(string $value): string
