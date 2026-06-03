@@ -32,6 +32,8 @@ use Throwable;
  *
  * Header emission is delegated to {@see ETagResponseSubscriber}, which converts the
  * `_etag` request attribute into the `ETag` response header.
+ *
+ * @deprecated Use {@link \Spryker\Glue\EntityTagsRestApi\Api\Storefront\Listener\EntityTagStorefrontListener} instead.
  */
 class EntityTagSubscriber implements EventSubscriberInterface
 {

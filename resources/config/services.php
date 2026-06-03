@@ -19,7 +19,6 @@ use Spryker\ApiPlatform\Command\ApiGenerateCommand;
 use Spryker\ApiPlatform\Configuration\ApiPlatformConfig;
 use Spryker\ApiPlatform\EventSubscriber\AcceptHeaderFallbackSubscriber;
 use Spryker\ApiPlatform\EventSubscriber\AcceptLanguageLocaleSubscriber;
-use Spryker\ApiPlatform\EventSubscriber\EntityTagSubscriber;
 use Spryker\ApiPlatform\EventSubscriber\ETagResponseSubscriber;
 use Spryker\ApiPlatform\EventSubscriber\GlueApiExceptionSubscriber;
 use Spryker\ApiPlatform\EventSubscriber\JsonApiContentTypeCleanupSubscriber;
@@ -264,9 +263,6 @@ return static function (ContainerConfigurator $container): void {
 
     // Add ETag response header when providers store etag value in request attributes
     $services->set(ETagResponseSubscriber::class);
-
-    // Validate If-Match for ETag-protected operations and persist the resource ETag for emission
-    $services->set(EntityTagSubscriber::class);
 
     // Convert GlueApiException to JSON:API error response with Glue error codes.
     // In production ($debug = false) the last-resort guard sanitises uncaught throwables
