@@ -294,21 +294,24 @@ class GlueApiExceptionSubscriber implements EventSubscriberInterface
     protected function createGlueApiErrorResponse(GlueApiException $exception): JsonResponse
     {
         $errors = $exception->getErrors();
-        foreach ($errors as &$error) {
-            if (!isset($error['message'])) {
-                $error['message'] = (string)$error['detail'];
+        foreach ($errors as &$errorItem) {
+            if (!isset($errorItem['message'])) {
+                $errorItem['message'] = (string)$errorItem['detail'];
             }
         }
 
         if ($errors === []) {
-            $errors = [
-                [
-                    'code' => $exception->getErrorCode(),
-                    'status' => $exception->getStatusCode(),
-                    'detail' => $exception->getMessage(),
-                    'message' => $exception->getMessage(),
-                ],
-            ];
+            $error = [];
+
+            if ($exception->getErrorCode() !== '') {
+                $error['code'] = $exception->getErrorCode();
+            }
+
+            $error['status'] = $exception->getStatusCode();
+            $error['detail'] = $exception->getMessage();
+            $error['message'] = $exception->getMessage();
+
+            $errors = [$error];
         }
 
         return $this->createJsonApiResponse(['errors' => $errors], $exception->getStatusCode());
@@ -592,10 +595,10 @@ class GlueApiExceptionSubscriber implements EventSubscriberInterface
                 $code = (string)$providerReflection->getConstant($codeConstantName);
 
                 return [
-                    'code' => $code,
                     'status' => Response::HTTP_NOT_FOUND,
                     'detail' => $message,
                     'message' => $message,
+                    'code' => $code,
                 ];
             }
         } catch (Throwable) {

@@ -117,6 +117,13 @@ class IdNormalizer implements NormalizerInterface, NormalizerAwareInterface
             unset($data['data']['attributes']['_id']);
         }
 
+        // Restore `type` in attributes: same issue — ReservedAttributeNameConverter renames
+        // `type` to `_type`. Rename it back for BC with the legacy Glue REST API.
+        if (isset($data['data']['attributes']['_type'])) {
+            $data['data']['attributes']['type'] = $data['data']['attributes']['_type'];
+            unset($data['data']['attributes']['_type']);
+        }
+
         return $data;
     }
 
