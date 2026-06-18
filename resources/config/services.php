@@ -19,6 +19,7 @@ use Spryker\ApiPlatform\Command\ApiGenerateCommand;
 use Spryker\ApiPlatform\Configuration\ApiPlatformConfig;
 use Spryker\ApiPlatform\EventSubscriber\AcceptHeaderFallbackSubscriber;
 use Spryker\ApiPlatform\EventSubscriber\AcceptLanguageLocaleSubscriber;
+use Spryker\ApiPlatform\EventSubscriber\ContentTypeHeaderFallbackSubscriber;
 use Spryker\ApiPlatform\EventSubscriber\ETagResponseSubscriber;
 use Spryker\ApiPlatform\EventSubscriber\GlueApiExceptionSubscriber;
 use Spryker\ApiPlatform\EventSubscriber\JsonApiContentTypeCleanupSubscriber;
@@ -279,6 +280,11 @@ return static function (ContainerConfigurator $container): void {
     // Restore legacy Glue behavior of accepting requests without an Accept header
     // by setting `Accept: application/vnd.api+json` before content negotiation runs.
     $services->set(AcceptHeaderFallbackSubscriber::class);
+
+    // Restore legacy Glue behavior of accepting body-bearing requests without a
+    // Content-Type header by defaulting it to `application/vnd.api+json` before
+    // content negotiation runs (otherwise DeserializeProvider returns 415).
+    $services->set(ContentTypeHeaderFallbackSubscriber::class);
 
     // Replays the legacy ControllerBeforeAction + RestUserValidator plugin chains for endpoints
     // migrated to API Platform so that `getRestUserValidatorPlugins()`-registered plugins (MFA,
