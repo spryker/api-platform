@@ -11,6 +11,10 @@ namespace SprykerTest\ApiPlatform\Unit\EventSubscriber;
 
 use ApiPlatform\Metadata\Resource\Factory\ResourceMetadataCollectionFactoryInterface;
 use Codeception\Test\Unit;
+use Psr\Log\AbstractLogger;
+use Psr\Log\LoggerInterface;
+use Psr\Log\LogLevel;
+use Psr\Log\NullLogger;
 use RuntimeException;
 use Spryker\ApiPlatform\EventSubscriber\GlueApiExceptionSubscriber;
 use SprykerTest\ApiPlatform\ApiUnitTester;
@@ -126,13 +130,82 @@ class GlueApiExceptionSubscriberThrowableTest extends Unit
         $this->assertSame($existingResponse, $event->getResponse());
     }
 
-    protected function createSubscriber(bool $debug = false): GlueApiExceptionSubscriber
+    public function testGivenUncaughtThrowableOnApiPlatformRequestInProductionWhenOnKernelExceptionLastResortThenThrowableIsLogged(): void
+    {
+        // Arrange — the exception that API Platform would otherwise swallow into a generic
+        // 500 (SUPESC-1116) must reach the logger so operators are not blind to the cause.
+        $logger = $this->createRecordingLogger();
+        $subscriber = $this->createSubscriber(debug: false, logger: $logger);
+        $request = new Request();
+        $request->attributes->set('_api_resource_class', 'Pyz\Glue\CatalogSearchRestApi\Resource\CatalogSearchResource');
+        $throwable = new RuntimeException(static::SECRET_MESSAGE);
+        $event = $this->createExceptionEvent($request, $throwable);
+
+        // Act
+        $subscriber->onKernelExceptionLastResort($event);
+
+        // Assert
+        $this->assertCount(1, $logger->records);
+        $record = $logger->records[0];
+        $this->assertSame(LogLevel::ERROR, $record['level']);
+        $this->assertStringContainsString(static::SECRET_MESSAGE, $record['message']);
+        $this->assertSame($throwable, $record['context']['exception'] ?? null);
+    }
+
+    public function testGivenResponseAlreadySetWhenOnKernelExceptionLastResortThenThrowableIsNotLogged(): void
+    {
+        // Arrange — an earlier subscriber already handled the exception; nothing to log here.
+        $logger = $this->createRecordingLogger();
+        $subscriber = $this->createSubscriber(debug: false, logger: $logger);
+        $request = new Request();
+        $request->attributes->set('_api_resource_class', 'Pyz\Glue\CatalogSearchRestApi\Resource\CatalogSearchResource');
+        $event = $this->createExceptionEvent($request, new RuntimeException(static::SECRET_MESSAGE));
+        $event->setResponse(new Response('handled', Response::HTTP_NOT_FOUND));
+
+        // Act
+        $subscriber->onKernelExceptionLastResort($event);
+
+        // Assert
+        $this->assertCount(0, $logger->records);
+    }
+
+    protected function createSubscriber(bool $debug = false, ?LoggerInterface $logger = null): GlueApiExceptionSubscriber
     {
         return new GlueApiExceptionSubscriber(
             $this->createMock(TranslatorInterface::class),
             $this->createMock(ResourceMetadataCollectionFactoryInterface::class),
             $debug,
+            $logger ?? new NullLogger(),
         );
+    }
+
+    /**
+     * @return \Psr\Log\AbstractLogger&object{records: array<int, array{level: string, message: string, context: array<string, mixed>}>}
+     */
+    protected function createRecordingLogger(): AbstractLogger
+    {
+        return new class extends AbstractLogger {
+            /**
+             * @var array<int, array{level: string, message: string, context: array<string, mixed>}>
+             */
+            public array $records = [];
+
+            /**
+             * @param mixed $level
+             * @param \Stringable|string $message
+             * @param array<string, mixed> $context
+             *
+             * @return void
+             */
+            public function log($level, $message, array $context = []): void
+            {
+                $this->records[] = [
+                    'level' => (string)$level,
+                    'message' => (string)$message,
+                    'context' => $context,
+                ];
+            }
+        };
     }
 
     protected function createExceptionEvent(Request $request, Throwable $throwable): ExceptionEvent

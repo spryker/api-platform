@@ -269,7 +269,8 @@ return static function (ContainerConfigurator $container): void {
     // In production ($debug = false) the last-resort guard sanitises uncaught throwables
     // to a generic 500; in debug it steps aside so traces reach the error renderer.
     $services->set(GlueApiExceptionSubscriber::class)
-        ->arg('$debug', param('spryker_api_platform.debug'));
+        ->arg('$debug', param('spryker_api_platform.debug'))
+        ->arg('$logger', service('logger'));
 
     // Convert OAuthServerException to HttpException with correct status code
     $services->set(OAuthExceptionSubscriber::class);

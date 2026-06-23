@@ -12,6 +12,8 @@ namespace Spryker\ApiPlatform\EventSubscriber;
 use ApiPlatform\Metadata\ApiResource;
 use ApiPlatform\Metadata\Operation;
 use ApiPlatform\Metadata\Resource\Factory\ResourceMetadataCollectionFactoryInterface;
+use Psr\Log\LoggerInterface;
+use Psr\Log\NullLogger;
 use ReflectionClass;
 use ReflectionNamedType;
 use ReflectionProperty;
@@ -75,6 +77,7 @@ class GlueApiExceptionSubscriber implements EventSubscriberInterface
         protected TranslatorInterface $translator,
         protected ResourceMetadataCollectionFactoryInterface $resourceMetadataCollectionFactory,
         protected bool $debug,
+        protected LoggerInterface $logger = new NullLogger(),
     ) {
     }
 
@@ -271,7 +274,25 @@ class GlueApiExceptionSubscriber implements EventSubscriberInterface
             return;
         }
 
+        // The throwable is about to be sanitised into a generic 500 with no body, so it would
+        // otherwise vanish without a trace (API Platform's error pipeline does not route it to
+        // the application logger). Log it here so operators are not blind to the real cause.
+        $this->logUncaughtThrowable($event->getThrowable(), $event->getRequest());
+
         $event->setResponse($this->createInternalServerErrorResponse());
+    }
+
+    protected function logUncaughtThrowable(Throwable $throwable, Request $request): void
+    {
+        $this->logger->error(
+            sprintf(
+                'Uncaught exception on API Platform request "%s %s": %s',
+                $request->getMethod(),
+                $request->getPathInfo(),
+                $throwable->getMessage(),
+            ),
+            ['exception' => $throwable],
+        );
     }
 
     /**
