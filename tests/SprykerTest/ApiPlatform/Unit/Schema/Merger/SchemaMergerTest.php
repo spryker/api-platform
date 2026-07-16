@@ -10,6 +10,7 @@ declare(strict_types=1);
 namespace SprykerTest\ApiPlatform\Unit\Schema\Merger;
 
 use Codeception\Test\Unit;
+use Spryker\ApiPlatform\Exception\ApiSchemaGenerationException;
 use Spryker\ApiPlatform\Schema\Merger\SchemaMerger;
 use Spryker\ApiPlatform\Schema\Merger\SchemaMergerInterface;
 use Spryker\ApiPlatform\Schema\Validation\Merger\ValidationSchemaMergerInterface;
@@ -196,6 +197,130 @@ class SchemaMergerTest extends Unit
         $this->assertArrayHasKey('Patch', $result['operations']);
         $this->assertArrayHasKey('id', $result['properties']);
         $this->assertArrayHasKey('name', $result['properties']);
+    }
+
+    public function testGivenSameTypedObjectPropertyInTwoLayersWhenMergingThenUnionsNestedFields(): void
+    {
+        // Arrange
+        $core = [
+            'sourceLayer' => 'core',
+            'sourceFile' => 'core.yml',
+            'properties' => ['calculations' => ['type' => 'object', 'properties' => ['unitPrice' => ['type' => 'integer']]]],
+        ];
+        $project = [
+            'sourceLayer' => 'project',
+            'sourceFile' => 'project.yml',
+            'properties' => ['calculations' => ['type' => 'object', 'properties' => ['sumPrice' => ['type' => 'integer']]]],
+        ];
+        $merger = $this->createSchemaMerger();
+
+        // Act
+        $result = $merger->merge([$core, $project], 'CartItems', 'Storefront');
+
+        // Assert
+        $this->assertSame('object', $result['properties']['calculations']['type']);
+        $this->assertArrayHasKey('unitPrice', $result['properties']['calculations']['properties']);
+        $this->assertArrayHasKey('sumPrice', $result['properties']['calculations']['properties']);
+    }
+
+    public function testGivenSameMapPropertyInTwoLayersWhenMergingThenMergesWithoutThrowing(): void
+    {
+        // Arrange
+        $core = [
+            'sourceLayer' => 'core',
+            'sourceFile' => 'core.yml',
+            'properties' => ['attributes' => ['type' => 'map', 'description' => 'Core']],
+        ];
+        $project = [
+            'sourceLayer' => 'project',
+            'sourceFile' => 'project.yml',
+            'properties' => ['attributes' => ['type' => 'map', 'description' => 'Project']],
+        ];
+        $merger = $this->createSchemaMerger();
+
+        // Act
+        $result = $merger->merge([$core, $project], 'Customer', 'Storefront');
+
+        // Assert
+        $this->assertSame('map', $result['properties']['attributes']['type']);
+        $this->assertSame('Project', $result['properties']['attributes']['description']);
+    }
+
+    public function testGivenTypedObjectThenMapAcrossLayersWhenMergingThenThrowsNamingBothFiles(): void
+    {
+        // Arrange
+        $core = [
+            'sourceLayer' => 'core',
+            'sourceFile' => 'DiscountsRestApi/cart-items.resource.yml',
+            'properties' => ['calculations' => ['type' => 'object', 'properties' => ['unitPrice' => ['type' => 'integer']]]],
+        ];
+        $feature = [
+            'sourceLayer' => 'feature',
+            'sourceFile' => 'CartsRestApi/cart-items.resource.yml',
+            'properties' => ['calculations' => ['type' => 'object', 'properties' => ['sumPrice' => ['type' => 'integer']]]],
+        ];
+        $project = [
+            'sourceLayer' => 'project',
+            'sourceFile' => 'project/cart-items.resource.yml',
+            'properties' => ['calculations' => ['type' => 'map']],
+        ];
+        $merger = $this->createSchemaMerger();
+
+        // Assert
+        $this->expectException(ApiSchemaGenerationException::class);
+        $this->expectExceptionMessageMatches('/calculations/');
+        $this->expectExceptionMessageMatches('#CartsRestApi/cart-items\.resource\.yml#');
+        $this->expectExceptionMessageMatches('#project/cart-items\.resource\.yml#');
+
+        // Act
+        $merger->merge([$core, $feature, $project], 'CartItems', 'Storefront');
+    }
+
+    public function testGivenTypedObjectVsMapInSameLayerWhenMergingThenThrows(): void
+    {
+        // Arrange
+        $coreObject = [
+            'sourceLayer' => 'core',
+            'sourceFile' => 'core-object.yml',
+            'properties' => ['calculations' => ['type' => 'object', 'properties' => ['unitPrice' => ['type' => 'integer']]]],
+        ];
+        $coreMap = [
+            'sourceLayer' => 'core',
+            'sourceFile' => 'core-map.yml',
+            'properties' => ['calculations' => ['type' => 'map']],
+        ];
+        $merger = $this->createSchemaMerger();
+
+        // Assert
+        $this->expectException(ApiSchemaGenerationException::class);
+        $this->expectExceptionMessageMatches('/calculations/');
+
+        // Act
+        $merger->merge([$coreObject, $coreMap], 'CartItems', 'Storefront');
+    }
+
+    public function testGivenReplaceTrueOnConflictingOverrideWhenMergingThenTakesOverrideWholesaleAndStripsFlag(): void
+    {
+        // Arrange
+        $core = [
+            'sourceLayer' => 'core',
+            'sourceFile' => 'core.yml',
+            'properties' => ['calculations' => ['type' => 'object', 'properties' => ['unitPrice' => ['type' => 'integer']]]],
+        ];
+        $project = [
+            'sourceLayer' => 'project',
+            'sourceFile' => 'project.yml',
+            'properties' => ['calculations' => ['type' => 'map', 'replace' => true]],
+        ];
+        $merger = $this->createSchemaMerger();
+
+        // Act
+        $result = $merger->merge([$core, $project], 'CartItems', 'Storefront');
+
+        // Assert
+        $this->assertSame('map', $result['properties']['calculations']['type']);
+        $this->assertArrayNotHasKey('properties', $result['properties']['calculations']);
+        $this->assertArrayNotHasKey('replace', $result['properties']['calculations']);
     }
 
     protected function createSchemaMerger(): SchemaMerger

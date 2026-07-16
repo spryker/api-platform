@@ -85,6 +85,60 @@ class SchemaParserTest extends Unit
         $this->assertEquals('integer', $result['properties']['id']['type']);
     }
 
+    public function testGivenObjectPropertyWithNestedPropertiesWhenParsingThenNormalizesNestedProperties(): void
+    {
+        // Arrange
+        $rawSchema = [
+            'resource' => [
+                'properties' => [
+                    'totals' => [
+                        'type' => 'object',
+                        'properties' => [
+                            'grandTotal' => ['type' => 'int'],
+                        ],
+                    ],
+                ],
+            ],
+        ];
+        $parser = $this->createSchemaParser();
+
+        // Act
+        $result = $parser->parse($rawSchema, new SplFileInfo(__FILE__));
+
+        // Assert — nested properties are recursively normalized (int → integer); no objectName is emitted.
+        $this->assertEquals('integer', $result['properties']['totals']['properties']['grandTotal']['type']);
+        $this->assertArrayNotHasKey('objectName', $result['properties']['totals']);
+    }
+
+    public function testGivenArrayPropertyWithTypedObjectItemsWhenParsingThenNormalizesItemProperties(): void
+    {
+        // Arrange — an object collection: `type: array` whose `items` describe a typed object.
+        $rawSchema = [
+            'resource' => [
+                'properties' => [
+                    'calculations' => [
+                        'type' => 'array',
+                        'items' => [
+                            'type' => 'object',
+                            'properties' => [
+                                'amount' => ['type' => 'int'],
+                            ],
+                        ],
+                    ],
+                ],
+            ],
+        ];
+        $parser = $this->createSchemaParser();
+
+        // Act
+        $result = $parser->parse($rawSchema, new SplFileInfo(__FILE__));
+
+        // Assert — the item shape is normalized the same way (object item type + int → integer on its fields).
+        $this->assertEquals('object', $result['properties']['calculations']['items']['type']);
+        $this->assertEquals('integer', $result['properties']['calculations']['items']['properties']['amount']['type']);
+        $this->assertArrayNotHasKey('objectName', $result['properties']['calculations']);
+    }
+
     public function testGivenPropertyTypeIntWhenParsingThenConvertsToInteger(): void
     {
         // Arrange
@@ -998,6 +1052,91 @@ class SchemaParserTest extends Unit
 
         // Assert
         $this->assertEquals('active', $result['properties']['status']['default']);
+    }
+
+    public function testGivenPropertyWithNestedPropertiesWhenParsingThenCapturesNestedProperties(): void
+    {
+        // Arrange
+        $rawSchema = [
+            'resource' => [
+                'name' => 'Carts',
+                'properties' => [
+                    'totals' => [
+                        'type' => 'object',
+                        'properties' => [
+                            'grandTotal' => ['type' => 'int', 'description' => 'Final total'],
+                        ],
+                    ],
+                ],
+            ],
+        ];
+        $parser = $this->createSchemaParser();
+
+        // Act
+        $result = $parser->parse($rawSchema, new SplFileInfo(__FILE__));
+
+        // Assert
+        $this->assertSame('object', $result['properties']['totals']['type']);
+        $this->assertArrayHasKey('properties', $result['properties']['totals']);
+        $this->assertSame('integer', $result['properties']['totals']['properties']['grandTotal']['type']);
+        $this->assertSame('Final total', $result['properties']['totals']['properties']['grandTotal']['description']);
+    }
+
+    public function testGivenNestedObjectWithinObjectWhenParsingThenRecursesAllLevels(): void
+    {
+        // Arrange
+        $rawSchema = [
+            'resource' => [
+                'name' => 'Carts',
+                'properties' => [
+                    'totals' => [
+                        'type' => 'object',
+                        'properties' => [
+                            'tax' => [
+                                'type' => 'object',
+                                'properties' => ['amount' => ['type' => 'int']],
+                            ],
+                        ],
+                    ],
+                ],
+            ],
+        ];
+        $parser = $this->createSchemaParser();
+
+        // Act
+        $result = $parser->parse($rawSchema, new SplFileInfo(__FILE__));
+
+        // Assert
+        $this->assertSame(
+            'integer',
+            $result['properties']['totals']['properties']['tax']['properties']['amount']['type'],
+        );
+    }
+
+    public function testGivenObjectPropertyWithObjectNameWhenParsingThenCarriesObjectNameThrough(): void
+    {
+        // Arrange
+        $rawSchema = [
+            'resource' => [
+                'name' => 'Checkout',
+                'properties' => [
+                    'billingAddress' => [
+                        'type' => 'object',
+                        'objectName' => 'Address',
+                        'properties' => [
+                            'zipCode' => ['type' => 'string'],
+                        ],
+                    ],
+                ],
+            ],
+        ];
+        $parser = $this->createSchemaParser();
+
+        // Act
+        $result = $parser->parse($rawSchema, new SplFileInfo(__FILE__));
+
+        // Assert — objectName is carried through untouched as the dormant join key for canonical objects.
+        $this->assertSame('Address', $result['properties']['billingAddress']['objectName']);
     }
 
     protected function createSchemaParser(string $validationGroupReturnValue = ''): SchemaParser

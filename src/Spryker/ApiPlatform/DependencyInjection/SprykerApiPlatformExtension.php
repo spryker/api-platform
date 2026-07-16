@@ -10,6 +10,7 @@ declare(strict_types=1);
 namespace Spryker\ApiPlatform\DependencyInjection;
 
 use Spryker\ApiPlatform\Attribute\ApiType;
+use Spryker\ApiPlatform\Utility\ApiTypeNormalizer;
 use Symfony\Component\Config\FileLocator;
 use Symfony\Component\DependencyInjection\ChildDefinition;
 use Symfony\Component\DependencyInjection\ContainerBuilder;
@@ -55,7 +56,17 @@ class SprykerApiPlatformExtension extends Extension implements PrependExtensionI
 
         $sourceDirectories = $this->resolveDirectoryPaths($config['source_directories'], $projectDir);
 
+        $canonicalObjectSearchDirectories = [];
+        foreach ($config['canonical_object_search_directories'] as $apiType => $directories) {
+            // Normalize the api-type key to lowercase so it matches the lowercased lookup performed by
+            // ApiPlatformConfig::getCanonicalObjectSearchDirectories(); a capitalized project key would
+            // otherwise resolve to an empty list at read time.
+            $normalizedApiType = ApiTypeNormalizer::normalizeForSchemaLookup((string)$apiType);
+            $canonicalObjectSearchDirectories[$normalizedApiType] = $this->resolveDirectoryPaths($directories, $projectDir);
+        }
+
         $container->setParameter('spryker_api_platform.source_directories', $sourceDirectories);
+        $container->setParameter('spryker_api_platform.canonical_object_search_directories', $canonicalObjectSearchDirectories);
         $container->setParameter('spryker_api_platform.cache_dir', $config['cache_dir']);
         $container->setParameter('spryker_api_platform.generated_dir', $config['generated_dir']);
         $container->setParameter('spryker_api_platform.api_types', $config['api_types']);
@@ -111,6 +122,10 @@ class SprykerApiPlatformExtension extends Extension implements PrependExtensionI
         $resolved = [];
 
         foreach ($directories as $directory) {
+            // A %kernel.project_dir% placeholder is resolved here before the absolute/relative branch;
+            // the result is already absolute, so it must not also be treated as relative and prepended again.
+            $directory = str_replace('%kernel.project_dir%', rtrim($projectDir, '/'), $directory);
+
             if ($this->isAbsolutePath($directory)) {
                 $resolved[] = $directory;
 

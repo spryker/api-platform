@@ -29,10 +29,13 @@ use Spryker\ApiPlatform\EventSubscriber\JsonApiResolvedRelationshipSubscriber;
 use Spryker\ApiPlatform\EventSubscriber\OAuthExceptionSubscriber;
 use Spryker\ApiPlatform\EventSubscriber\PaginationLinksResponseSubscriber;
 use Spryker\ApiPlatform\EventSubscriber\PathNormalizationRequestSubscriber;
+use Spryker\ApiPlatform\Generator\CanonicalObjectRegistry;
 use Spryker\ApiPlatform\Generator\ClassGenerator;
 use Spryker\ApiPlatform\Generator\ConstraintFormatter;
 use Spryker\ApiPlatform\Generator\FqcnConstraintResolver;
 use Spryker\ApiPlatform\Generator\MediaType\MediaTypeFormatterRegistry;
+use Spryker\ApiPlatform\Generator\NestedObjectClassGenerator;
+use Spryker\ApiPlatform\Generator\NestedObjectValidationLifter;
 use Spryker\ApiPlatform\Generator\OpenApiOperationBuilder;
 use Spryker\ApiPlatform\Generator\PropertyAttributeGenerator;
 use Spryker\ApiPlatform\Generator\RelationshipPhpDocGenerator;
@@ -43,6 +46,7 @@ use Spryker\ApiPlatform\Generator\ResourceNameTagGenerator;
 use Spryker\ApiPlatform\Generator\Template\PhpTemplateRenderer;
 use Spryker\ApiPlatform\Generator\UseStatementCollector;
 use Spryker\ApiPlatform\Generator\ValidationAttributeGenerator;
+use Spryker\ApiPlatform\Metadata\Property\NestedObjectPropertyMetadataFactory;
 use Spryker\ApiPlatform\OpenApi\FormatTransformer\JsonApiFormatTransformer;
 use Spryker\ApiPlatform\OpenApi\Normalizer\EmptyRelationshipNormalizer;
 use Spryker\ApiPlatform\OpenApi\Normalizer\IdNormalizer;
@@ -57,6 +61,11 @@ use Spryker\ApiPlatform\Schema\Finder\SchemaFinderInterface;
 use Spryker\ApiPlatform\Schema\Loader\YamlSchemaLoader;
 use Spryker\ApiPlatform\Schema\Merger\SchemaMerger;
 use Spryker\ApiPlatform\Schema\Merger\SchemaMergerInterface;
+use Spryker\ApiPlatform\Schema\Object\CanonicalObjectDefinitionResolver;
+use Spryker\ApiPlatform\Schema\Object\Finder\ObjectSchemaFinder;
+use Spryker\ApiPlatform\Schema\Object\Finder\ObjectSchemaFinderInterface;
+use Spryker\ApiPlatform\Schema\Object\Loader\ObjectSchemaLoader;
+use Spryker\ApiPlatform\Schema\Object\Loader\ObjectSchemaLoaderInterface;
 use Spryker\ApiPlatform\Schema\Parser\SchemaParser;
 use Spryker\ApiPlatform\Schema\Parser\SchemaParserInterface;
 use Spryker\ApiPlatform\Schema\Validation\Finder\ValidationSchemaFinder;
@@ -86,6 +95,8 @@ use Spryker\ApiPlatform\Serializer\Encoder\CXmlEncoder;
 use Spryker\ApiPlatform\Serializer\Normalizer\CXmlNormalizer;
 use Spryker\ApiPlatform\Serializer\TranslatingConstraintViolationListNormalizer;
 use Spryker\ApiPlatform\State\TranslatingErrorProvider;
+use Spryker\ApiPlatform\Validation\NestedObjectValidationErrorAugmenter;
+use Spryker\ApiPlatform\Validation\ValidationConstraintReader;
 use Symfony\Component\DependencyInjection\ContainerInterface;
 use Symfony\Component\ExpressionLanguage\ExpressionLanguage;
 use Symfony\Component\Filesystem\Filesystem;
@@ -106,7 +117,8 @@ return static function (ContainerConfigurator $container): void {
         ->arg('$generatedDir', param('spryker_api_platform.generated_dir'))
         ->arg('$apiTypes', param('spryker_api_platform.api_types'))
         ->arg('$debug', param('spryker_api_platform.debug'))
-        ->arg('$excludedPathFragments', param('spryker_api_platform.excluded_path_fragments'));
+        ->arg('$excludedPathFragments', param('spryker_api_platform.excluded_path_fragments'))
+        ->arg('$canonicalObjectSearchDirectories', param('spryker_api_platform.canonical_object_search_directories'));
 
     // Schema Loaders
     $services->set(YamlSchemaLoader::class)
@@ -132,6 +144,15 @@ return static function (ContainerConfigurator $container): void {
 
     // Schema Parser
     $services->set(SchemaParserInterface::class, SchemaParser::class);
+
+    // Object Schema Finder
+    $services->set(ObjectSchemaFinderInterface::class, ObjectSchemaFinder::class);
+
+    // Object Schema Loader
+    $services->set(ObjectSchemaLoaderInterface::class, ObjectSchemaLoader::class);
+
+    // Object Schema: Canonical Object Definition Resolver
+    $services->set(CanonicalObjectDefinitionResolver::class);
 
     // Validation Rules
     $services->set(ResourceNameValidationRule::class)
@@ -213,6 +234,16 @@ return static function (ContainerConfigurator $container): void {
     // Generator: Relationship PHPDoc Generator
     $services->set(RelationshipPhpDocGenerator::class);
 
+    // Generator: Nested Object Class Generator
+    $services->set(NestedObjectClassGenerator::class);
+
+    // Generator: lifts an object property's Collection field validation onto its value-object class.
+    $services->set(NestedObjectValidationLifter::class);
+
+    // Generator: Canonical Object Registry (pre-pass that generates one shared value-object class
+    // per resolved `*.object.yml` definition into `Generated\Api\{ApiType}\`).
+    $services->set(CanonicalObjectRegistry::class);
+
     // Generator: Class Generator
     $services->set(ClassGenerator::class);
 
@@ -266,6 +297,13 @@ return static function (ContainerConfigurator $container): void {
     $services->set(ETagResponseSubscriber::class);
 
     // Convert GlueApiException to JSON:API error response with Glue error codes.
+    // Reads validation constraints declared as property attributes; shared by the exception
+    // subscriber and the nested-object augmenter so constraint reading is not duplicated.
+    $services->set(ValidationConstraintReader::class);
+
+    // Pure transformer that augments present-but-empty nested value-object validation errors.
+    $services->set(NestedObjectValidationErrorAugmenter::class);
+
     // In production ($debug = false) the last-resort guard sanitises uncaught throwables
     // to a generic 500; in debug it steps aside so traces reach the error renderer.
     $services->set(GlueApiExceptionSubscriber::class)
@@ -425,5 +463,11 @@ return static function (ContainerConfigurator $container): void {
     $services->set(WriteOnlyOperationDenormalizer::class)
         ->autoconfigure(false)
         ->decorate('api_platform.jsonapi.normalizer.item', null, 0, ContainerInterface::IGNORE_ON_INVALID_REFERENCE)
+        ->arg('$decorated', service('.inner'));
+
+    // Surface the native type of generated nested value-object properties so API Platform
+    // denormalizes writable ones into their value object instead of assigning the raw array.
+    $services->set(NestedObjectPropertyMetadataFactory::class)
+        ->decorate('api_platform.metadata.property.metadata_factory.cached')
         ->arg('$decorated', service('.inner'));
 };

@@ -11,6 +11,7 @@ namespace Spryker\ApiPlatform\Schema\Merger;
 
 use Psr\Log\LoggerInterface;
 use Psr\Log\NullLogger;
+use Spryker\ApiPlatform\Exception\ApiSchemaGenerationException;
 use Spryker\ApiPlatform\Schema\Validation\Merger\ValidationSchemaMergerInterface;
 
 class SchemaMerger implements SchemaMergerInterface
@@ -271,19 +272,195 @@ class SchemaMerger implements SchemaMergerInterface
             }
 
             $existingFiles = $result[$propertyName]['_contributingFiles'] ?? [];
+            $baseProperty = $result[$propertyName];
 
-            $result[$propertyName] = array_merge($result[$propertyName], $overrideProperty);
+            $contributingFile = [
+                'file' => $overrideSchema['sourceFile'] ?? 'unknown',
+                'layer' => $overrideSchema['sourceLayer'] ?? 'unknown',
+                'codeBucket' => $overrideSchema['codeBucket'] ?? null,
+            ];
 
-            $result[$propertyName]['_contributingFiles'] = array_merge($existingFiles, [
-                [
-                    'file' => $overrideSchema['sourceFile'] ?? 'unknown',
-                    'layer' => $overrideSchema['sourceLayer'] ?? 'unknown',
-                    'codeBucket' => $overrideSchema['codeBucket'] ?? null,
-                ],
-            ]);
+            // Escape hatch: `replace: true` means the author deliberately re-shapes the inherited
+            // property. Take the override wholesale (base discarded), strip the meta key so it never
+            // reaches generated output, and skip the shape-conflict guard below.
+            if (($overrideProperty['replace'] ?? null) === true) {
+                unset($overrideProperty['replace']);
+                $result[$propertyName] = $overrideProperty;
+                $result[$propertyName]['_contributingFiles'] = array_merge($existingFiles, [$contributingFile]);
+
+                continue;
+            }
+
+            // Fail loud before the shallow merge silently resolves a shape conflict last-wins: one
+            // contributor declaring a typed nested object and another the same property as a plain
+            // map/scalar/array would otherwise drop the typed value object (or the plain field).
+            $this->assertNoShapeConflict($propertyName, $baseProperty, $overrideProperty, $overrideSchema);
+
+            $result[$propertyName] = array_merge($baseProperty, $overrideProperty);
+
+            // A shallow merge would let a later contributor's nested `properties` replace an earlier
+            // one's, so two modules each contributing fields to the same object property (e.g. cart
+            // `calculations`, owned partly by Discount and ProductOptions) would lose fields. Union the
+            // nested fields instead, recursively — covers both `type: object` and object-collection
+            // (`items`) shapes.
+            $result[$propertyName] = $this->mergeNestedObjectProperties($baseProperty, $overrideProperty, $result[$propertyName], $overrideSchema);
+
+            $result[$propertyName]['_contributingFiles'] = array_merge($existingFiles, [$contributingFile]);
         }
 
         return $result;
+    }
+
+    /**
+     * Fails loud when two contributors declare the same property with conflicting shapes — one a
+     * typed nested object (`type: object` with `properties`) or an object collection (`type: array`
+     * with `items.properties`), the other something structurally different (a map / scalar / plain
+     * array / object-without-properties, or the other structured kind). A silent last-wins merge
+     * here would drop the typed value object or the plain field, so generation stops and names both
+     * offenders. Deliberate re-shapes opt out with `replace: true` on the overriding property.
+     *
+     * Same-shape overrides (object+object, collection+collection) and attribute-only overrides (no
+     * `type` declared) fall through to the field union / shallow attribute merge and never throw.
+     * Applies same-layer and cross-layer, since both routes reach this method.
+     *
+     * @param string $propertyName
+     * @param array<string, mixed> $baseProperty
+     * @param array<string, mixed> $overrideProperty
+     * @param array<string, mixed> $overrideSchema
+     *
+     * @throws \Spryker\ApiPlatform\Exception\ApiSchemaGenerationException
+     *
+     * @return void
+     */
+    protected function assertNoShapeConflict(
+        string $propertyName,
+        array $baseProperty,
+        array $overrideProperty,
+        array $overrideSchema,
+    ): void {
+        $baseKind = $this->propertyShapeKind($baseProperty);
+        $overrideKind = $this->propertyShapeKind($overrideProperty);
+
+        // No conflict when either side omits `type` (an attribute-only override) or both declare the
+        // same shape kind (object+object and collection+collection deep-merge; other+other shallow-merges).
+        if ($baseKind === null || $overrideKind === null || $baseKind === $overrideKind) {
+            return;
+        }
+
+        throw new ApiSchemaGenerationException(
+            sprintf(
+                'Conflicting shapes for property "%s": %s declares it as %s, but %s declares it as %s. '
+                . 'A silent last-wins merge would drop the typed value object or the plain field. Reconcile '
+                . 'the two declarations, or set `replace: true` on the overriding property to re-shape it deliberately.',
+                $propertyName,
+                $this->describeContributingFiles($baseProperty),
+                $this->describeShapeKind($baseKind, $baseProperty),
+                $overrideSchema['sourceFile'] ?? 'unknown',
+                $this->describeShapeKind($overrideKind, $overrideProperty),
+            ),
+        );
+    }
+
+    /**
+     * Classifies a property's declared shape: `object` (typed object with `properties`), `collection`
+     * (object collection: `type: array` with `items.properties`), `other` (any other declared type,
+     * e.g. map/scalar/plain array/object-without-properties), or null when no `type` is declared.
+     *
+     * @param array<string, mixed> $property
+     *
+     * @return string|null
+     */
+    protected function propertyShapeKind(array $property): ?string
+    {
+        if (!isset($property['type'])) {
+            return null;
+        }
+
+        $type = $property['type'];
+
+        if ($type === 'object' && isset($property['properties']) && is_array($property['properties'])) {
+            return 'object';
+        }
+
+        if ($type === 'array' && isset($property['items']['properties']) && is_array($property['items']['properties'])) {
+            return 'collection';
+        }
+
+        return 'other';
+    }
+
+    /**
+     * @param string $kind
+     * @param array<string, mixed> $property
+     *
+     * @return string
+     */
+    protected function describeShapeKind(string $kind, array $property): string
+    {
+        return match ($kind) {
+            'object' => 'a typed object (`type: object` with `properties`)',
+            'collection' => 'an object collection (`type: array` with `items.properties`)',
+            default => sprintf('`type: %s`', is_scalar($property['type'] ?? null) ? (string)$property['type'] : 'unknown'),
+        };
+    }
+
+    /**
+     * @param array<string, mixed> $property
+     *
+     * @return string
+     */
+    protected function describeContributingFiles(array $property): string
+    {
+        $files = [];
+
+        foreach ($property['_contributingFiles'] ?? [] as $entry) {
+            if (is_array($entry) && isset($entry['file'])) {
+                $files[] = $entry['file'];
+            }
+        }
+
+        return $files === [] ? 'a lower layer' : implode(', ', array_unique($files));
+    }
+
+    /**
+     * Deep-merges the nested `properties` (object) and `items.properties` (object collection) of a
+     * property contributed by more than one schema, so their fields union instead of the later one
+     * clobbering the earlier via the shallow {@see array_merge()} above.
+     *
+     * @param array<string, mixed> $baseProperty
+     * @param array<string, mixed> $overrideProperty
+     * @param array<string, mixed> $mergedProperty The shallow-merged property to refine.
+     * @param array<string, mixed> $overrideSchema
+     *
+     * @return array<string, mixed>
+     */
+    protected function mergeNestedObjectProperties(array $baseProperty, array $overrideProperty, array $mergedProperty, array $overrideSchema): array
+    {
+        if (
+            isset($baseProperty['properties'], $overrideProperty['properties'])
+            && is_array($baseProperty['properties'])
+            && is_array($overrideProperty['properties'])
+        ) {
+            $mergedProperty['properties'] = $this->mergeProperties(
+                $baseProperty['properties'],
+                $overrideProperty['properties'],
+                $overrideSchema,
+            );
+        }
+
+        if (
+            isset($baseProperty['items']['properties'], $overrideProperty['items']['properties'])
+            && is_array($baseProperty['items']['properties'])
+            && is_array($overrideProperty['items']['properties'])
+        ) {
+            $mergedProperty['items']['properties'] = $this->mergeProperties(
+                $baseProperty['items']['properties'],
+                $overrideProperty['items']['properties'],
+                $overrideSchema,
+            );
+        }
+
+        return $mergedProperty;
     }
 
     /**

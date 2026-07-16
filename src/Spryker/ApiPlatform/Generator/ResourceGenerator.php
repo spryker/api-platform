@@ -23,6 +23,9 @@ use Spryker\ApiPlatform\Generator\Result\ValidationParseResult;
 use Spryker\ApiPlatform\Generator\Result\ValidationResult;
 use Spryker\ApiPlatform\Schema\Finder\SchemaFinderInterface;
 use Spryker\ApiPlatform\Schema\Merger\SchemaMergerInterface;
+use Spryker\ApiPlatform\Schema\Object\CanonicalObjectDefinitionResolver;
+use Spryker\ApiPlatform\Schema\Object\Finder\ObjectSchemaFinderInterface;
+use Spryker\ApiPlatform\Schema\Object\Loader\ObjectSchemaLoaderInterface;
 use Spryker\ApiPlatform\Schema\Parser\SchemaParserInterface;
 use Spryker\ApiPlatform\Schema\Validation\Finder\ValidationSchemaFinderInterface;
 use Spryker\ApiPlatform\Schema\Validation\Loader\ValidationSchemaLoaderInterface;
@@ -83,6 +86,10 @@ class ResourceGenerator implements ResourceGeneratorInterface
         protected readonly ValidationSchemaFinderInterface $validationSchemaFinder,
         protected readonly ValidationSchemaLoaderInterface $validationSchemaLoader,
         protected readonly Filesystem $filesystem,
+        protected readonly ObjectSchemaFinderInterface $objectSchemaFinder,
+        protected readonly ObjectSchemaLoaderInterface $objectSchemaLoader,
+        protected readonly CanonicalObjectDefinitionResolver $canonicalObjectDefinitionResolver,
+        protected readonly CanonicalObjectRegistry $canonicalObjectRegistry,
         protected LoggerInterface $logger = new NullLogger(),
     ) {
     }
@@ -232,6 +239,31 @@ class ResourceGenerator implements ResourceGeneratorInterface
     }
 
     /**
+     * Writes a value-object class as a standalone file.
+     *
+     * For a per-resource companion class (generated for a typed nested object property such as cart
+     * `totals`) the caller passes the resource-owner subdirectory in `$ownerSubdir` — the normalized
+     * resource name (plus codeBucket if any), matching the namespace owner used by {@see ClassGenerator}
+     * so the on-disk path mirrors the declared namespace for PSR-4 autoloading.
+     *
+     * For a canonical object the `$ownerSubdir` is omitted (empty), so the class is written directly
+     * into the canonical home `Generated\Api\{ApiType}\` shared by every referencing resource.
+     */
+    protected function writeNestedObjectClassFile(string $className, string $apiType, string $generatedCode, string $ownerSubdir = ''): string
+    {
+        $apiType = ApiTypeNormalizer::normalizeForGeneration($apiType);
+        $outputDir = $this->config->getApiResourceDirectory($apiType);
+
+        $filePath = $ownerSubdir === ''
+            ? sprintf('%s/%s.php', $outputDir, $className)
+            : sprintf('%s/%s/%s.php', $outputDir, $ownerSubdir, $className);
+
+        $this->filesystem->dumpFile($filePath, $generatedCode);
+
+        return $filePath;
+    }
+
+    /**
      * @return array<\SplFileInfo>
      */
     protected function loadValidationSchemas(string $apiType): array
@@ -256,6 +288,129 @@ class ResourceGenerator implements ResourceGeneratorInterface
         }
 
         return $validationFiles;
+    }
+
+    /**
+     * Loads every canonical-object definition (`*.object.yml`) for an API type into the normalized
+     * definition arrays the {@see CanonicalObjectDefinitionResolver} resolves.
+     *
+     * @return array<int, array<string, mixed>>
+     */
+    protected function loadObjectSchemas(string $apiType): array
+    {
+        $definitions = [];
+
+        foreach ($this->objectSchemaFinder->findObjectSchemas($apiType) as $file) {
+            $definitions[] = $this->objectSchemaLoader->load($file);
+        }
+
+        // Central-directory files carry no /Pyz/ path segment, so path-based layer detection would
+        // mis-read them as core. They are project-authored by definition, so load them as project.
+        foreach ($this->objectSchemaFinder->findCentralObjectSchemas($apiType) as $file) {
+            $definitions[] = $this->objectSchemaLoader->load($file, 'project');
+        }
+
+        $this->logger->debug(sprintf(
+            "Found %d object schema definition(s) for API type '%s'",
+            count($definitions),
+            $apiType,
+        ));
+
+        return $definitions;
+    }
+
+    /**
+     * Loads every canonical-object validation file (`*.object.validation.yml`) for an API type as
+     * raw YAML, keyed by the PascalCase object name derived from the filename stem. This is the
+     * `objectName => (httpMethod => field => [constraints])` contract {@see CanonicalObjectRegistry::build()}
+     * consumes. The plain {@see ValidationSchemaLoaderInterface} is used (not {@see ObjectSchemaLoaderInterface},
+     * which requires an `object:` key that validation files do not carry).
+     *
+     * @return array<string, array<string, mixed>>
+     */
+    protected function loadObjectValidationSchemas(string $apiType): array
+    {
+        $objectValidationSchemas = [];
+
+        // Tracks the source file already seen for each objectName + layer, so a second file resolving to
+        // the SAME objectName within the SAME layer (e.g. one module file and one central-directory file,
+        // both project) fails loud. The same objectName across DIFFERENT layers is the legitimate
+        // project > feature > core override and is left to last-wins.
+        /** @var array<string, array<string, string>> $sourceFileByObjectAndLayer */
+        $sourceFileByObjectAndLayer = [];
+
+        foreach ($this->objectSchemaFinder->findObjectValidationSchemas($apiType) as $file) {
+            $filePath = $file->getRealPath() ?: $file->getPathname();
+            $layer = $this->objectSchemaLoader->detectLayer($filePath);
+            $objectName = $this->deriveObjectNameFromValidationFile($file);
+
+            $this->assertNoDuplicateValidationWithinLayer($sourceFileByObjectAndLayer, $objectName, $layer, $filePath);
+            $sourceFileByObjectAndLayer[$objectName][$layer] = $filePath;
+
+            $objectValidationSchemas[$objectName] = $this->validationSchemaLoader->load($file);
+        }
+
+        foreach ($this->objectSchemaFinder->findCentralObjectValidationSchemas($apiType) as $file) {
+            $filePath = $file->getRealPath() ?: $file->getPathname();
+            // Central-directory files carry no /Pyz/ path segment, so they are project-authored by definition.
+            $layer = 'project';
+            $objectName = $this->deriveObjectNameFromValidationFile($file);
+
+            $this->assertNoDuplicateValidationWithinLayer($sourceFileByObjectAndLayer, $objectName, $layer, $filePath);
+            $sourceFileByObjectAndLayer[$objectName][$layer] = $filePath;
+
+            $objectValidationSchemas[$objectName] = $this->validationSchemaLoader->load($file);
+        }
+
+        $this->logger->debug(sprintf(
+            "Found %d object validation schema(s) for API type '%s'",
+            count($objectValidationSchemas),
+            $apiType,
+        ));
+
+        return $objectValidationSchemas;
+    }
+
+    /**
+     * Fails loud when a validation file resolves to an objectName + layer already claimed by another file.
+     *
+     * @param array<string, array<string, string>> $sourceFileByObjectAndLayer
+     *
+     * @throws \Spryker\ApiPlatform\Exception\ApiSchemaGenerationException When the same objectName appears twice within the same layer.
+     */
+    protected function assertNoDuplicateValidationWithinLayer(
+        array $sourceFileByObjectAndLayer,
+        string $objectName,
+        string $layer,
+        string $filePath,
+    ): void {
+        if (!isset($sourceFileByObjectAndLayer[$objectName][$layer])) {
+            return;
+        }
+
+        throw new ApiSchemaGenerationException(
+            sprintf(
+                'Canonical object validation for "%s" is defined more than once in the "%s" layer: %s, %s. '
+                . 'Each object name may have only one validation file per layer; merge them or move one to a different layer.',
+                $objectName,
+                $layer,
+                $sourceFileByObjectAndLayer[$objectName][$layer],
+                $filePath,
+            ),
+        );
+    }
+
+    /**
+     * Derives the canonical PascalCase object name from a `*.object.validation.yml` filename stem
+     * (e.g. `address.object.validation.yml` → `Address`, `address-snapshot.object.validation.yml`
+     * → `AddressSnapshot`).
+     */
+    protected function deriveObjectNameFromValidationFile(SplFileInfo $file): string
+    {
+        $stem = basename($file->getPathname(), '.object.validation.yml');
+        $stem = basename($stem, '.object.validation.yaml');
+
+        return ResourceNameNormalizer::normalize($stem);
     }
 
     /**
@@ -620,6 +775,50 @@ class ResourceGenerator implements ResourceGeneratorInterface
      */
     protected function generateResourceFiles(array $validatedSchemas, string $apiType): Generator
     {
+        // Pre-pass: generate one canonical value-object class per project-authored `*.object.yml`
+        // definition (resolved + extends-flattened) into the shared `Generated\Api\{ApiType}\` home.
+        // A type mismatch / dangling extends / resource-class name collision aborts the whole run
+        // (yielded as an error), because canonical classes are shared — a single bad definition
+        // would corrupt every resource that references the object.
+        $resolvedDefinitions = $this->canonicalObjectDefinitionResolver->resolve(
+            $this->loadObjectSchemas($apiType),
+        );
+
+        try {
+            $canonicalObjectResult = $this->canonicalObjectRegistry->build(
+                $resolvedDefinitions,
+                $this->loadObjectValidationSchemas($apiType),
+                $validatedSchemas,
+                $apiType,
+            );
+        } catch (Throwable $exception) {
+            $this->logger->error(sprintf(
+                'Failed to build canonical objects: %s',
+                $exception->getMessage(),
+            ));
+
+            yield [
+                'status' => 'error',
+                'message' => sprintf('Failed to build canonical objects: %s', $exception->getMessage()),
+            ];
+
+            return;
+        }
+
+        foreach ($canonicalObjectResult->getCanonicalObjectClasses() as $canonicalObjectClassName => $canonicalObjectCode) {
+            $filePath = $this->writeNestedObjectClassFile($canonicalObjectClassName, $apiType, $canonicalObjectCode);
+
+            yield [
+                'status' => 'generated',
+                'resource' => $canonicalObjectClassName,
+                'file' => $filePath,
+                'className' => $canonicalObjectClassName,
+                'message' => sprintf('Generated canonical object %s', $canonicalObjectClassName),
+            ];
+        }
+
+        $knownCanonicalObjectNames = $canonicalObjectResult->getKnownCanonicalObjectNames();
+
         foreach ($validatedSchemas as $resourceKey => $mergedSchema) {
             $resourceName = $mergedSchema['name'] ?? $mergedSchema['shortName'] ?? $resourceKey;
             $codeBucket = $mergedSchema['codeBucket'] ?? null;
@@ -630,8 +829,14 @@ class ResourceGenerator implements ResourceGeneratorInterface
             ));
 
             try {
-                $generatedCode = $this->classGenerator->generate($mergedSchema, $apiType);
-                $filePath = $this->writeResourceFile($resourceName, $apiType, $generatedCode, $codeBucket);
+                $generatedResourceResult = $this->classGenerator->generateAll($mergedSchema, $apiType, $knownCanonicalObjectNames);
+                $filePath = $this->writeResourceFile($resourceName, $apiType, $generatedResourceResult->getMainClassCode(), $codeBucket);
+
+                $ownerSubdir = ResourceNameNormalizer::normalize((string)$resourceName) . ($codeBucket ?? '');
+
+                foreach ($generatedResourceResult->getNestedObjectClasses() as $nestedObjectClassName => $nestedObjectCode) {
+                    $this->writeNestedObjectClassFile($nestedObjectClassName, $apiType, $nestedObjectCode, $ownerSubdir);
+                }
 
                 $className = sprintf('%s%sResource', $resourceName, $apiType);
 

@@ -202,13 +202,10 @@ class ApiPlatformRelationshipResolver implements ApiPlatformRelationshipResolver
      * @param array<string, array<object>> $relationships
      * @param array<string, array<object>> $processedIncludes
      * @param array<string, mixed> $resourceTypesByPath
+     * @param array<string, bool> $resolvedResourceTypes
      * @param array<string, mixed> $context
      *
      * @return array<string, array<object>>
-     */
-
-    /**
-     * @param array<string, bool> $resolvedResourceTypes
      */
     protected function autoIncludeChildRelationships(
         array $requestedIncludes,

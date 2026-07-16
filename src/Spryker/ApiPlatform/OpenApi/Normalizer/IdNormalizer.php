@@ -28,6 +28,8 @@ class IdNormalizer implements NormalizerInterface, NormalizerAwareInterface
     }
 
     /**
+     * @param array<string, mixed> $context
+     *
      * @return \ArrayObject<array-key, mixed>|array<string, mixed>|string|float|int|bool|null
      */
     public function normalize(mixed $object, ?string $format = null, array $context = []): array|string|int|float|bool|\ArrayObject|null

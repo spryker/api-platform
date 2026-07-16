@@ -18,6 +18,8 @@ use ReflectionClass;
 use ReflectionNamedType;
 use ReflectionProperty;
 use Spryker\ApiPlatform\Exception\GlueApiException;
+use Spryker\ApiPlatform\Validation\NestedObjectValidationErrorAugmenter;
+use Spryker\ApiPlatform\Validation\ValidationConstraintReader;
 use Symfony\Component\EventDispatcher\EventSubscriberInterface;
 use Symfony\Component\HttpFoundation\JsonResponse;
 use Symfony\Component\HttpFoundation\Request;
@@ -73,9 +75,39 @@ class GlueApiExceptionSubscriber implements EventSubscriberInterface
 
     protected const string TYPE_INTEGER_ERROR_MESSAGE = 'This value should be of type integer.';
 
+    /**
+     * Matches a validation detail that begins with a `property: ` prefix, where the property may be a
+     * plain name, a Symfony bracket path (`parent[child][0]`) or a dotted cascade path (`parent.child`).
+     */
+    protected const string REGEX_DETAIL_PROPERTY_PREFIX = '/^[\w\[\].]+: /';
+
+    /**
+     * Captures the field name of a detail whose only violation is "This value should not be blank.".
+     */
+    protected const string REGEX_NOT_BLANK_ONLY_FIELD = '/^(\w+) => This value should not be blank\.$/';
+
+    /**
+     * Captures the field name of a detail that carries a violation OTHER than the "not blank" one.
+     */
+    protected const string REGEX_NON_NOT_BLANK_FIELD = '/^(\w+) => (?!This value should not be blank\.$)/';
+
+    /**
+     * Matches PropertyAccessor's type-mismatch message and captures the expected type and property
+     * path: `Expected argument of type "<type>", "<given>" given at property path "<path>"`.
+     */
+    protected const string REGEX_PROPERTY_ACCESS_TYPE_ERROR = '/Expected argument of type "(\??[\w\\\\]+)", "[^"]+" given at property path "([\w\.\[\]]+)"/';
+
+    /**
+     * Matches an API Platform denormalization message and captures the offending attribute name:
+     * `denormalize attribute "<name>" ... Expected argument of type`.
+     */
+    protected const string REGEX_DENORMALIZE_ATTRIBUTE = '/denormalize attribute "(\w+)".*Expected argument of type/';
+
     public function __construct(
         protected TranslatorInterface $translator,
         protected ResourceMetadataCollectionFactoryInterface $resourceMetadataCollectionFactory,
+        protected ValidationConstraintReader $constraintReader,
+        protected NestedObjectValidationErrorAugmenter $nestedObjectAugmenter,
         protected bool $debug,
         protected LoggerInterface $logger = new NullLogger(),
     ) {
@@ -190,7 +222,16 @@ class GlueApiExceptionSubscriber implements EventSubscriberInterface
         // this branch the kernel renders a 500. Legacy Glue returned 422 / code 901 with
         // "<property> => This value should be of type numeric." — restore that contract.
         if ($event->getRequest()->attributes->has('_api_resource_class')) {
-            $propertyTypeError = $this->matchPropertyTypeError($exception->getMessage());
+            // Walk the exception chain: a failed nested value-object denormalization surfaces as a
+            // TypeError whose previous PropertyAccess exception carries the matchable message.
+            $propertyTypeError = null;
+            for ($throwable = $exception; $throwable !== null; $throwable = $throwable->getPrevious()) {
+                $propertyTypeError = $this->matchPropertyTypeError($throwable->getMessage());
+
+                if ($propertyTypeError !== null) {
+                    break;
+                }
+            }
 
             if ($propertyTypeError !== null) {
                 $event->setResponse($this->createJsonApiResponse(
@@ -382,19 +423,25 @@ class GlueApiExceptionSubscriber implements EventSubscriberInterface
             }
         }
 
+        // Augment nested value-object validation: re-check coerced bool leaves, and relabel or
+        // synthesize "This field is missing." for present-but-empty nested objects.
+        // Runs outside the 422 guard because a present-but-empty required object (whose leaf
+        // constraints allow null) otherwise yields no errors and a 200 — this pass forces 422.
+        if ($request->attributes->has('_api_resource_class') && $request->getMethod() === 'POST') {
+            $resourceClass = (string)$request->attributes->get('_api_resource_class', '');
+
+            if ($resourceClass !== '') {
+                $this->augmentValidationErrorsForNestedObjects($event, $request, $resourceClass);
+            }
+        }
+
         if ($response->getStatusCode() !== Response::HTTP_BAD_REQUEST || !$request->attributes->has('_api_resource_class')) {
             return;
         }
 
-        $content = $response->getContent();
+        $data = $this->decodeErrorResponse($response);
 
-        if ($content === false) {
-            return;
-        }
-
-        $data = json_decode($content, true);
-
-        if (!is_array($data) || !isset($data['errors'])) {
+        if ($data === null || !isset($data['errors'])) {
             return;
         }
 
@@ -457,15 +504,9 @@ class GlueApiExceptionSubscriber implements EventSubscriberInterface
             return;
         }
 
-        $content = $response->getContent();
+        $data = $this->decodeErrorResponse($response);
 
-        if ($content === false || $content === '') {
-            return;
-        }
-
-        $data = json_decode($content, true);
-
-        if (!is_array($data)) {
+        if ($data === null) {
             return;
         }
 
@@ -489,15 +530,9 @@ class GlueApiExceptionSubscriber implements EventSubscriberInterface
             return;
         }
 
-        $content = $response->getContent();
+        $data = $this->decodeErrorResponse($response);
 
-        if ($content === false || $content === '') {
-            return;
-        }
-
-        $data = json_decode($content, true);
-
-        if (!is_array($data)) {
+        if ($data === null) {
             return;
         }
 
@@ -682,16 +717,12 @@ class GlueApiExceptionSubscriber implements EventSubscriberInterface
 
     protected function enrichNotFoundResponse(Response $response, Request $request): void
     {
-        $content = $response->getContent();
-
         // Do not overwrite responses that already have domain-specific error codes
         // (e.g., from GlueApiException). Only enrich generic API Platform 404 responses.
-        if ($content !== false && $content !== '') {
-            $data = json_decode($content, true);
+        $data = $this->decodeErrorResponse($response);
 
-            if (is_array($data) && isset($data['errors'][0]['code']) && $data['errors'][0]['code'] !== '404') {
-                return;
-            }
+        if ($data !== null && isset($data['errors'][0]['code']) && $data['errors'][0]['code'] !== '404') {
+            return;
         }
 
         $resourceClass = (string)$request->attributes->get('_api_resource_class', '');
@@ -716,28 +747,24 @@ class GlueApiExceptionSubscriber implements EventSubscriberInterface
      */
     protected function normalizeValidationErrorFormat(Response $response, Request $request): void
     {
-        $content = $response->getContent();
+        $data = $this->decodeErrorResponse($response);
 
-        if ($content === false || $content === '') {
-            return;
-        }
-
-        $data = json_decode($content, true);
-
-        if (!is_array($data) || !isset($data['errors'])) {
+        if ($data === null || !isset($data['errors'])) {
             return;
         }
 
         // Check if errors need reformatting: single error with "property: message" format.
         // Property may be a nested path produced by Collection/All constraints, e.g.
-        // `parent[child][0][leaf]` — accept word characters and bracket-segment notation.
+        // `parent[child][0][leaf]` (bracket notation) or, when the nested property is a typed
+        // value object validated via an `Assert\Valid` cascade, dot notation `parent.child` —
+        // accept word characters, bracket-segment and dot notation.
         if (count($data['errors']) !== 1) {
             return;
         }
 
         $detail = $data['errors'][0]['detail'] ?? '';
 
-        if (!is_string($detail) || $detail === '' || !preg_match('/^[\w\[\]]+: /', $detail)) {
+        if (!is_string($detail) || $detail === '' || !preg_match(static::REGEX_DETAIL_PROPERTY_PREFIX, $detail)) {
             return;
         }
 
@@ -824,15 +851,9 @@ class GlueApiExceptionSubscriber implements EventSubscriberInterface
             return;
         }
 
-        $content = $response->getContent();
+        $data = $this->decodeErrorResponse($response);
 
-        if ($content === false || $content === '') {
-            return;
-        }
-
-        $data = json_decode($content, true);
-
-        if (!is_array($data) || !isset($data['errors'])) {
+        if ($data === null || !isset($data['errors'])) {
             return;
         }
 
@@ -843,7 +864,7 @@ class GlueApiExceptionSubscriber implements EventSubscriberInterface
             $detail = $error['detail'] ?? '';
             $existingDetails[$detail] = true;
 
-            if (preg_match('/^(\w+) => This value should not be blank\.$/', $detail, $matches)) {
+            if (preg_match(static::REGEX_NOT_BLANK_ONLY_FIELD, $detail, $matches)) {
                 $fieldsWithNotBlankOnly[$matches[1]] = true;
             }
         }
@@ -852,7 +873,7 @@ class GlueApiExceptionSubscriber implements EventSubscriberInterface
         foreach ($data['errors'] as $error) {
             $detail = $error['detail'] ?? '';
 
-            if (preg_match('/^(\w+) => (?!This value should not be blank\.$)/', $detail, $matches)) {
+            if (preg_match(static::REGEX_NON_NOT_BLANK_FIELD, $detail, $matches)) {
                 unset($fieldsWithNotBlankOnly[$matches[1]]);
             }
         }
@@ -917,15 +938,9 @@ class GlueApiExceptionSubscriber implements EventSubscriberInterface
             return;
         }
 
-        $content = $response->getContent();
+        $data = $this->decodeErrorResponse($response);
 
-        if ($content === false || $content === '') {
-            return;
-        }
-
-        $data = json_decode($content, true);
-
-        if (!is_array($data) || !isset($data['errors'])) {
+        if ($data === null || !isset($data['errors'])) {
             return;
         }
 
@@ -1118,7 +1133,7 @@ class GlueApiExceptionSubscriber implements EventSubscriberInterface
     {
         $errors = [];
 
-        foreach ($this->getPropertyConstraintsForGroups($resourceClass, $fieldName, $groups) as $constraint) {
+        foreach ($this->constraintReader->getConstraintsForGroups($resourceClass, $fieldName, $groups) as $constraint) {
             if (!$constraint instanceof GreaterThan && !$constraint instanceof LessThan) {
                 continue;
             }
@@ -1162,52 +1177,6 @@ class GlueApiExceptionSubscriber implements EventSubscriberInterface
     }
 
     /**
-     * @return array<\ReflectionAttribute<object>>
-     */
-    protected function getPropertyAttributes(string $resourceClass, string $fieldName): array
-    {
-        if (!property_exists($resourceClass, $fieldName)) {
-            return [];
-        }
-
-        /** @phpstan-var class-string $resourceClass */
-        return (new ReflectionProperty($resourceClass, $fieldName))->getAttributes();
-    }
-
-    /**
-     * Returns instantiated constraints for a property, filtered to those that apply to the given
-     * validation groups. When $groups is empty all constraints are returned.
-     *
-     * @param array<string> $groups
-     *
-     * @return array<\Symfony\Component\Validator\Constraint>
-     */
-    protected function getPropertyConstraintsForGroups(string $resourceClass, string $fieldName, array $groups): array
-    {
-        $constraints = [];
-
-        foreach ($this->getPropertyAttributes($resourceClass, $fieldName) as $attribute) {
-            try {
-                $constraint = $attribute->newInstance();
-            } catch (Throwable) {
-                continue;
-            }
-
-            if (!$constraint instanceof Constraint) {
-                continue;
-            }
-
-            if ($groups !== [] && array_intersect($constraint->groups, $groups) === []) {
-                continue;
-            }
-
-            $constraints[] = $constraint;
-        }
-
-        return $constraints;
-    }
-
-    /**
      * @return array<string>
      */
     protected function getActiveValidationGroups(Request $request): array
@@ -1226,7 +1195,7 @@ class GlueApiExceptionSubscriber implements EventSubscriberInterface
      */
     protected function getTypeConstraintInstance(string $resourceClass, string $fieldName, array $groups): ?Type
     {
-        foreach ($this->getPropertyConstraintsForGroups($resourceClass, $fieldName, $groups) as $constraint) {
+        foreach ($this->constraintReader->getConstraintsForGroups($resourceClass, $fieldName, $groups) as $constraint) {
             if ($constraint instanceof Type) {
                 return $constraint;
             }
@@ -1260,7 +1229,7 @@ class GlueApiExceptionSubscriber implements EventSubscriberInterface
     {
         $errors = [];
 
-        foreach ($this->getPropertyConstraintsForGroups($resourceClass, $fieldName, $groups) as $constraint) {
+        foreach ($this->constraintReader->getConstraintsForGroups($resourceClass, $fieldName, $groups) as $constraint) {
             $message = $this->renderConstraintMessage($constraint);
 
             if ($message !== null) {
@@ -1346,15 +1315,9 @@ class GlueApiExceptionSubscriber implements EventSubscriberInterface
             return;
         }
 
-        $content = $response->getContent();
+        $data = $this->decodeErrorResponse($response);
 
-        if ($content === false || $content === '') {
-            return;
-        }
-
-        $data = json_decode($content, true);
-
-        if (!is_array($data) || !isset($data['errors'])) {
+        if ($data === null || !isset($data['errors'])) {
             return;
         }
 
@@ -1415,6 +1378,52 @@ class GlueApiExceptionSubscriber implements EventSubscriberInterface
     }
 
     /**
+     * Delegates present-but-empty nested value-object augmentation to the augmenter, which is a pure
+     * transformer over the decoded error array. This subscriber owns all request/response I/O: it
+     * resolves the request-derived inputs, hands them to the augmenter, and rebuilds the response
+     * only when the augmenter reports a change. Synthesizing missing-field errors on an
+     * otherwise-passing request requires promoting the status to 422, so a modified result always
+     * yields a fresh 422 response with consistent headers/status.
+     */
+    protected function augmentValidationErrorsForNestedObjects(ResponseEvent $event, Request $request, string $resourceClass): void
+    {
+        $data = $this->decodeErrorResponse($event->getResponse());
+        $errors = is_array($data) && isset($data['errors']) && is_array($data['errors']) ? $data['errors'] : [];
+
+        $result = $this->nestedObjectAugmenter->augment(
+            $resourceClass,
+            $this->extractRawAttributes($request),
+            $this->getActiveValidationGroups($request),
+            $errors,
+        );
+
+        if (!$result->modified) {
+            return;
+        }
+
+        $event->setResponse($this->createJsonApiResponse(
+            ['errors' => $result->errors],
+            Response::HTTP_UNPROCESSABLE_ENTITY,
+        ));
+    }
+
+    /**
+     * @return array<string, mixed>|null
+     */
+    protected function decodeErrorResponse(Response $response): ?array
+    {
+        $content = $response->getContent();
+
+        if ($content === false || $content === '') {
+            return null;
+        }
+
+        $data = json_decode($content, true);
+
+        return is_array($data) ? $data : null;
+    }
+
+    /**
      * Matches the PropertyAccessor message
      * `Expected argument of type "<type>", "<given>" given at property path "<path>".`
      * and returns the legacy-formatted detail (or null when not a match).
@@ -1424,13 +1433,21 @@ class GlueApiExceptionSubscriber implements EventSubscriberInterface
      */
     protected function matchPropertyTypeError(string $message): ?string
     {
-        if (!preg_match('/Expected argument of type "(\??\w+)", "[^"]+" given at property path "([\w\.\[\]]+)"/', $message, $matches)) {
+        if (!preg_match(static::REGEX_PROPERTY_ACCESS_TYPE_ERROR, $message, $matches)) {
             return null;
         }
 
         $expectedType = ltrim($matches[1], '?');
         $propertyPath = $this->normalizePropertyPath($matches[2]);
-        $reportedType = in_array($expectedType, ['int', 'integer', 'float', 'double'], true) ? 'numeric' : $expectedType;
+        $reportedType = match (true) {
+            in_array($expectedType, ['int', 'integer', 'float', 'double'], true) => 'numeric',
+            // A generated nested value object (e.g. `?PaymentSelection`) reaching this branch means
+            // one of its sub-fields failed type denormalization; under `disable_type_enforcement`
+            // the inner detail is lost and the whole object surfaces here. Report it as an object
+            // type error (422) instead of leaking the generated FQCN to the API consumer.
+            str_contains($expectedType, '\\') => 'object',
+            default => $expectedType,
+        };
 
         return sprintf('%s => This value should be of type %s.', $propertyPath, $reportedType);
     }
@@ -1446,7 +1463,7 @@ class GlueApiExceptionSubscriber implements EventSubscriberInterface
      */
     protected function transformDenormalizationMessage(string $message): string
     {
-        if (!preg_match('/denormalize attribute "(\w+)".*Expected argument of type/', $message, $matches)) {
+        if (!preg_match(static::REGEX_DENORMALIZE_ATTRIBUTE, $message, $matches)) {
             return $message;
         }
 

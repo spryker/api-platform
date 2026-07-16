@@ -47,7 +47,7 @@ namespace Spryker\ApiPlatform\Generator\Template;
 class PhpTemplateRenderer
 {
     /**
-     * @param array{className: string, namespace: string, uses: array<string>, resourceAttribute: string, properties: array<array{name: string, type: string, phpType: string, attributes: string, description: string, phpDoc: string, serializedName?: string, serializedPath?: string, nullable?: bool}>, codeBucket: ?string, metadata: array{timestamp: string, sourceFiles: array<string>, validationSourceFiles: array<string>}}|array $templateData
+     * @param array{className: string, namespace: string, uses: array<string>, resourceAttribute: string, properties: array<array{name: string, type: string, phpType: string, attributes: string, description: string, phpDoc: string, serializedName?: string, serializedPath?: string, nullable?: bool}>, codeBucket: ?string, synthesizeMissingFieldsWhenEmpty?: bool, metadata: array{timestamp: string, sourceFiles: array<string>, validationSourceFiles: array<string>}}|array $templateData
      *
      * @return string
      */
@@ -58,6 +58,10 @@ class PhpTemplateRenderer
         $output .= $this->renderUseStatements($templateData['uses']);
         $output .= $this->renderClassDeclaration($templateData['className'], $templateData['resourceAttribute']);
         $output .= $this->renderCodeBucketConstant($templateData['codeBucket'] ?? null);
+
+        if (!empty($templateData['synthesizeMissingFieldsWhenEmpty'])) {
+            $output .= $this->renderSynthesizeMissingFieldsWhenEmptyConstant();
+        }
 
         $properties = $this->renderProperties($templateData['properties']);
 
@@ -154,6 +158,11 @@ PHP;
         return "\n    public const string CODE_BUCKET = '{$codeBucket}';";
     }
 
+    protected function renderSynthesizeMissingFieldsWhenEmptyConstant(): string
+    {
+        return "\n    // Drives empty-object ({}) 422 synthesis: an empty submission of this value object yields per-field 'missing' validation errors.\n    public const bool SYNTHESIZE_MISSING_FIELDS_WHEN_EMPTY = true;";
+    }
+
     /**
      * @param array<array{name: string, type: string, phpType: string, attributes: string, description: string, phpDoc: string, serializedName?: string, serializedPath?: string, nullable?: bool}> $properties
      */
@@ -218,6 +227,19 @@ PHP;
         $nullablePrefix = $property['phpType'] === 'mixed' ? '' : '?';
 
         return sprintf('    public %s%s $%s = %s;', $nullablePrefix, $property['phpType'], $property['name'], $defaultValue);
+    }
+
+    /**
+     * A nested-object property is a `type: object` whose phpType is a generated value-object class
+     * (not a scalar/array/mixed), so it must be hydrated and serialized through that class's
+     * fromArray()/toArray() rather than assigned as a raw array.
+     *
+     * @param array<string, mixed> $property
+     */
+    protected function isNestedObjectProperty(array $property): bool
+    {
+        return ($property['type'] ?? null) === 'object'
+            && !in_array($property['phpType'] ?? '', ['string', 'int', 'float', 'bool', 'array', 'mixed', 'object'], true);
     }
 
     /**
@@ -297,6 +319,14 @@ PHP;
         $assignments = [];
 
         foreach ($properties as $property) {
+            // A typed nested object serializes back to an array via its own toArray(), so the
+            // payload stays a plain nested array rather than embedding the value-object instance.
+            if ($this->isNestedObjectProperty($property)) {
+                $assignments[] = "            '{$property['name']}' => \$this->{$property['name']}?->toArray(),";
+
+                continue;
+            }
+
             $assignments[] = "            '{$property['name']}' => \$this->{$property['name']},";
         }
 
@@ -328,6 +358,18 @@ PHP;
         $assignments = [];
 
         foreach ($properties as $property) {
+            // A typed nested object arrives as a sub-array and must be hydrated through that
+            // class's fromArray() — assigning the raw array to the typed property is a TypeError.
+            // An already-hydrated object (or null) is passed through unchanged.
+            if ($this->isNestedObjectProperty($property)) {
+                $name = $property['name'];
+                $assignments[] = "        \$instance->{$name} = isset(\$data['{$name}']) && is_array(\$data['{$name}'])\n"
+                    . "            ? {$property['phpType']}::fromArray(\$data['{$name}'])\n"
+                    . "            : (\$data['{$name}'] ?? null);";
+
+                continue;
+            }
+
             if ($property['phpType'] === 'array') {
                 $default = !empty($property['nullable']) ? 'null' : '[]';
                 $assignments[] = "        \$instance->{$property['name']} = \$data['{$property['name']}'] ?? {$default};";

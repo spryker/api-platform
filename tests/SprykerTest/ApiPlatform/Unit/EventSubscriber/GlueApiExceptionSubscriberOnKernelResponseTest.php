@@ -13,6 +13,8 @@ use ApiPlatform\Metadata\ApiProperty;
 use ApiPlatform\Metadata\Resource\Factory\ResourceMetadataCollectionFactoryInterface;
 use Codeception\Test\Unit;
 use Spryker\ApiPlatform\EventSubscriber\GlueApiExceptionSubscriber;
+use Spryker\ApiPlatform\Validation\NestedObjectValidationErrorAugmenter;
+use Spryker\ApiPlatform\Validation\ValidationConstraintReader;
 use SprykerTest\ApiPlatform\ApiUnitTester;
 use Symfony\Component\HttpFoundation\Request;
 use Symfony\Component\HttpFoundation\Response;
@@ -167,6 +169,31 @@ class GlueApiExceptionSubscriberOnKernelResponseTest extends Unit
         $this->assertContains('sku => This value should not be blank.', $details);
     }
 
+    public function testGivenConcatenatedDotPathErrorDetailWhenOnKernelResponseThenSplitWithArrowFormat(): void
+    {
+        $resource = new class {
+            public mixed $billingAddress = null;
+
+            public mixed $shipment = null;
+        };
+
+        // Nested value objects validated via an `Assert\Valid` cascade produce dot-notation property
+        // paths (`billingAddress.salutation`), unlike the bracket notation of array Collections. The
+        // reformatter must still split + convert these to the `path => message` BC shape.
+        $request = $this->createRequest(get_class($resource), ['billingAddress' => [], 'shipment' => []]);
+        $response = $this->createUnprocessableResponse([
+            ['code' => '901', 'status' => Response::HTTP_UNPROCESSABLE_ENTITY, 'detail' => "billingAddress.salutation: This value should not be blank.\nshipment.idShipmentMethod: This field is missing."],
+        ]);
+
+        $event = $this->createResponseEvent($request, $response);
+        $this->createSubscriber()->onKernelResponse($event);
+
+        $details = $this->extractDetails($event);
+
+        $this->assertContains('billingAddress.salutation => This value should not be blank.', $details);
+        $this->assertContains('shipment.idShipmentMethod => This field is missing.', $details);
+    }
+
     public function testGivenFieldNotInRequestBodyWhenOnKernelResponseThenDetailBecomesFieldMissing(): void
     {
         $resource = new class {
@@ -239,9 +266,13 @@ class GlueApiExceptionSubscriberOnKernelResponseTest extends Unit
 
     protected function createSubscriber(): GlueApiExceptionSubscriber
     {
+        $constraintReader = new ValidationConstraintReader();
+
         return new GlueApiExceptionSubscriber(
             $this->createMock(TranslatorInterface::class),
             $this->createMock(ResourceMetadataCollectionFactoryInterface::class),
+            $constraintReader,
+            new NestedObjectValidationErrorAugmenter($constraintReader),
             true,
         );
     }

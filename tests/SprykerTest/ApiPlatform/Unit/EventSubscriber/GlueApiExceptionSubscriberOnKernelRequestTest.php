@@ -12,6 +12,8 @@ namespace SprykerTest\ApiPlatform\Unit\EventSubscriber;
 use ApiPlatform\Metadata\Resource\Factory\ResourceMetadataCollectionFactoryInterface;
 use Codeception\Test\Unit;
 use Spryker\ApiPlatform\EventSubscriber\GlueApiExceptionSubscriber;
+use Spryker\ApiPlatform\Validation\NestedObjectValidationErrorAugmenter;
+use Spryker\ApiPlatform\Validation\ValidationConstraintReader;
 use SprykerTest\ApiPlatform\ApiUnitTester;
 use Symfony\Component\HttpFoundation\Request;
 use Symfony\Component\HttpFoundation\Response;
@@ -119,9 +121,13 @@ class GlueApiExceptionSubscriberOnKernelRequestTest extends Unit
 
     protected function createSubscriber(): GlueApiExceptionSubscriber
     {
+        $constraintReader = new ValidationConstraintReader();
+
         return new GlueApiExceptionSubscriber(
             $this->createMock(TranslatorInterface::class),
             $this->createMock(ResourceMetadataCollectionFactoryInterface::class),
+            $constraintReader,
+            new NestedObjectValidationErrorAugmenter($constraintReader),
             true,
         );
     }

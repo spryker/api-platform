@@ -17,6 +17,8 @@ use Psr\Log\LogLevel;
 use Psr\Log\NullLogger;
 use RuntimeException;
 use Spryker\ApiPlatform\EventSubscriber\GlueApiExceptionSubscriber;
+use Spryker\ApiPlatform\Validation\NestedObjectValidationErrorAugmenter;
+use Spryker\ApiPlatform\Validation\ValidationConstraintReader;
 use SprykerTest\ApiPlatform\ApiUnitTester;
 use Symfony\Component\HttpFoundation\Request;
 use Symfony\Component\HttpFoundation\Response;
@@ -171,9 +173,13 @@ class GlueApiExceptionSubscriberThrowableTest extends Unit
 
     protected function createSubscriber(bool $debug = false, ?LoggerInterface $logger = null): GlueApiExceptionSubscriber
     {
+        $constraintReader = new ValidationConstraintReader();
+
         return new GlueApiExceptionSubscriber(
             $this->createMock(TranslatorInterface::class),
             $this->createMock(ResourceMetadataCollectionFactoryInterface::class),
+            $constraintReader,
+            new NestedObjectValidationErrorAugmenter($constraintReader),
             $debug,
             $logger ?? new NullLogger(),
         );

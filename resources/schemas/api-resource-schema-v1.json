@@ -73,6 +73,7 @@
                                         "boolean",
                                         "array",
                                         "object",
+                                        "map",
                                         "mixed",
                                         "int",
                                         "bool",
@@ -80,6 +81,27 @@
                                         "arr"
                                     ],
                                     "examples": ["string", "integer", "boolean"]
+                                },
+                                "items": {
+                                    "$ref": "#/$defs/nestedProperty",
+                                    "description": "Element definition for an object-collection property (`type: array` whose items are a typed object). Generates one value-object class per element, named after the pluralized field."
+                                },
+                                "objectName": {
+                                    "type": "string",
+                                    "description": "Join key for a project-defined canonical object. A `*.object.yml` defining this name supplies the property's inner shape; with no such file the property keeps its per-resource inline shape.",
+                                    "pattern": "^[A-Z][A-Za-z0-9]*$",
+                                    "examples": ["Totals", "Address", "Pagination"]
+                                },
+                                "properties": {
+                                    "type": "object",
+                                    "description": "Nested properties for an object-typed property, indexed by property name. Recurses to arbitrary depth.",
+                                    "minProperties": 0,
+                                    "patternProperties": {
+                                        "^[a-zA-Z_][a-zA-Z0-9_]*$": {
+                                            "$ref": "#/$defs/nestedProperty"
+                                        }
+                                    },
+                                    "additionalProperties": false
                                 },
                                 "description": {
                                     "type": "string",
@@ -178,6 +200,16 @@
                                         "/customers/{customerReference}/addresses",
                                         "_api_/customers/{customerReference}/addresses_get_collection"
                                     ]
+                                },
+                                "synthesizeMissingFieldsWhenEmpty": {
+                                    "type": "boolean",
+                                    "description": "When submitted as an empty object {}, synthesize per-field 'missing' validation errors (422) to enforce the required-object contract."
+                                },
+                                "replace": {
+                                    "type": "boolean",
+                                    "description": "When true, this declaration replaces any same-named property inherited from a lower layer or contributed by another module wholesale, instead of being merged. Use to deliberately re-shape a property (e.g. a typed object into a map) and to suppress the shape-conflict guard. Stripped from generated output.",
+                                    "default": false,
+                                    "examples": [true]
                                 }
                             },
                             "additionalProperties": false
@@ -315,6 +347,101 @@
         }
     },
     "additionalProperties": false,
+    "$defs": {
+        "nestedProperty": {
+            "type": "object",
+            "description": "Nested property definition for object-typed properties. Supports recursion via its own `properties` key.",
+            "required": ["type"],
+            "properties": {
+                "type": {
+                    "type": "string",
+                    "description": "The data type of the nested property",
+                    "enum": [
+                        "string",
+                        "integer",
+                        "boolean",
+                        "array",
+                        "object",
+                        "map",
+                        "mixed",
+                        "int",
+                        "bool",
+                        "str",
+                        "arr"
+                    ],
+                    "examples": ["string", "integer", "boolean"]
+                },
+                "items": {
+                    "$ref": "#/$defs/nestedProperty",
+                    "description": "Element definition for a nested object-collection property."
+                },
+                "objectName": {
+                    "type": "string",
+                    "description": "Join key for a project-defined canonical object. A `*.object.yml` defining this name supplies the property's inner shape; with no such file the property keeps its per-resource inline shape.",
+                    "pattern": "^[A-Z][A-Za-z0-9]*$",
+                    "examples": ["Totals", "Address", "Pagination"]
+                },
+                "properties": {
+                    "type": "object",
+                    "description": "Further nested properties, indexed by property name.",
+                    "minProperties": 0,
+                    "patternProperties": {
+                        "^[a-zA-Z_][a-zA-Z0-9_]*$": {
+                            "$ref": "#/$defs/nestedProperty"
+                        }
+                    },
+                    "additionalProperties": false
+                },
+                "description": {
+                    "type": "string",
+                    "description": "Human-readable description of the nested property"
+                },
+                "writable": {
+                    "type": "boolean",
+                    "description": "Whether the nested property can be written via API"
+                },
+                "readable": {
+                    "type": "boolean",
+                    "description": "Whether the nested property can be read via API"
+                },
+                "required": {
+                    "type": "boolean",
+                    "description": "Whether the nested property is required"
+                },
+                "default": {
+                    "description": "Default value for the nested property"
+                },
+                "nullable": {
+                    "type": "boolean",
+                    "description": "Whether the nested property is nullable"
+                },
+                "serializedName": {
+                    "type": "string",
+                    "description": "Override the serialized JSON key for this nested property"
+                },
+                "serializedPath": {
+                    "type": "string",
+                    "description": "Serialized path for this nested property"
+                },
+                "openapiContext": {
+                    "type": "object",
+                    "description": "Additional OpenAPI specification attributes for this nested property",
+                    "additionalProperties": true
+                },
+                "synthesizeMissingFieldsWhenEmpty": {
+                    "type": "boolean",
+                    "description": "When submitted as an empty object {}, synthesize per-field 'missing' validation errors (422) to enforce the required-object contract."
+                },
+                "replace": {
+                    "type": "boolean",
+                    "description": "When true, this declaration replaces any same-named nested property inherited from a lower layer or contributed by another module wholesale, instead of being merged. Suppresses the shape-conflict guard. Stripped from generated output.",
+                    "default": false,
+                    "examples": [true]
+                }
+            },
+            "additionalProperties": false
+        }
+    },
     "examples": [
         {
             "resource": {

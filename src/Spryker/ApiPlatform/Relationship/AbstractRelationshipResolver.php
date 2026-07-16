@@ -34,6 +34,9 @@ abstract class AbstractRelationshipResolver implements RelationshipResolverInter
 
     /**
      * {@inheritDoc}
+     *
+     * @param array<object> $parentResources
+     * @param array<string, mixed> $context
      */
     public function resolve(array $parentResources, array $context): array
     {

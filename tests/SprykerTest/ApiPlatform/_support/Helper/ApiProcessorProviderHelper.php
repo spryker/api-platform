@@ -115,6 +115,8 @@ class ApiProcessorProviderHelper extends Module
 
     /**
      * Denormalize data into a resource using PropertyNormalizer.
+     *
+     * @param array<string, mixed> $data
      */
     public function getResource(string $resourceClass, array $data = []): object
     {

@@ -17,6 +17,7 @@ class ApiPlatformConfig
      * @param array<string> $sourceDirectories
      * @param array<string> $apiTypes
      * @param array<string> $excludedPathFragments
+     * @param array<string, array<string>> $canonicalObjectSearchDirectories Map of apiType => list of absolute directories.
      */
     public function __construct(
         protected readonly array $sourceDirectories,
@@ -25,6 +26,7 @@ class ApiPlatformConfig
         protected readonly array $apiTypes,
         protected readonly bool $debug,
         protected readonly array $excludedPathFragments = [],
+        protected readonly array $canonicalObjectSearchDirectories = [],
     ) {
     }
 
@@ -71,6 +73,35 @@ class ApiPlatformConfig
     public function getExcludedPathFragments(): array
     {
         return $this->excludedPathFragments;
+    }
+
+    /**
+     * Additional ABSOLUTE directories to scan for canonical object files (`*.object.yml` /
+     * `*.object.validation.yml`) for the given API type, on top of the in-module
+     * `resources/api/<apiType>/objects/` locations.
+     *
+     * Files found here are always treated as the project layer (their path carries no `/Pyz/`
+     * segment that path-based layer detection would key on), so they participate in the standard
+     * project > feature > core merge precedence.
+     *
+     * The core default is an empty list — behavior is then byte-identical to scanning module
+     * locations only. A project enables a central location via the Symfony bundle config node
+     * `spryker_api_platform.canonical_object_search_directories`, keyed by API type:
+     *
+     *     spryker_api_platform:
+     *         canonical_object_search_directories:
+     *             storefront:
+     *                 - '%kernel.project_dir%/config/api/objects/storefront'
+     *
+     * @api
+     *
+     * @return array<string> List of absolute directory paths.
+     */
+    public function getCanonicalObjectSearchDirectories(string $apiType): array
+    {
+        $apiType = ApiTypeNormalizer::normalizeForSchemaLookup($apiType);
+
+        return $this->canonicalObjectSearchDirectories[$apiType] ?? [];
     }
 
     /**

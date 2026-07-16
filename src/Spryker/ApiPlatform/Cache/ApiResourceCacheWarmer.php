@@ -11,6 +11,7 @@ namespace Spryker\ApiPlatform\Cache;
 
 use Generated\Shared\Transfer\ApiPlatformResourceGenerationRequestTransfer;
 use Spryker\ApiPlatform\Configuration\ApiPlatformConfig;
+use Spryker\ApiPlatform\Exception\ApiSchemaGenerationException;
 use Spryker\ApiPlatform\Generator\ResourceGeneratorInterface;
 use Spryker\ApiPlatform\Utility\ApiTypeNormalizer;
 use Symfony\Component\Filesystem\Filesystem;
@@ -28,6 +29,8 @@ class ApiResourceCacheWarmer implements CacheWarmerInterface
     /**
      * Warms up the cache by generating API resources.
      *
+     * @throws \Spryker\ApiPlatform\Exception\ApiSchemaGenerationException
+     *
      * @return array<string>
      */
     public function warmUp(string $cacheDir): array
@@ -41,6 +44,12 @@ class ApiResourceCacheWarmer implements CacheWarmerInterface
             $request = (new ApiPlatformResourceGenerationRequestTransfer())->setApiType($apiType);
 
             foreach ($this->resourceGenerator->generateResources($request) as $result) {
+                if ($result['status'] === 'error') {
+                    throw new ApiSchemaGenerationException(
+                        sprintf('[%s] %s', $apiType, $result['message'] ?? 'Unknown generation error'),
+                    );
+                }
+
                 if (isset($result['file'])) {
                     $warmedFiles[] = $result['file'];
                 }

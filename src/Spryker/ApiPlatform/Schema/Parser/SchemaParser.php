@@ -456,9 +456,62 @@ class SchemaParser implements SchemaParserInterface
             if (isset($property['nullable'])) {
                 $normalized[$propertyName]['nullable'] = $property['nullable'];
             }
+
+            // Carry `objectName` through untouched. It marks a `type: object` property as the join key for a
+            // project-defined canonical object resolved by the CanonicalObjectRegistry pre-pass. Dormant when no
+            // matching *.object.yml exists.
+            if (isset($property['objectName']) && is_string($property['objectName'])) {
+                $normalized[$propertyName]['objectName'] = $property['objectName'];
+            }
+
+            if (isset($property['synthesizeMissingFieldsWhenEmpty'])) {
+                $normalized[$propertyName]['synthesizeMissingFieldsWhenEmpty'] = (bool)$property['synthesizeMissingFieldsWhenEmpty'];
+            }
+
+            // Recurse into nested object properties so sub-properties get the same normalization
+            // (e.g. `int` → `integer`) the generator relies on at every depth, not just the top level.
+            if (isset($property['properties']) && is_array($property['properties'])) {
+                $normalized[$propertyName]['properties'] = $this->normalizeProperties(
+                    ['properties' => $property['properties']],
+                    $filePath,
+                );
+            }
+
+            // A `type: array` whose `items` describe a typed object (an object collection) carries its
+            // own nested `properties`; normalize the item shape the same way so the generator can emit
+            // a value-object class per element at any depth.
+            if (isset($property['items']) && is_array($property['items'])) {
+                $normalized[$propertyName]['items'] = $this->normalizeItems($property['items'], $filePath);
+            }
         }
 
         return $normalized;
+    }
+
+    /**
+     * Normalizes the `items` descriptor of a `type: array` property: maps the item type and, for a
+     * typed object item, recursively normalizes its nested `properties`.
+     *
+     * @param array<string, mixed> $items
+     *
+     * @return array<string, mixed>
+     */
+    protected function normalizeItems(array $items, string $filePath): array
+    {
+        $normalizedItems = $items;
+
+        if (isset($items['type'])) {
+            $normalizedItems['type'] = $this->normalizePropertyType($items['type']);
+        }
+
+        if (isset($items['properties']) && is_array($items['properties'])) {
+            $normalizedItems['properties'] = $this->normalizeProperties(
+                ['properties' => $items['properties']],
+                $filePath,
+            );
+        }
+
+        return $normalizedItems;
     }
 
     protected function normalizePropertyType(mixed $type): string
@@ -543,6 +596,32 @@ class SchemaParser implements SchemaParserInterface
         }
 
         return $normalized;
+    }
+
+    /**
+     * Public seam for ObjectSchemaLoader: normalizes a raw properties map from a *.object.yml file
+     * using the same type-alias mapping applied to resource properties.
+     *
+     * @param array<string, mixed> $properties Raw properties from the YAML `object.properties` key
+     * @param string $filePath Source file path (used for validation error messages)
+     *
+     * @return array<string, array<string, mixed>>
+     */
+    public function normalizeObjectProperties(array $properties, string $filePath): array
+    {
+        return $this->normalizeProperties(['properties' => $properties], $filePath);
+    }
+
+    /**
+     * Public seam for ObjectSchemaLoader: detects the source layer from a file path.
+     *
+     * @param string $filePath Absolute path to the schema file
+     *
+     * @return string One of: `project`, `feature`, `core`
+     */
+    public function detectLayer(string $filePath): string
+    {
+        return $this->detectSourceLayer($filePath);
     }
 
     protected function detectSourceLayer(string $filePath): string

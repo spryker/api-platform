@@ -21,6 +21,8 @@ class ApiContext
      * Every context must have a request otherwise we throw an exception.
      *
      * In case you need to have a context without request you can pass `$seedData['request'] = null;`
+     *
+     * @param array<string, mixed> $seedData
      */
     public function getContext(array $seedData = []): self
     {

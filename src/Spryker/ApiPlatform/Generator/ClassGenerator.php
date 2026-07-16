@@ -9,6 +9,7 @@ declare(strict_types=1);
 
 namespace Spryker\ApiPlatform\Generator;
 
+use Spryker\ApiPlatform\Generator\Result\GeneratedResourceResult;
 use Spryker\ApiPlatform\Generator\Template\PhpTemplateRenderer;
 use Spryker\ApiPlatform\Schema\Validation\Mapper\ValidationGroupMapperInterface;
 use Spryker\ApiPlatform\Utility\ApiTypeNormalizer;
@@ -82,6 +83,45 @@ class ClassGenerator
      */
     protected array $fqcnConstraintMap = [];
 
+    /**
+     * Companion value-object classes generated for `type: object` properties (e.g. cart `totals`),
+     * keyed by class name. They carry no #[ApiResource] attribute and are written as sibling files
+     * next to the resource. Reset at the start of every {@see generateAll()} call.
+     *
+     * @var array<string, string>
+     */
+    protected array $nestedObjectClasses = [];
+
+    /**
+     * Set of canonical object class names (map value always true) for the current {@see generateAll()}
+     * call. A property carrying `objectName` is typed to its canonical class and skips per-resource
+     * companion generation, because the canonical class is generated once by the registry pre-pass.
+     *
+     * @var array<string, true>
+     */
+    protected array $knownCanonicalObjectNames = [];
+
+    /**
+     * Short class names of single-object nested properties directly on the resource (not
+     * collections). These helpers are relocated into a per-resource sub-namespace by Task 1, so the
+     * resource class must `use` them by FQCN. Collection-typed properties resolve to `array` on the
+     * resource and are never referenced by short name, so they are excluded. Reset at the start of
+     * every {@see generateAll()} call.
+     *
+     * @var array<string>
+     */
+    protected array $resourceReferencedHelperClassNames = [];
+
+    /**
+     * Short class names of canonical object classes referenced by properties on this resource.
+     * Canonical objects live at the shared `Generated\Api\{ApiType}\{Name}` namespace (no
+     * resource sub-segment), so they need their own import loop distinct from the per-resource
+     * helper loop. Reset at the start of every {@see generateAll()} call.
+     *
+     * @var array<string>
+     */
+    protected array $referencedCanonicalObjectNames = [];
+
     public function __construct(
         protected readonly PhpTemplateRenderer $templateRenderer,
         protected readonly ValidationGroupMapperInterface $validationGroupMapper,
@@ -92,11 +132,30 @@ class ClassGenerator
         protected readonly ResourceAttributeGenerator $resourceAttributeGenerator,
         protected readonly UseStatementCollector $useStatementCollector,
         protected readonly RelationshipPhpDocGenerator $relationshipPhpDocGenerator,
+        protected readonly NestedObjectClassGenerator $nestedObjectClassGenerator,
+        protected readonly NestedObjectValidationLifter $nestedObjectValidationLifter,
     ) {
     }
 
     /**
-     * Generates a PHP resource class from a schema.
+     * Generates a PHP resource class from a schema, returning only the main class code.
+     *
+     * Backwards-compatible thin wrapper around {@see generateAll()}.
+     *
+     * @param array<string, mixed> $schema The resource schema definition
+     * @param string $apiType The API type (normalized to ucfirst automatically)
+     * @param array<string, true> $knownCanonicalObjectNames Set of canonical object class names (the
+     *     map value is always true) produced by {@see \Spryker\ApiPlatform\Generator\CanonicalObjectRegistry}.
+     */
+    public function generate(array $schema, string $apiType, array $knownCanonicalObjectNames = []): string
+    {
+        return $this->generateAll($schema, $apiType, $knownCanonicalObjectNames)->getMainClassCode();
+    }
+
+    /**
+     * Generates a PHP resource class from a schema along with any companion value-object
+     * classes generated for typed nested object properties (a `type: object` property with
+     * its own `properties`).
      *
      * The API type is normalized to ucfirst format for proper namespace and class name
      * generation (e.g., 'Backoffice', 'Storefront').
@@ -107,10 +166,18 @@ class ClassGenerator
      *
      * @param array<string, mixed> $schema The resource schema definition
      * @param string $apiType The API type (normalized to ucfirst automatically)
+     * @param array<string, true> $knownCanonicalObjectNames Set of canonical object class names (the
+     *     map value is always true) produced by {@see \Spryker\ApiPlatform\Generator\CanonicalObjectRegistry}.
+     *     A property carrying `objectName` is typed to the canonical class and never emits a
+     *     per-resource companion class; the canonical class is generated once by the registry.
      */
-    public function generate(array $schema, string $apiType): string
+    public function generateAll(array $schema, string $apiType, array $knownCanonicalObjectNames = []): GeneratedResourceResult
     {
         $this->fqcnConstraintMap = [];
+        $this->nestedObjectClasses = [];
+        $this->resourceReferencedHelperClassNames = [];
+        $this->referencedCanonicalObjectNames = [];
+        $this->knownCanonicalObjectNames = $knownCanonicalObjectNames;
 
         $apiType = ApiTypeNormalizer::normalizeForGeneration($apiType);
 
@@ -118,6 +185,7 @@ class ClassGenerator
         $validationResourceName = $schema['shortName'] ?? $schema['name'];
         $codeBucket = $schema['codeBucket'] ?? null;
         $className = $this->generateClassName($resourceName, $apiType, $codeBucket);
+        $resourceClassBaseName = ResourceNameNormalizer::normalize((string)$resourceName) . ($codeBucket ?? '');
         $namespace = $this->generateNamespace($apiType);
 
         $this->fqcnConstraintMap = $this->fqcnConstraintResolver->collectFqcnConstraints(
@@ -128,6 +196,10 @@ class ClassGenerator
 
         $this->constraintFormatter->setFqcnConstraintMap($this->fqcnConstraintMap);
 
+        // Resolve source files before transforming properties: the companion classes generated
+        // for typed nested objects reuse them for their own generated-file provenance header.
+        $sourceFiles = $this->extractSourceFiles($schema);
+
         $properties = $this->transformProperties(
             $schema['properties'] ?? [],
             $schema['validation'] ?? [],
@@ -135,11 +207,24 @@ class ClassGenerator
             $validationResourceName,
             $schema['includes'] ?? [],
             $apiType,
+            $sourceFiles,
+            $resourceClassBaseName,
         );
         $uses = $this->useStatementCollector->collect($schema, $properties, $this->fqcnConstraintMap);
-        $resourceAttribute = $this->resourceAttributeGenerator->generate($schema, $uses);
 
-        $sourceFiles = $this->extractSourceFiles($schema);
+        // @phpstan-ignore foreach.emptyArray ($resourceReferencedHelperClassNames is populated by transformProperties() via side-effectful resolveNestedObjectType())
+        foreach ($this->resourceReferencedHelperClassNames as $helperShortName) {
+            $uses[] = sprintf('%s\\%s\\%s\\%s', static::GENERATED_NAMESPACE_PREFIX, $apiType, $resourceClassBaseName, $helperShortName);
+        }
+
+        // $referencedCanonicalObjectNames is populated by transformProperties() via side-effectful resolveNestedObjectType().
+        foreach (array_unique($this->referencedCanonicalObjectNames) as $canonicalShortName) {
+            $uses[] = sprintf('%s\\%s\\%s', static::GENERATED_NAMESPACE_PREFIX, $apiType, $canonicalShortName);
+        }
+
+        $uses = array_values(array_unique($uses));
+
+        $resourceAttribute = $this->resourceAttributeGenerator->generate($schema, $uses);
 
         $templateData = [
             'className' => $className,
@@ -155,7 +240,10 @@ class ClassGenerator
             ],
         ];
 
-        return $this->templateRenderer->render($templateData);
+        return new GeneratedResourceResult(
+            $this->templateRenderer->render($templateData),
+            $this->nestedObjectClasses,
+        );
     }
 
     /**
@@ -215,6 +303,7 @@ class ClassGenerator
      * @param array<string, mixed> $validationSchema
      * @param array<string, mixed> $operations
      * @param array<array{relationshipName: string, targetResource: string}> $includes
+     * @param array<string> $sourceFiles
      *
      * @return array<array{name: string, type: string, phpType: string, attributes: string, description: string, phpDoc: string}>
      */
@@ -225,12 +314,24 @@ class ClassGenerator
         string $resourceName,
         array $includes = [],
         string $apiType = '',
+        array $sourceFiles = [],
+        string $resourceClassBaseName = '',
     ): array {
         $transformed = [];
 
         foreach ($properties as $name => $property) {
             $type = $property['type'] ?? 'string';
-            $phpType = $this->mapToPhpType($type);
+            $phpType = $this->resolveNestedObjectOrScalarType(
+                (string)$name,
+                $property,
+                $resourceClassBaseName,
+                $resourceName,
+                $validationSchema,
+                $operations,
+                $apiType,
+                $sourceFiles,
+            );
+
             $attributes = $this->generatePropertyAttributes($property, $validationSchema, $operations, $name, $resourceName);
 
             $phpDoc = $this->relationshipPhpDocGenerator->generate(
@@ -256,6 +357,120 @@ class ClassGenerator
         }
 
         return $transformed;
+    }
+
+    /**
+     * Resolves the PHP type for a single property.
+     *
+     * A typed nested object (`type: object` carrying its own `properties`) or a collection of such
+     * objects (`type: array` whose `items` are a typed object) becomes a dedicated per-resource
+     * companion value-object class named `{ResourceName}{Field}{ApiType}Resource` (collections
+     * pluralize the field segment). This lifts the property's `Collection` field validation onto the
+     * companion, generates that class (and any descendants) as a side effect into
+     * {@see $nestedObjectClasses}, and returns its class name (or `array` for a collection). Every
+     * other property maps straight to its scalar/array PHP type. Kept as guarded early returns so the
+     * caller loop stays free of nested branching.
+     *
+     * @param array<string, mixed> $property
+     * @param array<string, mixed> $validationSchema
+     * @param array<string, mixed> $operations
+     * @param array<string> $sourceFiles
+     */
+    protected function resolveNestedObjectOrScalarType(
+        string $name,
+        array $property,
+        string $resourceClassBaseName,
+        string $resourceName,
+        array $validationSchema,
+        array $operations,
+        string $apiType,
+        array $sourceFiles
+    ): string {
+        // Shared canonical object: type to the canonical class without emitting a companion class.
+        // The registry generates the canonical class from its `*.object.yml` definition; here we only
+        // consume the resolved class name. A property carrying a known `objectName` is a reference
+        // site (with or without inline `properties`) and types to that shared class.
+        $objectName = $property['objectName'] ?? null;
+        if (is_string($objectName) && isset($this->knownCanonicalObjectNames[$objectName])) {
+            $this->referencedCanonicalObjectNames[] = $objectName;
+
+            return $objectName;
+        }
+
+        if (!$this->isGeneratedNestedObjectProperty($property)) {
+            return $this->mapToPhpType($property['type'] ?? 'string');
+        }
+
+        $isCollection = ($property['type'] ?? null) === 'array';
+        $nestedProperties = $isCollection ? $property['items']['properties'] : $property['properties'];
+
+        // Lift the parent property's Collection field validation onto the value object's fields, so
+        // a denormalized object is validated field-by-field (the parent only cascades via Assert\Valid).
+        $nestedProperties = $this->nestedObjectValidationLifter->lift(
+            $nestedProperties,
+            $validationSchema,
+            $operations,
+            $name,
+            $resourceName,
+        );
+
+        $childBaseName = $this->nestedObjectClassGenerator->childBaseName($resourceClassBaseName, $name, $property);
+
+        // Union (+=), not array_merge: companion classes are keyed by class name, so the nested
+        // object and every descendant it emits are de-duplicated instead of appended twice.
+        $this->nestedObjectClasses += $this->nestedObjectClassGenerator->generate(
+            $childBaseName,
+            $nestedProperties,
+            $apiType,
+            $sourceFiles,
+            (bool)($property['synthesizeMissingFieldsWhenEmpty'] ?? false),
+            $resourceClassBaseName,
+        );
+
+        if ($isCollection) {
+            return 'array';
+        }
+
+        $helperShortName = $this->nestedObjectClassGenerator->buildClassName($childBaseName, $apiType);
+        $this->resourceReferencedHelperClassNames[] = $helperShortName;
+
+        return $helperShortName;
+    }
+
+    /**
+     * A property that generates a per-resource companion value-object class: a `type: object` with
+     * its own `properties`, or a `type: array` whose `items` are such an object.
+     *
+     * @param array<string, mixed> $property
+     */
+    protected function isGeneratedNestedObjectProperty(array $property): bool
+    {
+        $type = $property['type'] ?? null;
+
+        if ($type === 'object') {
+            return isset($property['properties']) && is_array($property['properties']);
+        }
+
+        if ($type === 'array' && isset($property['items']) && is_array($property['items']) && ($property['items']['type'] ?? null) === 'object') {
+            return isset($property['items']['properties']) && is_array($property['items']['properties']);
+        }
+
+        return false;
+    }
+
+    /**
+     * A property is a known canonical reference site when it carries a non-empty `objectName` that the
+     * registry pre-pass resolved into the known-canonical set. Unlike {@see isGeneratedNestedObjectProperty()}
+     * this does NOT require inline `properties`: a reference-only site (`objectName`, no `properties`) is
+     * typed to the shared canonical class and its Collection validation cascades via Assert\Valid.
+     *
+     * @param array<string, mixed> $property
+     */
+    protected function isKnownCanonicalProperty(array $property): bool
+    {
+        $objectName = $property['objectName'] ?? null;
+
+        return is_string($objectName) && isset($this->knownCanonicalObjectNames[$objectName]);
     }
 
     protected function mapToPhpType(string $type): string
@@ -295,11 +510,68 @@ class ClassGenerator
 
         $validationAttributes = $this->validationAttributeGenerator->generate($validationSchema, $operations, $propertyName, $resourceName);
 
+        // A property that denormalizes into an object — a generated nested-object companion, or a known
+        // canonical reference site typed to the shared class — would be rejected by its array-shaped
+        // `Collection` constraint. The field-level validation lives on the (companion/canonical) class;
+        // the parent property only cascades via Assert\Valid.
+        $denormalizesToObject = $this->isGeneratedNestedObjectProperty($property) || $this->isKnownCanonicalProperty($property);
+        if ($validationAttributes !== [] && $denormalizesToObject && $this->containsCollectionConstraint($validationAttributes)) {
+            $validationAttributes = $this->buildValidCascadeAttribute($validationSchema, $operations, $propertyName, $resourceName);
+        }
+
         if ($validationAttributes !== []) {
             $attributes = array_merge($attributes, $validationAttributes);
         }
 
         return implode("\n    ", $attributes);
+    }
+
+    /**
+     * @param array<string> $validationAttributes
+     */
+    protected function containsCollectionConstraint(array $validationAttributes): bool
+    {
+        foreach ($validationAttributes as $attribute) {
+            if (str_contains($attribute, 'Assert\\Collection(')) {
+                return true;
+            }
+        }
+
+        return false;
+    }
+
+    /**
+     * Builds the `#[Assert\Valid(groups: [...])]` cascade for a canonical object property, scoped to
+     * the same operation groups the replaced Collection constraint carried, so the value object's
+     * field validation runs under the active operation group.
+     *
+     * @param array<string, mixed> $validationSchema
+     * @param array<string, mixed> $operations
+     *
+     * @return array<string>
+     */
+    protected function buildValidCascadeAttribute(array $validationSchema, array $operations, string $propertyName, string $resourceName): array
+    {
+        $groups = [];
+
+        foreach ($operations as $operationType => $operation) {
+            $httpMethod = strtolower($operation['type'] ?? $operationType);
+
+            if (!isset($validationSchema[$httpMethod][$propertyName])) {
+                continue;
+            }
+
+            $groups[] = $this->validationGroupMapper->mapOperationToGroup($operation['type'] ?? $operationType, $resourceName);
+        }
+
+        $groups = array_values(array_unique($groups));
+        sort($groups);
+
+        if ($groups === []) {
+            return ['#[Assert\\Valid]'];
+        }
+
+        return [sprintf("#[Assert\\Valid(groups: ['%s'])]", implode("', '", $groups))];
     }
 
     /**

@@ -22,6 +22,7 @@
         "api-platform/validator": "^4.3.0",
         "friendsofcxml/cxml-php": "^2.0.0",
         "php": ">=8.3",
+        "spryker/doctrine-inflector": "^1.0.0 || ^2.0.0",
         "spryker/entity-tag": "^1.0.0",
         "spryker/glossary-storage": "^1.0.0",
         "spryker/kernel": "^3.48.0",
@@ -65,7 +66,7 @@
     },
     "extra": {
         "branch-alias": {
-            "dev-master": "1.0.x-dev"
+            "dev-master": "1.23.x-dev"
         }
     },
     "config": {
@@ -73,6 +74,9 @@
         "allow-plugins": {
             "dealerdirect/phpcodesniffer-composer-installer": true
         }
+    },
+    "conflict": {
+        "spryker/serializer": "<1.1.0"
     },
     "keywords": [
         "spryker",
