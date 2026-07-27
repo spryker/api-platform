@@ -234,7 +234,9 @@ class FqcnConstraintResolver
     protected function resolveVendorAliases(array $vendorFqcns, string $vendor, string $shortName, array &$fqcnConstraints): void
     {
         if (count($vendorFqcns) === 1) {
-            $fqcnConstraints[$vendorFqcns[0]]['alias'] = sprintf('%s%s', $vendor, $shortName);
+            if (isset($fqcnConstraints[$vendorFqcns[0]])) {
+                $fqcnConstraints[$vendorFqcns[0]]['alias'] = sprintf('%s%s', $vendor, $shortName);
+            }
 
             return;
         }

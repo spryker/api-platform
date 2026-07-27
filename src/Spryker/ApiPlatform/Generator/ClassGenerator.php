@@ -305,7 +305,7 @@ class ClassGenerator
      * @param array<array{relationshipName: string, targetResource: string}> $includes
      * @param array<string> $sourceFiles
      *
-     * @return array<array{name: string, type: string, phpType: string, attributes: string, description: string, phpDoc: string}>
+     * @return array<array{name: string, type: string, phpType: string, attributes: string, description: string, phpDoc: string, default: mixed, hasDefault: bool, serializedName: string|null, serializedPath: string|null, nullable: bool}>
      */
     protected function transformProperties(
         array $properties,
@@ -320,7 +320,7 @@ class ClassGenerator
         $transformed = [];
 
         foreach ($properties as $name => $property) {
-            $type = $property['type'] ?? 'string';
+            $type = (string)($property['type'] ?? 'string');
             $phpType = $this->resolveNestedObjectOrScalarType(
                 (string)$name,
                 $property,
@@ -346,12 +346,12 @@ class ClassGenerator
                 'type' => $type,
                 'phpType' => $phpType,
                 'attributes' => $attributes,
-                'description' => $property['description'] ?? '',
+                'description' => (string)($property['description'] ?? ''),
                 'phpDoc' => $phpDoc,
                 'default' => $property['default'] ?? null,
                 'hasDefault' => array_key_exists('default', $property),
-                'serializedName' => $property['serializedName'] ?? null,
-                'serializedPath' => $property['serializedPath'] ?? null,
+                'serializedName' => isset($property['serializedName']) ? (string)$property['serializedName'] : null,
+                'serializedPath' => isset($property['serializedPath']) ? (string)$property['serializedPath'] : null,
                 'nullable' => !empty($property['nullable']),
             ];
         }
@@ -888,7 +888,9 @@ class ClassGenerator
     protected function resolveVendorAliases(array $vendorFqcns, string $vendor, string $shortName, array &$fqcnConstraints): void
     {
         if (count($vendorFqcns) === 1) {
-            $fqcnConstraints[$vendorFqcns[0]]['alias'] = sprintf('%s%s', $vendor, $shortName);
+            if (isset($fqcnConstraints[$vendorFqcns[0]])) {
+                $fqcnConstraints[$vendorFqcns[0]]['alias'] = sprintf('%s%s', $vendor, $shortName);
+            }
 
             return;
         }
