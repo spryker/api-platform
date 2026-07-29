@@ -43,6 +43,7 @@
         "spryker/code-sniffer": "*",
         "spryker/console": "*",
         "spryker/container": "*",
+        "spryker/decimal-object": "*",
         "spryker/symfony": "*",
         "spryker/testify": "*",
         "symfony/framework-bundle": "*"
@@ -76,7 +77,7 @@
         }
     },
     "conflict": {
-        "spryker/serializer": "<1.1.0"
+        "spryker/serializer": "<1.1.1"
     },
     "keywords": [
         "spryker",
