@@ -7,57 +7,29 @@
 
 declare(strict_types=1);
 
-namespace Spryker\ApiPlatform\EventSubscriber;
-
-use Symfony\Component\EventDispatcher\EventSubscriberInterface;
-use Symfony\Component\HttpKernel\Event\ResponseEvent;
-use Symfony\Component\HttpKernel\KernelEvents;
+namespace Spryker\ApiPlatform\ResponseTransform;
 
 /**
  * Normalizes relationship keys from camelCase to kebab-case and converts
  * IRI-based IDs to entity identifiers in relationships and included resources.
  */
-class JsonApiRelationshipNormalizerSubscriber implements EventSubscriberInterface
+class JsonApiRelationshipNormalizerTransform
 {
     protected const string CONTENT_TYPE_JSON_API = 'application/vnd.api+json';
 
     /**
-     * @return array<string, array{string, int}>
+     * Applies the relationship-key/IRI normalization to an already-decoded JSON:API document.
+     *
+     * @param array<string, mixed> $data
+     *
+     * @return bool Whether the document was modified.
      */
-    public static function getSubscribedEvents(): array
+    public function applyTo(array &$data): bool
     {
-        return [
-            KernelEvents::RESPONSE => ['onKernelResponse', -257],
-        ];
-    }
-
-    public function onKernelResponse(ResponseEvent $event): void
-    {
-        $response = $event->getResponse();
-        $contentType = $response->headers->get('Content-Type') ?? '';
-
-        if (!str_starts_with($contentType, static::CONTENT_TYPE_JSON_API)) {
-            return;
-        }
-
-        $content = $response->getContent();
-
-        if ($content === false) {
-            return;
-        }
-
-        $data = json_decode($content, true);
-
-        if (!is_array($data)) {
-            return;
-        }
-
         $modified = $this->normalizeDataRelationships($data);
         $modified = $this->normalizeIncludedResources($data) || $modified;
 
-        if ($modified) {
-            $response->setContent((string)json_encode($data, JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE));
-        }
+        return $modified;
     }
 
     /**

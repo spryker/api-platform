@@ -7,12 +7,9 @@
 
 declare(strict_types=1);
 
-namespace Spryker\ApiPlatform\EventSubscriber;
+namespace Spryker\ApiPlatform\ResponseTransform;
 
-use Symfony\Component\EventDispatcher\EventSubscriberInterface;
 use Symfony\Component\HttpFoundation\Request;
-use Symfony\Component\HttpKernel\Event\ResponseEvent;
-use Symfony\Component\HttpKernel\KernelEvents;
 
 /**
  * Adds JSON:API pagination links (first, last, prev, next) to responses
@@ -21,7 +18,7 @@ use Symfony\Component\HttpKernel\KernelEvents;
  * This supports resources like catalog-search that handle pagination internally
  * via the search client rather than through API Platform's built-in pagination.
  */
-class PaginationLinksResponseSubscriber implements EventSubscriberInterface
+class PaginationLinksTransform
 {
     protected const string CONTENT_TYPE_JSON_API = 'application/vnd.api+json';
 
@@ -38,64 +35,32 @@ class PaginationLinksResponseSubscriber implements EventSubscriberInterface
     protected const string ATTRIBUTE_PAGINATION = 'pagination';
 
     /**
-     * @return array<string, array{string, int}>
+     * Adds pagination links to an already-decoded JSON:API document, if it carries pagination
+     * metadata on the first resource.
+     *
+     * @param array<string, mixed> $data
+     *
+     * @return bool Whether the document was modified.
      */
-    public static function getSubscribedEvents(): array
+    public function applyTo(array &$data, Request $request): bool
     {
-        return [
-            // Run after JsonApiResolvedRelationshipSubscriber (-258) to operate on already-fixed content
-            KernelEvents::RESPONSE => ['onKernelResponse', -259],
-        ];
-    }
-
-    public function onKernelResponse(ResponseEvent $event): void
-    {
-        $response = $event->getResponse();
-        $contentType = $response->headers->get('Content-Type') ?? '';
-
-        if (!str_starts_with($contentType, static::CONTENT_TYPE_JSON_API)) {
-            return;
-        }
-
-        $content = $response->getContent();
-
-        if ($content === false) {
-            return;
-        }
-
-        $data = json_decode($content, true);
-
-        if (!is_array($data)) {
-            return;
-        }
-
-        // `pagination` is internal plumbing populated only on the first item of a paginated
-        // collection (and consumed below to emit top-level links). On every other resource
-        // (item endpoints, relationship includes, non-first collection items) it serializes as
-        // a null attribute because of the global `skip_null_values => false`. Strip those null
-        // leaks so they never reach clients; a populated `pagination` (e.g. catalog-search) is
-        // left untouched.
         $modified = $this->stripNullPaginationAttribute($data);
 
         $pagination = $data['data'][0]['attributes']['pagination'] ?? null;
-        $currentPage = is_array($pagination) ? (int)($pagination['currentPage'] ?? 0) : 0;
-        $maxPage = is_array($pagination) ? (int)($pagination['maxPage'] ?? 0) : 0;
 
-        // No pagination links to add when there is no usable pagination metadata, or when there is no
-        // result page at all (maxPage < 1). Still persist any null-pagination strip already made so a
-        // stripped `pagination: null` never leaks back to the client on a zero-page collection.
-        // For a single-page result (maxPage == 1) JSON:API still requires `first` and `last` links
-        // (they coincide with `self`); legacy Glue emitted them and Robot tests assert their presence
-        // on 1-result responses, so those fall through to the link-building below.
-        if (!is_array($pagination) || !isset($pagination['currentPage'], $pagination['maxPage']) || $maxPage < 1) {
-            if ($modified) {
-                $response->setContent((string)json_encode($data, JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE));
-            }
-
-            return;
+        if (!is_array($pagination) || !isset($pagination['currentPage'], $pagination['maxPage'])) {
+            return $modified;
         }
 
-        $request = $event->getRequest();
+        $currentPage = (int)$pagination['currentPage'];
+        $maxPage = (int)$pagination['maxPage'];
+
+        // Skip only when there is no result page at all. For a single-page result (maxPage == 1)
+        // JSON:API still requires `first` and `last` links (they coincide with `self`).
+        if ($maxPage < 1) {
+            return $modified;
+        }
+
         $itemsPerPage = $this->resolveItemsPerPage($request, $pagination);
 
         $data['links']['first'] = $this->buildPaginationLink($request, 0, $itemsPerPage);
@@ -109,7 +74,7 @@ class PaginationLinksResponseSubscriber implements EventSubscriberInterface
             $data['links']['next'] = $this->buildPaginationLink($request, $currentPage * $itemsPerPage, $itemsPerPage);
         }
 
-        $response->setContent((string)json_encode($data, JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE));
+        return true;
     }
 
     /**
@@ -118,7 +83,7 @@ class PaginationLinksResponseSubscriber implements EventSubscriberInterface
      * populated `pagination` (real collection metadata) is left untouched. Returns whether any
      * key was removed.
      *
-     * @param array<mixed> $data
+     * @param array<string, mixed> $data
      */
     protected function stripNullPaginationAttribute(array &$data): bool
     {

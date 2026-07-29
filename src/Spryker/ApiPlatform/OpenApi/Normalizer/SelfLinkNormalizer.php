@@ -21,6 +21,46 @@ class SelfLinkNormalizer implements NormalizerInterface, NormalizerAwareInterfac
 {
     use NormalizerAwareTrait;
 
+    protected const int URI_PARTS_CACHE_MAX_ENTRIES = 32;
+
+    /**
+     * Memo of parsed request-URI components, keyed by the URI string. The context 'uri' is constant
+     * for a whole normalize() pass, yet toAbsoluteUrl()/extractQueryStringFromContext()/
+     * isDirectResourceRequest() re-parse it once per resource, included item and link — dozens of
+     * identical parse_url() calls on a collection. Parsing once per distinct URI and reusing the parts
+     * yields byte-identical output while removing that per-resource work. Bounded to avoid growth.
+     *
+     * @var array<string, array{base: string|null, path: string|null, query: string|null}>
+     */
+    protected array $uriPartsCache = [];
+
+    /**
+     * @return array{base: string|null, path: string|null, query: string|null}
+     */
+    protected function getUriParts(string $uri): array
+    {
+        if (isset($this->uriPartsCache[$uri])) {
+            return $this->uriPartsCache[$uri];
+        }
+
+        $parts = parse_url($uri) ?: [];
+        $scheme = $parts['scheme'] ?? null;
+        $host = $parts['host'] ?? null;
+        $base = ($scheme && $host)
+            ? $scheme . '://' . $host . (isset($parts['port']) ? ':' . $parts['port'] : '')
+            : null;
+
+        if (count($this->uriPartsCache) > static::URI_PARTS_CACHE_MAX_ENTRIES) {
+            $this->uriPartsCache = [];
+        }
+
+        return $this->uriPartsCache[$uri] = [
+            'base' => $base,
+            'path' => $parts['path'] ?? null,
+            'query' => $parts['query'] ?? null,
+        ];
+    }
+
     /**
      * @param array<string, mixed> $context
      *
@@ -199,9 +239,7 @@ class SelfLinkNormalizer implements NormalizerInterface, NormalizerAwareInterfac
             return null;
         }
 
-        $queryString = parse_url((string)$uri, PHP_URL_QUERY);
-
-        return ($queryString !== null && $queryString !== false) ? $queryString : null;
+        return $this->getUriParts((string)$uri)['query'];
     }
 
     /**
@@ -221,9 +259,9 @@ class SelfLinkNormalizer implements NormalizerInterface, NormalizerAwareInterfac
         }
 
         $selfLinkPath = parse_url($selfLink, PHP_URL_PATH);
-        $requestPath = parse_url((string)$uri, PHP_URL_PATH);
+        $requestPath = $this->getUriParts((string)$uri)['path'];
 
-        return $selfLinkPath !== false && $requestPath !== false && $selfLinkPath === $requestPath;
+        return $selfLinkPath !== false && $selfLinkPath === $requestPath;
     }
 
     /**
@@ -309,15 +347,11 @@ class SelfLinkNormalizer implements NormalizerInterface, NormalizerAwareInterfac
             return $path;
         }
 
-        $scheme = parse_url((string)$requestUri, PHP_URL_SCHEME);
-        $host = parse_url((string)$requestUri, PHP_URL_HOST);
+        $base = $this->getUriParts((string)$requestUri)['base'];
 
-        if (!$scheme || !$host) {
+        if ($base === null) {
             return $path;
         }
-
-        $port = parse_url((string)$requestUri, PHP_URL_PORT);
-        $base = $scheme . '://' . $host . ($port !== null ? ':' . $port : '');
 
         return $base . $path;
     }

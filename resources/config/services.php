@@ -23,11 +23,9 @@ use Spryker\ApiPlatform\EventSubscriber\ContentTypeHeaderFallbackSubscriber;
 use Spryker\ApiPlatform\EventSubscriber\ETagResponseSubscriber;
 use Spryker\ApiPlatform\EventSubscriber\GlueApiExceptionSubscriber;
 use Spryker\ApiPlatform\EventSubscriber\JsonApiContentTypeCleanupSubscriber;
-use Spryker\ApiPlatform\EventSubscriber\JsonApiRelationshipNormalizerSubscriber;
 use Spryker\ApiPlatform\EventSubscriber\JsonApiRequestValidatorSubscriber;
-use Spryker\ApiPlatform\EventSubscriber\JsonApiResolvedRelationshipSubscriber;
+use Spryker\ApiPlatform\EventSubscriber\JsonApiResponseBodySubscriber;
 use Spryker\ApiPlatform\EventSubscriber\OAuthExceptionSubscriber;
-use Spryker\ApiPlatform\EventSubscriber\PaginationLinksResponseSubscriber;
 use Spryker\ApiPlatform\EventSubscriber\PathNormalizationRequestSubscriber;
 use Spryker\ApiPlatform\Generator\CanonicalObjectRegistry;
 use Spryker\ApiPlatform\Generator\ClassGenerator;
@@ -56,6 +54,9 @@ use Spryker\ApiPlatform\Processor\RelationshipProcessor;
 use Spryker\ApiPlatform\Provider\RelationshipProvider;
 use Spryker\ApiPlatform\Relationship\ApiPlatformRelationshipResolver;
 use Spryker\ApiPlatform\Relationship\ApiPlatformRelationshipResolverInterface;
+use Spryker\ApiPlatform\ResponseTransform\JsonApiRelationshipNormalizerTransform;
+use Spryker\ApiPlatform\ResponseTransform\JsonApiResolvedRelationshipTransform;
+use Spryker\ApiPlatform\ResponseTransform\PaginationLinksTransform;
 use Spryker\ApiPlatform\Schema\Finder\SchemaFinder;
 use Spryker\ApiPlatform\Schema\Finder\SchemaFinderInterface;
 use Spryker\ApiPlatform\Schema\Loader\YamlSchemaLoader;
@@ -346,14 +347,19 @@ return static function (ContainerConfigurator $container): void {
     $services->set(JsonApiContentTypeCleanupSubscriber::class);
 
     // Normalize relationship keys (camelCase to kebab-case) and IRI IDs to entity IDs
-    $services->set(JsonApiRelationshipNormalizerSubscriber::class);
+    $services->set(JsonApiRelationshipNormalizerTransform::class);
 
     // Inject resolver-based relationship data into JSON:API responses
-    $services->set(JsonApiResolvedRelationshipSubscriber::class)
+    $services->set(JsonApiResolvedRelationshipTransform::class)
         ->arg('$normalizer', service('serializer'));
 
     // Add pagination links (first, last, prev, next) for resources with internal pagination
-    $services->set(PaginationLinksResponseSubscriber::class);
+    $services->set(PaginationLinksTransform::class);
+
+    // Single-pass orchestrator: decodes the JSON:API body once, applies the three transforms above
+    // in their original priority order (-257 -> -258 -> -259), and encodes once. Replaces the three
+    // separate RESPONSE subscribers that each decoded and re-encoded the whole body.
+    $services->set(JsonApiResponseBodySubscriber::class);
 
     // Locale resolution from Accept-Language header
     $services->set(AcceptLanguageLocaleSubscriber::class);

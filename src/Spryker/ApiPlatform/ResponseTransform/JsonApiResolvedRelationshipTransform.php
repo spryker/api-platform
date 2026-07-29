@@ -7,7 +7,7 @@
 
 declare(strict_types=1);
 
-namespace Spryker\ApiPlatform\EventSubscriber;
+namespace Spryker\ApiPlatform\ResponseTransform;
 
 use ApiPlatform\Metadata\ApiProperty;
 use ApiPlatform\Metadata\ApiResource;
@@ -15,24 +15,20 @@ use ApiPlatform\Metadata\CollectionOperationInterface;
 use ApiPlatform\Metadata\Get;
 use ReflectionClass;
 use ReflectionProperty;
-use Symfony\Component\EventDispatcher\EventSubscriberInterface;
 use Symfony\Component\HttpFoundation\Request;
-use Symfony\Component\HttpKernel\Event\ResponseEvent;
-use Symfony\Component\HttpKernel\KernelEvents;
 use Symfony\Component\Serializer\Attribute\SerializedName;
 use Symfony\Component\Serializer\Normalizer\NormalizerInterface;
 use Throwable;
+use WeakMap;
 
 /**
  * Injects resolver-based relationship data into the JSON:API response document.
  * URI-template-based relationships are handled natively by API Platform via
  * property population in RelationshipProvider.
  */
-class JsonApiResolvedRelationshipSubscriber implements EventSubscriberInterface
+class JsonApiResolvedRelationshipTransform
 {
-    protected const string CONTENT_TYPE_JSON_API = 'application/vnd.api+json';
-
-    protected const string REQUEST_ATTRIBUTE_RESOLVED_RELATIONSHIPS = '_spryker_resolved_relationships';
+    public const string REQUEST_ATTRIBUTE_RESOLVED_RELATIONSHIPS = '_spryker_resolved_relationships';
 
     /**
      * @var array<string, class-string>|null
@@ -44,48 +40,97 @@ class JsonApiResolvedRelationshipSubscriber implements EventSubscriberInterface
      */
     protected ?array $includedSortPriorityIndex = null;
 
+    /**
+     * Per-class reflection metadata cache (perf). Reflection results are static per class,
+     * so memoizing them avoids re-reflecting the same class for every resource instance in a
+     * response. Values are identical to on-demand reflection, so response output is unchanged.
+     *
+     * @var array<class-string, array{apiResource: \ApiPlatform\Metadata\ApiResource|null, shortName: string|null, props: array<string, array{apiProperty: \ApiPlatform\Metadata\ApiProperty|null, serializedName: string|null}>}>
+     */
+    protected array $classMetaCache = [];
+
+    /**
+     * Memo of normalizeRelatedResource() results, keyed by the resource object itself.
+     *
+     * normalizeRelatedResource() runs the full API Platform serializer on a related resource, and the
+     * same object is normalized more than once per request: once for its included[] entry, again in
+     * buildRefsForParent() only to read type/id for a relationship ref, and once per reference when a
+     * resource is shared across parents. The result is a pure function of the (within-request immutable)
+     * object, so memoizing per object collapses those redundant serializer passes while returning
+     * an identical structure. Callers receive copy-on-write array values, so their mutations cannot
+     * leak back into the cache.
+     *
+     * A WeakMap keys entries by the live object: an entry disappears together with its object, so a
+     * recycled object id can never be served another object's payload, and the cache cannot grow
+     * stale or unbounded when the service outlives a request (worker runtimes, container reuse).
+     *
+     * @var \WeakMap<object, array<string, mixed>|null>
+     */
+    protected WeakMap $normalizedRelatedResourceCache;
+
     public function __construct(protected NormalizerInterface $normalizer)
     {
+        $this->normalizedRelatedResourceCache = new WeakMap();
     }
 
     /**
-     * @return array<string, array{string, int}>
+     * Returns memoized reflection metadata for a resource class: its #[ApiResource] instance,
+     * short name, and per public property its #[ApiProperty] instance and #[SerializedName].
+     * Property order matches ReflectionClass::getProperties(IS_PUBLIC) (declaration order).
+     *
+     * @param class-string $className
+     *
+     * @return array{apiResource: \ApiPlatform\Metadata\ApiResource|null, shortName: string|null, props: array<string, array{apiProperty: \ApiPlatform\Metadata\ApiProperty|null, serializedName: string|null}>}
      */
-    public static function getSubscribedEvents(): array
+    protected function getClassMeta(string $className): array
     {
-        return [
-            KernelEvents::RESPONSE => ['onKernelResponse', -258],
+        if (isset($this->classMetaCache[$className])) {
+            return $this->classMetaCache[$className];
+        }
+
+        $reflection = new ReflectionClass($className);
+        $apiResourceAttrs = $reflection->getAttributes(ApiResource::class);
+        $apiResource = $apiResourceAttrs === [] ? null : $apiResourceAttrs[0]->newInstance();
+
+        $props = [];
+
+        foreach ($reflection->getProperties(ReflectionProperty::IS_PUBLIC) as $property) {
+            // Static properties are not resource state; consumers read props via `$resource->{$name}`.
+            if ($property->isStatic()) {
+                continue;
+            }
+
+            $apiPropertyAttr = $property->getAttributes(ApiProperty::class)[0] ?? null;
+            $serializedNameAttr = $property->getAttributes(SerializedName::class)[0] ?? null;
+            $props[$property->getName()] = [
+                'apiProperty' => $apiPropertyAttr?->newInstance(),
+                'serializedName' => $serializedNameAttr?->newInstance()->getSerializedName(),
+            ];
+        }
+
+        $this->classMetaCache[$className] = [
+            'apiResource' => $apiResource,
+            'shortName' => $apiResource?->getShortName(),
+            'props' => $props,
         ];
+
+        return $this->classMetaCache[$className];
     }
 
-    public function onKernelResponse(ResponseEvent $event): void
+    /**
+     * Injects resolver-based relationships into an already-decoded JSON:API document.
+     *
+     * @param array<string, mixed> $data
+     *
+     * @return bool Whether the document was modified.
+     */
+    public function applyTo(array &$data, Request $request): bool
     {
-        $response = $event->getResponse();
-        $contentType = $response->headers->get('Content-Type') ?? '';
-
-        if (!str_starts_with($contentType, static::CONTENT_TYPE_JSON_API)) {
-            return;
-        }
-
-        $content = $response->getContent();
-
-        if ($content === false) {
-            return;
-        }
-
-        $data = json_decode($content, true);
-
-        if (!is_array($data)) {
-            return;
-        }
-
-        $modified = $this->injectResolvedRelationships($event->getRequest(), $data);
+        $modified = $this->injectResolvedRelationships($request, $data);
         $modified = $this->stripNonReadableFromIncluded($data) || $modified;
         $modified = $this->normalizeIncludedApiPlatformRelationships($data) || $modified;
 
-        if ($modified) {
-            $response->setContent((string)json_encode($data, JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE));
-        }
+        return $modified;
     }
 
     /**
@@ -272,9 +317,23 @@ class JsonApiResolvedRelationshipSubscriber implements EventSubscriberInterface
      */
     protected function normalizeRelatedResource(object $resource): ?array
     {
+        // offsetExists() instead of `??=` so that null results (failed normalization) are memoized too,
+        // matching the previous array_key_exists() semantics.
+        if ($this->normalizedRelatedResourceCache->offsetExists($resource)) {
+            return $this->normalizedRelatedResourceCache[$resource];
+        }
+
+        return $this->normalizedRelatedResourceCache[$resource] = $this->doNormalizeRelatedResource($resource);
+    }
+
+    /**
+     * @return array<string, mixed>|null
+     */
+    protected function doNormalizeRelatedResource(object $resource): ?array
+    {
         try {
             $normalized = $this->normalizer->normalize($resource, 'jsonapi', [
-                'resource_class' => get_class($resource),
+                'resource_class' => $resource::class,
             ]);
 
             if (is_array($normalized) && isset($normalized['data']['type'], $normalized['data']['id'])) {
@@ -307,8 +366,9 @@ class JsonApiResolvedRelationshipSubscriber implements EventSubscriberInterface
      */
     protected function normalizeRelatedResourceManually(object $resource): ?array
     {
-        $reflection = new ReflectionClass($resource);
-        $shortName = $this->resolveShortName($reflection);
+        $className = $resource::class;
+        $meta = $this->getClassMeta($className);
+        $shortName = $meta['shortName'];
 
         if ($shortName === null) {
             return null;
@@ -317,14 +377,11 @@ class JsonApiResolvedRelationshipSubscriber implements EventSubscriberInterface
         $identifier = null;
         $attributes = [];
 
-        foreach ($reflection->getProperties(ReflectionProperty::IS_PUBLIC) as $property) {
-            $name = $property->getName();
-            $value = $property->getValue($resource);
-            $apiPropertyAttr = $property->getAttributes(ApiProperty::class)[0] ?? null;
+        foreach ($meta['props'] as $name => $propMeta) {
+            $value = $resource->{$name};
+            $apiProperty = $propMeta['apiProperty'];
 
-            if ($apiPropertyAttr !== null) {
-                $apiProperty = $apiPropertyAttr->newInstance();
-
+            if ($apiProperty !== null) {
                 if ($apiProperty->isReadable() === false) {
                     continue;
                 }
@@ -341,7 +398,7 @@ class JsonApiResolvedRelationshipSubscriber implements EventSubscriberInterface
                 continue;
             }
 
-            $serializedName = $this->resolveSerializedName($property) ?? $name;
+            $serializedName = $propMeta['serializedName'] ?? $name;
             $attributes[$serializedName] = $value;
         }
 
@@ -354,7 +411,7 @@ class JsonApiResolvedRelationshipSubscriber implements EventSubscriberInterface
             'id' => (string)$identifier,
             'attributes' => $attributes,
             'links' => [
-                'self' => $this->buildSelfLink($reflection, $resource, $shortName, $identifier),
+                'self' => $this->buildSelfLink($className, $resource, $shortName, $identifier),
             ],
         ];
     }
@@ -365,17 +422,15 @@ class JsonApiResolvedRelationshipSubscriber implements EventSubscriberInterface
      * GetCollection operation that has URI variables to construct the correct nested URL.
      * Falls back to the flat {shortName}/{identifier} format.
      *
-     * @param \ReflectionClass<object> $reflection
+     * @param class-string $className
      */
-    protected function buildSelfLink(ReflectionClass $reflection, object $resource, string $shortName, mixed $identifier): string
+    protected function buildSelfLink(string $className, object $resource, string $shortName, mixed $identifier): string
     {
-        $apiResourceAttrs = $reflection->getAttributes(ApiResource::class);
+        $apiResource = $this->getClassMeta($className)['apiResource'];
 
-        if ($apiResourceAttrs === []) {
+        if ($apiResource === null) {
             return sprintf('%s/%s', $shortName, $identifier);
         }
-
-        $apiResource = $apiResourceAttrs[0]->newInstance();
 
         foreach ($apiResource->getOperations() ?? [] as $operation) {
             if (!($operation instanceof CollectionOperationInterface)) {
@@ -445,14 +500,11 @@ class JsonApiResolvedRelationshipSubscriber implements EventSubscriberInterface
             return;
         }
 
-        $reflection = new ReflectionClass($resource);
-        $apiResourceAttrs = $reflection->getAttributes(ApiResource::class);
+        $apiResource = $this->getClassMeta($resource::class)['apiResource'];
 
-        if ($apiResourceAttrs === []) {
+        if ($apiResource === null) {
             return;
         }
-
-        $apiResource = $apiResourceAttrs[0]->newInstance();
 
         // Only override for collection-only resources. Resources that have an explicit Get item
         // operation already receive a correct AP-generated self-link and must not be touched.
@@ -615,29 +667,23 @@ class JsonApiResolvedRelationshipSubscriber implements EventSubscriberInterface
 
         $nonReadable = [];
 
-        /** @phpstan-var class-string $className */
-        $reflection = new ReflectionClass($className);
+        foreach ($this->getClassMeta($className)['props'] as $name => $propMeta) {
+            $apiProperty = $propMeta['apiProperty'];
 
-        foreach ($reflection->getProperties(ReflectionProperty::IS_PUBLIC) as $property) {
-            $apiPropertyAttr = $property->getAttributes(ApiProperty::class)[0] ?? null;
-
-            if ($apiPropertyAttr === null) {
+            if ($apiProperty === null || $apiProperty->isReadable() !== false) {
                 continue;
             }
 
-            $apiProperty = $apiPropertyAttr->newInstance();
-
-            if ($apiProperty->isReadable() !== false) {
-                continue;
-            }
-
-            $serializedName = $this->resolveSerializedName($property) ?? $this->camelToKebabCase($property->getName());
+            $serializedName = $propMeta['serializedName'] ?? $this->camelToKebabCase($name);
             $nonReadable[] = $serializedName;
         }
 
         return $nonReadable;
     }
 
+    /**
+     * @return class-string|null
+     */
     protected function resolveResourceClassByShortName(string $shortName): ?string
     {
         if ($this->resourceClassIndex === null) {
@@ -690,22 +736,14 @@ class JsonApiResolvedRelationshipSubscriber implements EventSubscriberInterface
             return;
         }
 
-        $reflection = new ReflectionClass($resource);
+        foreach ($this->getClassMeta($resource::class)['props'] as $name => $propMeta) {
+            $apiProperty = $propMeta['apiProperty'];
 
-        foreach ($reflection->getProperties(ReflectionProperty::IS_PUBLIC) as $property) {
-            $apiPropertyAttr = $property->getAttributes(ApiProperty::class)[0] ?? null;
-
-            if ($apiPropertyAttr === null) {
+            if ($apiProperty === null || $apiProperty->isReadable() !== false) {
                 continue;
             }
 
-            $apiProperty = $apiPropertyAttr->newInstance();
-
-            if ($apiProperty->isReadable() !== false) {
-                continue;
-            }
-
-            $serializedName = $this->resolveSerializedName($property) ?? $this->camelToKebabCase($property->getName());
+            $serializedName = $propMeta['serializedName'] ?? $this->camelToKebabCase($name);
             unset($normalizedData['attributes'][$serializedName]);
         }
     }
@@ -724,16 +762,12 @@ class JsonApiResolvedRelationshipSubscriber implements EventSubscriberInterface
             return;
         }
 
-        $reflection = new ReflectionClass($resource);
-
-        foreach ($reflection->getProperties(ReflectionProperty::IS_PUBLIC) as $property) {
-            $value = $property->getValue($resource);
-
-            if ($value !== null) {
+        foreach ($this->getClassMeta($resource::class)['props'] as $name => $propMeta) {
+            if ($resource->{$name} !== null) {
                 continue;
             }
 
-            $serializedName = $this->resolveSerializedName($property) ?? $this->camelToKebabCase($property->getName());
+            $serializedName = $propMeta['serializedName'] ?? $this->camelToKebabCase($name);
 
             if (!array_key_exists($serializedName, $normalizedData['attributes'])) {
                 continue;

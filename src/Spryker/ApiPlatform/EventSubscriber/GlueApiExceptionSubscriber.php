@@ -103,6 +103,14 @@ class GlueApiExceptionSubscriber implements EventSubscriberInterface
      */
     protected const string REGEX_DENORMALIZE_ATTRIBUTE = '/denormalize attribute "(\w+)".*Expected argument of type/';
 
+    /**
+     * @var array<string>
+     *
+     * The `links` names this stack produces. Used by BOTH hasRelativeLink() and
+     * promoteRelativeLinks() — extend this set to promote additional link names.
+     */
+    protected const array LINK_NAMES = ['self', 'related', 'first', 'last', 'prev', 'next'];
+
     public function __construct(
         protected TranslatorInterface $translator,
         protected ResourceMetadataCollectionFactoryInterface $resourceMetadataCollectionFactory,
@@ -394,12 +402,7 @@ class GlueApiExceptionSubscriber implements EventSubscriberInterface
         $response = $event->getResponse();
         $request = $event->getRequest();
 
-        // Fix JSON encoding for all JSON:API error responses to prevent escaped
-        // unicode sequences (\u003E for >, \u0027 for ') that break test assertions.
-        $this->fixJsonEncoding($response, $request);
-
         // Promote relative link URLs to absolute using the request base URL.
-        // API Platform's CollectionNormalizer generates ABS_PATH links (/path) by default.
         // The old Glue REST API always returned fully-qualified URLs (http://host/path).
         $this->fixRelativeLinks($response, $request);
 
@@ -488,35 +491,8 @@ class GlueApiExceptionSubscriber implements EventSubscriberInterface
     }
 
     /**
-     * Re-encodes JSON responses to use unescaped unicode and slashes, preventing
-     * escaped sequences like \u003E (for >) and \u0027 (for ') that confuse
-     * JSON parsers in test frameworks.
-     */
-    protected function fixJsonEncoding(Response $response, Request $request): void
-    {
-        if (!$request->attributes->has('_api_resource_class')) {
-            return;
-        }
-
-        $contentType = $response->headers->get('Content-Type') ?? '';
-
-        if (!str_contains($contentType, 'json')) {
-            return;
-        }
-
-        $data = $this->decodeErrorResponse($response);
-
-        if ($data === null) {
-            return;
-        }
-
-        $response->setContent((string)json_encode($data, JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES));
-    }
-
-    /**
-     * Promotes relative link URLs in JSON:API responses to absolute URLs.
+     * Promotes relative link URLs (LINK_NAMES under `links` keys, any nesting level) to absolute URLs.
      * API Platform's CollectionNormalizer generates ABS_PATH links (/path) by default.
-     * Walks all string values under `links` keys at any nesting level and prepends scheme+host.
      */
     protected function fixRelativeLinks(Response $response, Request $request): void
     {
@@ -527,6 +503,18 @@ class GlueApiExceptionSubscriber implements EventSubscriberInterface
         $contentType = $response->headers->get('Content-Type') ?? '';
 
         if (!str_contains($contentType, 'json')) {
+            return;
+        }
+
+        $content = $response->getContent();
+
+        if ($content === false || $content === '') {
+            return;
+        }
+
+        // With url_generation_strategy=ABS_URL links are normally absolute already, so the
+        // whole-body decode/encode below is skipped on the happy path.
+        if (!$this->hasRelativeLink($content)) {
             return;
         }
 
@@ -546,17 +534,40 @@ class GlueApiExceptionSubscriber implements EventSubscriberInterface
     }
 
     /**
+     * Detects a relative link in the raw response body without decoding it.
+     * The escaped variant (`"self":"\/`) cannot occur while the encoder emits unescaped slashes,
+     * but it keeps link promotion working against a body encoded with default flags.
+     */
+    protected function hasRelativeLink(string $content): bool
+    {
+        foreach (static::LINK_NAMES as $linkName) {
+            if (
+                str_contains($content, sprintf('"%s":"/', $linkName))
+                || str_contains($content, sprintf('"%s":"\/', $linkName))
+            ) {
+                return true;
+            }
+        }
+
+        return false;
+    }
+
+    /**
+     * Promotes the same LINK_NAMES set that hasRelativeLink() guards on, so the guard can never
+     * be narrower than the promotion.
+     *
      * @param array<string, mixed> $data
      */
     protected function promoteRelativeLinks(array &$data, string $baseUrl): void
     {
         if (isset($data['links']) && is_array($data['links'])) {
-            foreach ($data['links'] as &$link) {
+            foreach (static::LINK_NAMES as $linkName) {
+                $link = $data['links'][$linkName] ?? null;
+
                 if (is_string($link) && str_starts_with($link, '/')) {
-                    $link = $baseUrl . $link;
+                    $data['links'][$linkName] = $baseUrl . $link;
                 }
             }
-            unset($link);
         }
 
         // Recurse into data items and included resources

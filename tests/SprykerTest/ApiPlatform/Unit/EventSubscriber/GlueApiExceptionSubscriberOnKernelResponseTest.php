@@ -240,6 +240,40 @@ class GlueApiExceptionSubscriberOnKernelResponseTest extends Unit
         $this->assertStringContainsString('quantity => This value should be of type numeric.', $data['errors'][0]['detail']);
     }
 
+    public function testGivenRelativeSelfLinkWhenOnKernelResponseThenLinkIsPromotedToAbsolute(): void
+    {
+        // Arrange
+        $request = Request::create('/test-resources/1');
+        $request->attributes->set('_api_resource_class', 'App\\Resource\\TestResource');
+        $response = new Response(
+            '{"data":{"id":"1","type":"test-resources","links":{"self":"/test-resources/1"}}}',
+            Response::HTTP_OK,
+            ['Content-Type' => 'application/vnd.api+json'],
+        );
+
+        // Act
+        $this->createSubscriber()->onKernelResponse($this->createResponseEvent($request, $response));
+
+        // Assert
+        $data = json_decode((string)$response->getContent(), true);
+        $this->assertSame('http://localhost/test-resources/1', $data['data']['links']['self']);
+    }
+
+    public function testGivenAbsoluteLinksWhenOnKernelResponseThenBodyStaysByteIdentical(): void
+    {
+        // Arrange: relative "url" is an attribute VALUE, not a link — must not trigger the decode/promotion
+        $content = '{"data":{"id":"1","type":"test-resources","attributes":{"url":"/en/test-page"},"links":{"self":"http://localhost/test-resources/1"}}}';
+        $request = Request::create('/test-resources/1');
+        $request->attributes->set('_api_resource_class', 'App\\Resource\\TestResource');
+        $response = new Response($content, Response::HTTP_OK, ['Content-Type' => 'application/vnd.api+json']);
+
+        // Act
+        $this->createSubscriber()->onKernelResponse($this->createResponseEvent($request, $response));
+
+        // Assert
+        $this->assertSame($content, $response->getContent());
+    }
+
     protected function createRequest(string $resourceClass, array $attributes): Request
     {
         $request = Request::create('/test', 'POST', [], [], [], [], (string)json_encode([

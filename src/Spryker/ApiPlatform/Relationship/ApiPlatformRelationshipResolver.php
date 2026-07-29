@@ -38,6 +38,17 @@ class ApiPlatformRelationshipResolver implements ApiPlatformRelationshipResolver
     protected array $perItemRelationshipData = [];
 
     /**
+     * Cache of the #[ApiProperty(identifier: true)] property NAME per resource class. The identifier
+     * property is static per class (only its value is per-object), so reflecting it once per class
+     * instead of once per resource avoids O(resources) ReflectionClass work per request. `null` marks
+     * a class that has no identifier property. Mirrors the reflection memoization already used in
+     * JsonApiResolvedRelationshipTransform::getClassMeta.
+     *
+     * @var array<class-string, string|null>
+     */
+    protected array $identifierPropertyNameCache = [];
+
+    /**
      * @param array<string, array<string, mixed>> $relationships
      * @param \Psr\Container\ContainerInterface $providerLocator
      * @param \Psr\Container\ContainerInterface $resolverLocator
@@ -863,7 +874,33 @@ class ApiPlatformRelationshipResolver implements ApiPlatformRelationshipResolver
 
     protected function resolveResourceIdentifier(object $resource): ?string
     {
-        $reflection = new ReflectionClass($resource);
+        $className = $resource::class;
+
+        if (!array_key_exists($className, $this->identifierPropertyNameCache)) {
+            $this->identifierPropertyNameCache[$className] = $this->resolveIdentifierPropertyName($className);
+        }
+
+        $propertyName = $this->identifierPropertyNameCache[$className];
+
+        if ($propertyName === null) {
+            return null;
+        }
+
+        $value = $resource->{$propertyName};
+
+        return $value !== null ? (string)$value : null;
+    }
+
+    /**
+     * Reflects a resource class once to find the name of its #[ApiProperty(identifier: true)] public
+     * property; null when the class has no identifier property. Memoized in
+     * {@see static::$identifierPropertyNameCache} (the caller uses array_key_exists()).
+     *
+     * @param class-string $className
+     */
+    protected function resolveIdentifierPropertyName(string $className): ?string
+    {
+        $reflection = new ReflectionClass($className);
 
         foreach ($reflection->getProperties(ReflectionProperty::IS_PUBLIC) as $property) {
             $apiPropertyAttr = $property->getAttributes(ApiProperty::class)[0] ?? null;
@@ -872,15 +909,11 @@ class ApiPlatformRelationshipResolver implements ApiPlatformRelationshipResolver
                 continue;
             }
 
-            $apiProperty = $apiPropertyAttr->newInstance();
-
-            if (!$apiProperty->isIdentifier()) {
+            if (!$apiPropertyAttr->newInstance()->isIdentifier()) {
                 continue;
             }
 
-            $value = $property->getValue($resource);
-
-            return $value !== null ? (string)$value : null;
+            return $property->getName();
         }
 
         return null;

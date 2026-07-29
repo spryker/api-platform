@@ -152,7 +152,7 @@ abstract class AbstractStorefrontProvider extends AbstractProvider
 
     /**
      * Builds the Spryker-style pagination wrapper consumed by
-     * {@see \Spryker\ApiPlatform\EventSubscriber\PaginationLinksResponseSubscriber} to emit
+     * {@see \Spryker\ApiPlatform\ResponseTransform\PaginationLinksTransform} to emit
      * JSON:API top-level pagination links (first/last/prev/next). Used by collection providers
      * that need an embedded `pagination` property on the resource — e.g.
      * `$resource->pagination = $this->calculatePagination($offset, $limit, $nbResults)`.

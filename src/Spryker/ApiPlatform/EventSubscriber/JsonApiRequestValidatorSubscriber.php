@@ -448,6 +448,27 @@ class JsonApiRequestValidatorSubscriber implements EventSubscriberInterface
         return (bool)preg_match('/^[a-z][a-z-]*$/', $value);
     }
 
+    /**
+     * Returns whether any two consecutive segments are both resource names — the only shape
+     * {@see static::preRouteMergedSlashesRequest()} acts on. Mirrors the pairing check inside
+     * that method's loop, so gating on it changes no behavior, only avoids the router probe when
+     * no pair can exist.
+     *
+     * @param array<string> $segments
+     */
+    protected function hasAdjacentResourceNamePair(array $segments): bool
+    {
+        $segmentCount = count($segments);
+
+        for ($i = 0; $i < $segmentCount - 1; $i++) {
+            if ($this->looksLikeResourceName($segments[$i]) && $this->looksLikeResourceName($segments[$i + 1])) {
+                return true;
+            }
+        }
+
+        return false;
+    }
+
     protected function looksLikeUuid(string $value): bool
     {
         return (bool)preg_match('/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i', $value);
@@ -594,6 +615,10 @@ class JsonApiRequestValidatorSubscriber implements EventSubscriberInterface
         $segments = array_values(array_filter(explode('/', $trimmed), static fn (string $segment): bool => $segment !== ''));
 
         if (count($segments) < 2) {
+            return false;
+        }
+
+        if (!$this->hasAdjacentResourceNamePair($segments)) {
             return false;
         }
 
