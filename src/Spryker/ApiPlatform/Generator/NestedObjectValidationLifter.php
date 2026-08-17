@@ -19,9 +19,23 @@ namespace Spryker\ApiPlatform\Generator;
  * `#[Assert\...]` attribute strings and attached to each value-object field (under the
  * `_validationAttributes` key the value-object renderer reads), while the parent property carries a
  * plain `#[Assert\Valid]` cascade.
+ *
+ * Lifting recurses into fields that denormalize into value objects of their own, so only leaves ever
+ * carry value constraints. Descent stops on an `objectName` already lifted on the current path, so a
+ * self-referential definition cascades instead of recursing forever.
  */
 class NestedObjectValidationLifter
 {
+    /**
+     * `All` belongs here because a collection of value objects declares its per-element `Collection`
+     * inside it — without it such a field is mistaken for a leaf.
+     *
+     * @var array<string>
+     */
+    protected const array COLLECTION_FIELD_WRAPPERS = ['Optional', 'Required', 'All'];
+
+    protected const string VALID_CONSTRAINT_NAME = 'Valid';
+
     public function __construct(
         protected readonly ValidationAttributeGenerator $validationAttributeGenerator,
     ) {
@@ -42,6 +56,25 @@ class NestedObjectValidationLifter
         array $operations,
         string $propertyName,
         string $resourceName
+    ): array {
+        return $this->liftFieldsInto($nestedProperties, $validationSchema, $operations, $propertyName, $resourceName, []);
+    }
+
+    /**
+     * @param array<string, array<string, mixed>> $nestedProperties
+     * @param array<string, mixed> $validationSchema
+     * @param array<string, mixed> $operations
+     * @param array<string, true> $objectNamesOnPath Object names already lifted above this level.
+     *
+     * @return array<string, array<string, mixed>>
+     */
+    protected function liftFieldsInto(
+        array $nestedProperties,
+        array $validationSchema,
+        array $operations,
+        string $propertyName,
+        string $resourceName,
+        array $objectNamesOnPath
     ): array {
         $fieldSchema = [];
         $fieldNames = [];
@@ -73,18 +106,179 @@ class NestedObjectValidationLifter
         }
 
         foreach (array_keys($fieldNames) as $fieldName) {
+            $fieldName = (string)$fieldName;
+
             if (!isset($nestedProperties[$fieldName])) {
                 continue;
             }
 
-            $attributes = $this->validationAttributeGenerator->generate($fieldSchema, $operations, (string)$fieldName, $resourceName);
-
-            if ($attributes !== []) {
-                $nestedProperties[$fieldName]['_validationAttributes'] = array_values($attributes);
-            }
+            $nestedProperties[$fieldName] = $this->liftField(
+                $nestedProperties[$fieldName],
+                $fieldSchema,
+                $operations,
+                $fieldName,
+                $resourceName,
+                $objectNamesOnPath,
+            );
         }
 
         return $nestedProperties;
+    }
+
+    /**
+     * @param array<string, mixed> $property
+     * @param array<string, mixed> $fieldSchema
+     * @param array<string, mixed> $operations
+     * @param array<string, true> $objectNamesOnPath
+     *
+     * @return array<string, mixed>
+     */
+    protected function liftField(
+        array $property,
+        array $fieldSchema,
+        array $operations,
+        string $fieldName,
+        string $resourceName,
+        array $objectNamesOnPath
+    ): array {
+        $childProperties = $this->extractChildProperties($property);
+
+        if ($childProperties === null || !$this->hasCollectionValidation($fieldSchema, $fieldName)) {
+            $attributes = $this->validationAttributeGenerator->generate($fieldSchema, $operations, $fieldName, $resourceName);
+
+            if ($attributes !== []) {
+                $property['_validationAttributes'] = array_values($attributes);
+            }
+
+            return $property;
+        }
+
+        $objectName = $property['objectName'] ?? null;
+        $objectName = is_string($objectName) && $objectName !== '' ? $objectName : null;
+
+        // A self-referencing shared object is lifted where its canonical class is generated.
+        if ($objectName === null || !isset($objectNamesOnPath[$objectName])) {
+            if ($objectName !== null) {
+                $objectNamesOnPath[$objectName] = true;
+            }
+
+            $property = $this->writeChildProperties($property, $this->liftFieldsInto(
+                $childProperties,
+                $fieldSchema,
+                $operations,
+                $fieldName,
+                $resourceName,
+                $objectNamesOnPath,
+            ));
+        }
+
+        $cascadeSchema = $this->replaceCollectionWithValidCascade($fieldSchema, $fieldName);
+        $attributes = $this->validationAttributeGenerator->generate($cascadeSchema, $operations, $fieldName, $resourceName);
+
+        if ($attributes !== []) {
+            $property['_validationAttributes'] = array_values($attributes);
+        }
+
+        return $property;
+    }
+
+    /**
+     * Null for every field that stays a scalar, a plain array or an untyped object.
+     *
+     * @param array<string, mixed> $property
+     *
+     * @return array<string, array<string, mixed>>|null
+     */
+    protected function extractChildProperties(array $property): ?array
+    {
+        $type = $property['type'] ?? null;
+
+        if ($type === 'object' && isset($property['properties']) && is_array($property['properties'])) {
+            return $property['properties'];
+        }
+
+        if (
+            $type === 'array'
+            && isset($property['items'])
+            && is_array($property['items'])
+            && ($property['items']['type'] ?? null) === 'object'
+            && isset($property['items']['properties'])
+            && is_array($property['items']['properties'])
+        ) {
+            return $property['items']['properties'];
+        }
+
+        return null;
+    }
+
+    /**
+     * @param array<string, mixed> $property
+     * @param array<string, array<string, mixed>> $childProperties
+     *
+     * @return array<string, mixed>
+     */
+    protected function writeChildProperties(array $property, array $childProperties): array
+    {
+        if (($property['type'] ?? null) === 'object') {
+            $property['properties'] = $childProperties;
+
+            return $property;
+        }
+
+        $property['items']['properties'] = $childProperties;
+
+        return $property;
+    }
+
+    /**
+     * Swaps the field's `Collection` — at any wrapper depth — for a bare `Valid`, leaving siblings untouched.
+     *
+     * @param array<string, mixed> $fieldSchema
+     *
+     * @return array<string, mixed>
+     */
+    protected function replaceCollectionWithValidCascade(array $fieldSchema, string $fieldName): array
+    {
+        foreach ($fieldSchema as $httpMethod => $fieldConstraints) {
+            if (!is_array($fieldConstraints) || !isset($fieldConstraints[$fieldName]) || !is_array($fieldConstraints[$fieldName])) {
+                continue;
+            }
+
+            $fieldSchema[$httpMethod][$fieldName] = $this->replaceCollectionConstraint($fieldConstraints[$fieldName]);
+        }
+
+        return $fieldSchema;
+    }
+
+    /**
+     * @param array<array-key, mixed> $constraints
+     *
+     * @return array<array-key, mixed>
+     */
+    protected function replaceCollectionConstraint(array $constraints): array
+    {
+        foreach ($constraints as $index => $constraint) {
+            if (!is_array($constraint)) {
+                continue;
+            }
+
+            if (isset($constraint['Collection']['fields']) && is_array($constraint['Collection']['fields'])) {
+                $constraints[$index] = static::VALID_CONSTRAINT_NAME;
+
+                continue;
+            }
+
+            foreach (static::COLLECTION_FIELD_WRAPPERS as $wrapper) {
+                if (!isset($constraint[$wrapper]['constraints']) || !is_array($constraint[$wrapper]['constraints'])) {
+                    continue;
+                }
+
+                $constraint[$wrapper]['constraints'] = $this->replaceCollectionConstraint($constraint[$wrapper]['constraints']);
+                $constraints[$index] = $constraint;
+            }
+        }
+
+        return $constraints;
     }
 
     /**
@@ -109,7 +303,7 @@ class NestedObjectValidationLifter
     }
 
     /**
-     * Unwraps `Optional`/`Required` wrappers to find the `Collection` constraint and return its
+     * Unwraps the {@see COLLECTION_FIELD_WRAPPERS} to find the `Collection` constraint and return its
      * `fields` map plus its `allowMissingFields` flag.
      *
      * @return array{fields: array<array-key, mixed>, allowMissingFields: bool}|null
@@ -132,7 +326,7 @@ class NestedObjectValidationLifter
                 ];
             }
 
-            foreach (['Optional', 'Required'] as $wrapper) {
+            foreach (static::COLLECTION_FIELD_WRAPPERS as $wrapper) {
                 if (!isset($constraint[$wrapper]['constraints']) || !is_array($constraint[$wrapper]['constraints'])) {
                     continue;
                 }
@@ -151,7 +345,7 @@ class NestedObjectValidationLifter
     /**
      * Relaxes presence constraints for `allowMissingFields: true`: each `NotBlank` gains
      * `allowNull: true` and each `NotNull` is dropped, so an absent (null) field is tolerated while a
-     * present-but-empty value is still rejected. Recurses through `Optional`/`Required` wrappers.
+     * present-but-empty value is still rejected. Recurses through {@see COLLECTION_FIELD_WRAPPERS}.
      *
      * @param array<array-key, mixed> $fields
      *
@@ -196,7 +390,7 @@ class NestedObjectValidationLifter
                 continue;
             }
 
-            foreach (['Optional', 'Required'] as $wrapper) {
+            foreach (static::COLLECTION_FIELD_WRAPPERS as $wrapper) {
                 if (is_array($constraint) && isset($constraint[$wrapper]['constraints']) && is_array($constraint[$wrapper]['constraints'])) {
                     $constraint[$wrapper]['constraints'] = $this->relaxConstraintList($constraint[$wrapper]['constraints']);
                 }
