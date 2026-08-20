@@ -9,8 +9,8 @@ declare(strict_types=1);
 
 namespace Spryker\ApiPlatform\DependencyInjection\Compiler;
 
-use InvalidArgumentException;
 use SplFileInfo;
+use Spryker\ApiPlatform\Schema\Directory\ApiDirectoryLocator;
 use Symfony\Component\Finder\Finder;
 use Symfony\Component\Yaml\Yaml;
 use Throwable;
@@ -20,9 +20,22 @@ use Throwable;
  *
  * Locates resource schema files (*.resource.yml/yaml) in `resources/api/{apiType}/`
  * directories and parses their YAML content into resource definitions.
+ *
+ * Discovery results are memoized per (source directories, API type) pair — several
+ * compiler passes request the same files during a single container build, and the
+ * bundle shares one instance across all of them so the filesystem is only hit once.
  */
 class SchemaFileDiscovery
 {
+    /**
+     * @var array<string, array<\SplFileInfo>>
+     */
+    protected array $schemaFileCache = [];
+
+    public function __construct(protected ApiDirectoryLocator $apiDirectoryLocator = new ApiDirectoryLocator())
+    {
+    }
+
     /**
      * @param array<string> $sourceDirectories
      *
@@ -31,10 +44,16 @@ class SchemaFileDiscovery
     public function findSchemaFiles(array $sourceDirectories, string $apiType): array
     {
         $apiType = strtolower($apiType);
-        $searchDirectories = $this->getSearchDirectories($sourceDirectories, $apiType);
+        $cacheKey = md5(serialize([$sourceDirectories, $apiType]));
+
+        if (isset($this->schemaFileCache[$cacheKey])) {
+            return $this->schemaFileCache[$cacheKey];
+        }
+
+        $searchDirectories = $this->apiDirectoryLocator->locateResourceSchemaDirectories($sourceDirectories, $apiType);
 
         if ($searchDirectories === []) {
-            return [];
+            return $this->schemaFileCache[$cacheKey] = [];
         }
 
         $schemaFiles = [];
@@ -50,7 +69,7 @@ class SchemaFileDiscovery
             $schemaFiles[] = $file;
         }
 
-        return $schemaFiles;
+        return $this->schemaFileCache[$cacheKey] = $schemaFiles;
     }
 
     /**
@@ -95,42 +114,5 @@ class SchemaFileDiscovery
         }
 
         return $resources;
-    }
-
-    /**
-     * @param array<string> $sourceDirectories
-     *
-     * @return array<string>
-     */
-    protected function getSearchDirectories(array $sourceDirectories, string $apiType): array
-    {
-        $directories = [];
-
-        foreach ($sourceDirectories as $sourceDirectory) {
-            if (!is_dir($sourceDirectory)) {
-                continue;
-            }
-
-            try {
-                $directoryFinder = new Finder();
-                $directoryFinder
-                    ->directories()
-                    ->in($sourceDirectory)
-                    ->name($apiType)
-                    ->filter(function (SplFileInfo $file) use ($apiType): bool {
-                        $path = $file->getRelativePathname();
-
-                        return str_ends_with($path, sprintf('resources/api/%s', $apiType));
-                    });
-
-                foreach ($directoryFinder as $directory) {
-                    $directories[] = $directory->getRealPath();
-                }
-            } catch (InvalidArgumentException) {
-                continue;
-            }
-        }
-
-        return $directories;
     }
 }

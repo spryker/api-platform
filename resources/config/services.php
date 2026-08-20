@@ -57,6 +57,7 @@ use Spryker\ApiPlatform\Relationship\ApiPlatformRelationshipResolverInterface;
 use Spryker\ApiPlatform\ResponseTransform\JsonApiRelationshipNormalizerTransform;
 use Spryker\ApiPlatform\ResponseTransform\JsonApiResolvedRelationshipTransform;
 use Spryker\ApiPlatform\ResponseTransform\PaginationLinksTransform;
+use Spryker\ApiPlatform\Schema\Directory\ApiDirectoryLocator;
 use Spryker\ApiPlatform\Schema\Finder\SchemaFinder;
 use Spryker\ApiPlatform\Schema\Finder\SchemaFinderInterface;
 use Spryker\ApiPlatform\Schema\Loader\YamlSchemaLoader;
@@ -124,6 +125,9 @@ return static function (ContainerConfigurator $container): void {
     // Schema Loaders
     $services->set(YamlSchemaLoader::class)
         ->tag('spryker_api_platform.schema_loader');
+
+    // Schema Directory Locator (shared by the schema/object/validation finders)
+    $services->set(ApiDirectoryLocator::class);
 
     // Schema Finder
     $services->set(SchemaFinderInterface::class, SchemaFinder::class);

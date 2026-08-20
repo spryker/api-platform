@@ -10,9 +10,8 @@ declare(strict_types=1);
 namespace Spryker\ApiPlatform\Schema\Object\Finder;
 
 use Generator;
-use InvalidArgumentException;
-use SplFileInfo;
 use Spryker\ApiPlatform\Configuration\ApiPlatformConfig;
+use Spryker\ApiPlatform\Schema\Directory\ApiDirectoryLocator;
 use Spryker\ApiPlatform\Utility\ApiTypeNormalizer;
 use Symfony\Component\Finder\Finder;
 
@@ -26,8 +25,10 @@ class ObjectSchemaFinder implements ObjectSchemaFinderInterface
 
     protected const array OBJECT_VALIDATION_EXTENSIONS = ['object.validation.yml', 'object.validation.yaml'];
 
-    public function __construct(protected readonly ApiPlatformConfig $config)
-    {
+    public function __construct(
+        protected readonly ApiPlatformConfig $config,
+        protected ApiDirectoryLocator $apiDirectoryLocator = new ApiDirectoryLocator(),
+    ) {
     }
 
     /**
@@ -136,35 +137,19 @@ class ObjectSchemaFinder implements ObjectSchemaFinderInterface
     protected function getSearchDirectories(string $apiType): array
     {
         $directories = [];
-        $sourceDirectories = $this->config->getSourceDirectories();
+        $schemaDirectories = $this->apiDirectoryLocator->locateResourceSchemaDirectories(
+            $this->config->getSourceDirectories(),
+            $apiType,
+        );
 
-        foreach ($sourceDirectories as $sourceDirectory) {
-            if (!is_dir($sourceDirectory)) {
+        foreach ($schemaDirectories as $schemaDirectory) {
+            $objectsDir = sprintf('%s/%s', $schemaDirectory, static::OBJECTS_SUBDIR);
+
+            if (!is_dir($objectsDir)) {
                 continue;
             }
 
-            try {
-                $directoryFinder = new Finder();
-                $directoryFinder
-                    ->directories()
-                    ->in($sourceDirectory)
-                    ->name($apiType)
-                    ->filter(function (SplFileInfo $file) use ($apiType): bool {
-                        return str_ends_with($file->getPathname(), sprintf('/resources/api/%s', $apiType));
-                    });
-
-                foreach ($directoryFinder as $directory) {
-                    $objectsDir = sprintf('%s/%s', $directory->getRealPath(), static::OBJECTS_SUBDIR);
-
-                    if (!is_dir($objectsDir)) {
-                        continue;
-                    }
-
-                    $directories[] = $objectsDir;
-                }
-            } catch (InvalidArgumentException $e) {
-                continue;
-            }
+            $directories[] = $objectsDir;
         }
 
         return $directories;

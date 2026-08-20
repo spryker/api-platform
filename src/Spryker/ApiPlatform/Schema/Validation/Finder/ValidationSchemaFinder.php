@@ -10,9 +10,9 @@ declare(strict_types=1);
 namespace Spryker\ApiPlatform\Schema\Validation\Finder;
 
 use Generator;
-use InvalidArgumentException;
 use SplFileInfo;
 use Spryker\ApiPlatform\Configuration\ApiPlatformConfig;
+use Spryker\ApiPlatform\Schema\Directory\ApiDirectoryLocator;
 use Spryker\ApiPlatform\Utility\ApiTypeNormalizer;
 use Symfony\Component\Finder\Finder;
 
@@ -22,8 +22,10 @@ class ValidationSchemaFinder implements ValidationSchemaFinderInterface
 
     protected const array VALIDATION_EXTENSIONS = ['validation.yml', 'validation.yaml'];
 
-    public function __construct(protected readonly ApiPlatformConfig $config)
-    {
+    public function __construct(
+        protected readonly ApiPlatformConfig $config,
+        protected ApiDirectoryLocator $apiDirectoryLocator = new ApiDirectoryLocator(),
+    ) {
     }
 
     /**
@@ -116,33 +118,10 @@ class ValidationSchemaFinder implements ValidationSchemaFinderInterface
      */
     protected function getSearchDirectories(string $apiType): array
     {
-        $directories = [];
-        $sourceDirectories = $this->config->getSourceDirectories();
-
-        foreach ($sourceDirectories as $sourceDirectory) {
-            if (!is_dir($sourceDirectory)) {
-                continue;
-            }
-
-            try {
-                $directoryFinder = new Finder();
-                $directoryFinder
-                    ->directories()
-                    ->in($sourceDirectory)
-                    ->name($apiType)
-                    ->filter(function (SplFileInfo $file) use ($apiType): bool {
-                        return str_ends_with($file->getPathname(), sprintf('/resources/api/%s', $apiType));
-                    });
-
-                foreach ($directoryFinder as $directory) {
-                    $directories[] = $directory->getRealPath();
-                }
-            } catch (InvalidArgumentException $e) {
-                continue;
-            }
-        }
-
-        return $directories;
+        return $this->apiDirectoryLocator->locateResourceSchemaDirectories(
+            $this->config->getSourceDirectories(),
+            $apiType,
+        );
     }
 
     /**
@@ -181,22 +160,10 @@ class ValidationSchemaFinder implements ValidationSchemaFinderInterface
                 continue;
             }
 
-            try {
-                $directoryFinder = new Finder();
-                $directoryFinder
-                    ->directories()
-                    ->in($sourceDirectory)
-                    ->name($apiType)
-                    ->filter(function (SplFileInfo $file) use ($apiType): bool {
-                        return str_ends_with($file->getPathname(), sprintf('/resources/api/%s', $apiType));
-                    });
-
-                foreach ($directoryFinder as $directory) {
-                    $existingDirectories[] = $directory->getRealPath();
-                }
-            } catch (InvalidArgumentException $e) {
-                $skippedDirectories[] = $sourceDirectory;
-            }
+            $existingDirectories = array_merge(
+                $existingDirectories,
+                $this->apiDirectoryLocator->locateResourceSchemaDirectories([$sourceDirectory], $apiType),
+            );
         }
 
         return [

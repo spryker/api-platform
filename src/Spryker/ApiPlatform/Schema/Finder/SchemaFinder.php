@@ -10,11 +10,10 @@ declare(strict_types=1);
 namespace Spryker\ApiPlatform\Schema\Finder;
 
 use Generator;
-use InvalidArgumentException;
 use Spryker\ApiPlatform\Configuration\ApiPlatformConfig;
+use Spryker\ApiPlatform\Schema\Directory\ApiDirectoryLocator;
 use Spryker\ApiPlatform\Utility\ApiTypeNormalizer;
 use Symfony\Component\Finder\Finder;
-use Symfony\Component\Finder\SplFileInfo;
 
 /**
  * Finds API schema files using Symfony Finder component.
@@ -29,8 +28,10 @@ class SchemaFinder implements SchemaFinderInterface
      */
     protected const array SCHEMA_EXTENSIONS = ['resource.yaml', 'resource.yml'];
 
-    public function __construct(protected readonly ApiPlatformConfig $config)
-    {
+    public function __construct(
+        protected readonly ApiPlatformConfig $config,
+        protected ApiDirectoryLocator $apiDirectoryLocator = new ApiDirectoryLocator(),
+    ) {
     }
 
     /**
@@ -94,36 +95,10 @@ class SchemaFinder implements SchemaFinderInterface
      */
     protected function getSearchDirectories(string $apiType): array
     {
-        $directories = [];
-        $sourceDirectories = $this->config->getSourceDirectories();
-
-        foreach ($sourceDirectories as $sourceDirectory) {
-            if (!is_dir($sourceDirectory)) {
-                continue;
-            }
-
-            try {
-                $directoryFinder = new Finder();
-                $directoryFinder
-                    ->directories()
-                    ->in($sourceDirectory)
-                    ->name($apiType)
-                    ->filter(function (SplFileInfo $file) use ($apiType): bool {
-                        $path = $file->getRelativePathname();
-
-                        return str_ends_with($path, sprintf('resources/api/%s', $apiType));
-                    });
-
-                foreach ($directoryFinder as $directory) {
-                    $directories[] = $directory->getRealPath();
-                }
-            } catch (InvalidArgumentException $e) {
-                // Directory not found or not readable, skip
-                continue;
-            }
-        }
-
-        return $directories;
+        return $this->apiDirectoryLocator->locateResourceSchemaDirectories(
+            $this->config->getSourceDirectories(),
+            $apiType,
+        );
     }
 
     /**
@@ -162,24 +137,10 @@ class SchemaFinder implements SchemaFinderInterface
                 continue;
             }
 
-            try {
-                $directoryFinder = new Finder();
-                $directoryFinder
-                    ->directories()
-                    ->in($sourceDirectory)
-                    ->name($apiType)
-                    ->filter(function (SplFileInfo $file) use ($apiType): bool {
-                        $path = $file->getRelativePathname();
-
-                        return str_ends_with($path, sprintf('/resources/api/%s', $apiType));
-                    });
-
-                foreach ($directoryFinder as $directory) {
-                    $existingDirectories[] = $directory->getRealPath();
-                }
-            } catch (InvalidArgumentException $e) {
-                $skippedDirectories[] = $sourceDirectory;
-            }
+            $existingDirectories = array_merge(
+                $existingDirectories,
+                $this->apiDirectoryLocator->locateResourceSchemaDirectories([$sourceDirectory], $apiType),
+            );
         }
 
         return [

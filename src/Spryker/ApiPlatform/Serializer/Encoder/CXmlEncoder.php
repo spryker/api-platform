@@ -16,6 +16,8 @@ use Symfony\Component\Serializer\Encoder\EncoderInterface;
 use Symfony\Component\Serializer\Encoder\NormalizationAwareInterface;
 use Symfony\Component\Serializer\Encoder\XmlEncoder;
 use Symfony\Component\Serializer\Exception\UnexpectedValueException;
+use Symfony\Component\Serializer\SerializerAwareInterface;
+use Symfony\Component\Serializer\SerializerInterface;
 use Throwable;
 
 /**
@@ -25,13 +27,23 @@ use Throwable;
  * Since cXML and regular XML share the same mime type (application/xml, text/xml),
  * this encoder replaces the standard XmlEncoder, but internally delegates to it for non-cXML data.
  */
-class CXmlEncoder implements EncoderInterface, DecoderInterface, NormalizationAwareInterface
+class CXmlEncoder implements EncoderInterface, DecoderInterface, NormalizationAwareInterface, SerializerAwareInterface
 {
     protected Serializer $cxmlSerializer;
 
     public function __construct(protected XmlEncoder $decoratedXmlEncoder)
     {
         $this->cxmlSerializer = Serializer::create();
+    }
+
+    /**
+     * Because this encoder is `NormalizationAwareInterface`, the serializer hands over raw objects instead of
+     * normalized arrays. The decorated encoder normalizes such objects through the serializer injected into it,
+     * but only this decorator is registered in the encoder chain, so the serializer has to be forwarded manually.
+     */
+    public function setSerializer(SerializerInterface $serializer): void
+    {
+        $this->decoratedXmlEncoder->setSerializer($serializer);
     }
 
     /**

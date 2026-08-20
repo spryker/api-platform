@@ -138,6 +138,41 @@ One shared class per canonical object is emitted to `Generated\Api\<ApiType>\<Ob
 
 ---
 
+## Schema and API class discovery
+
+Schema files and Glue API classes are discovered by `ApiDirectoryLocator` at **conventional, fixed-depth locations** inside the configured `source_directories` — the filesystem is not scanned recursively.
+
+Discovered layouts for resource schemas (`resources/api/{apiType}`):
+
+```
+{sourceDirectory}/resources/api/{apiType}                     # source directory is a module root
+{sourceDirectory}/{Module}/resources/api/{apiType}            # conventional module layout
+{sourceDirectory}/{Org}/{Module}/resources/api/{apiType}      # organization nesting (e.g. vendor)
+{sourceDirectory}/Glue/{Module}/resources/api/{apiType}       # project-level layout (src/Pyz)
+```
+
+Discovered layouts for API classes (`Glue/{Module}/Api/{ApiType}`):
+
+```
+{sourceDirectory}/Glue/{Module}/Api/{ApiType}                 # project-level layout (src/Pyz)
+{sourceDirectory}/src/{Org}/Glue/{Module}/Api/{ApiType}       # module source root
+{sourceDirectory}/{Module}/src/{Org}/Glue/{Module}/Api/{ApiType}  # module checkout / vendor package
+```
+
+The following invariants are enforced by the locator and pinned by unit tests (`ApiDirectoryLocatorTest`, `SchemaFileDiscoveryTest`, `SprykerApiPlatformBundleTest`) — keep them in mind when changing discovery:
+
+- **Case-sensitive matching on every filesystem.** Literal path segments (`resources`, `api`, the API type, `Glue`, `Api`) must match with the exact requested casing. A miscased directory that would be found on a case-insensitive development machine but not on case-sensitive CI/production hosts is rejected everywhere.
+- **Symlinked path segments are not followed.** Directories reached through a symlink below a source directory are not discovered (matching Symfony Finder's default used previously).
+- **Fixed depth.** Directories nested deeper than the layouts above are not discovered. Point `source_directories` one level deeper instead of relying on recursive lookup.
+- **Memoized per instance.** All compiler passes share one discovery instance per container build; repeated lookups with identical input return the first result. Code that creates schema directories mid-process must not expect a re-lookup on the same instance to see them.
+
+## Serializer decorators
+
+`CXmlEncoder` and `CXmlNormalizer` decorate serializer-aware services (`serializer.encoder.xml`, `api_platform.serializer.normalizer.item`) and therefore take their place in the serializer chain. Two contracts apply to these (and any future) serializer decorators; both were the source of production bugs and are pinned by `CXmlSerializerAwarenessTest` and `CXmlNormalizerDelegationTest`:
+
+- The decorator must implement `SerializerAwareInterface` and **forward `setSerializer()` to the decorated service** — the serializer only injects itself into the objects registered in the chain, so a decorator that keeps it to itself leaves the decorated service without a serializer (every `application/xml` request then fails with HTTP 500).
+- The decorator must **support everything the decorated service supports** (`supportsNormalization()`, `supportsDenormalization()`, `getSupportedTypes()` delegate to the decorated service). Narrowing support to one format removes the decorated normalizer from the chain for all other formats — `text/csv` responses then bypass API Platform property metadata and expose `readable: false` properties.
+
 ## Documentation
 
 The authoritative documentation lives in spryker-docs. Start here:

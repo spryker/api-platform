@@ -9,7 +9,7 @@ declare(strict_types=1);
 
 namespace Spryker\ApiPlatform\DependencyInjection\Compiler;
 
-use InvalidArgumentException;
+use Spryker\ApiPlatform\Schema\Directory\ApiDirectoryLocator;
 use Symfony\Component\DependencyInjection\ContainerBuilder;
 use Symfony\Component\Finder\Finder;
 
@@ -26,6 +26,10 @@ class ApiClassAutoDiscoveryPass extends AbstractApiServiceRegistrationPass
      * @var array<string>
      */
     protected array $discoveredInterfaces = [];
+
+    public function __construct(protected ApiDirectoryLocator $apiDirectoryLocator = new ApiDirectoryLocator())
+    {
+    }
 
     public function process(ContainerBuilder $container): void
     {
@@ -50,41 +54,36 @@ class ApiClassAutoDiscoveryPass extends AbstractApiServiceRegistrationPass
         array $sourceDirectories,
         string $apiType,
     ): void {
-        $apiTypePascalCase = ucfirst($apiType);
+        $apiClassDirectories = $this->apiDirectoryLocator->locateApiClassDirectories($sourceDirectories, $apiType);
 
-        foreach ($sourceDirectories as $sourceDirectory) {
-            if (!is_dir($sourceDirectory)) {
+        if ($apiClassDirectories === []) {
+            $this->registerInterfaceAliases($container);
+
+            return;
+        }
+
+        $finder = new Finder();
+        $finder->files()
+            ->in($apiClassDirectories)
+            ->name('*.php')
+            ->notPath('#(?:^|/)Provider/#')
+            ->notPath('#(?:^|/)Processor/#');
+
+        foreach ($finder as $file) {
+            $className = $this->resolveClassNameFromFile($file);
+
+            if ($className === null) {
                 continue;
             }
 
-            try {
-                $finder = new Finder();
-                $finder->files()
-                    ->in($sourceDirectory)
-                    ->name('*.php')
-                    ->path(sprintf('#Glue/.+/Api/%s/#', $apiTypePascalCase))
-                    ->notPath('#(?:^|/)Provider/#')
-                    ->notPath('#(?:^|/)Processor/#');
+            if (interface_exists($className)) {
+                $this->discoveredInterfaces[] = $className;
 
-                foreach ($finder as $file) {
-                    $className = $this->resolveClassNameFromFile($file);
-
-                    if ($className === null) {
-                        continue;
-                    }
-
-                    if (interface_exists($className)) {
-                        $this->discoveredInterfaces[] = $className;
-
-                        continue;
-                    }
-
-                    if ($this->shouldRegisterService($container, $className)) {
-                        $this->registerService($container, $className);
-                    }
-                }
-            } catch (InvalidArgumentException) {
                 continue;
+            }
+
+            if ($this->shouldRegisterService($container, $className)) {
+                $this->registerService($container, $className);
             }
         }
 

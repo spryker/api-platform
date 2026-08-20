@@ -14,8 +14,10 @@ use Spryker\ApiPlatform\DependencyInjection\Compiler\ApiPlatformDecoratorPass;
 use Spryker\ApiPlatform\DependencyInjection\Compiler\ApiTypeServiceFilterPass;
 use Spryker\ApiPlatform\DependencyInjection\Compiler\JsonEncoderConfigurationPass;
 use Spryker\ApiPlatform\DependencyInjection\Compiler\RelationshipConfigurationPass;
+use Spryker\ApiPlatform\DependencyInjection\Compiler\SchemaFileDiscovery;
 use Spryker\ApiPlatform\DependencyInjection\Compiler\SchemaServiceRegistrationPass;
 use Spryker\ApiPlatform\DependencyInjection\Compiler\SecurityServiceRegistrationPass;
+use Spryker\ApiPlatform\Schema\Directory\ApiDirectoryLocator;
 use Symfony\Component\DependencyInjection\Compiler\PassConfig;
 use Symfony\Component\DependencyInjection\ContainerBuilder;
 use Symfony\Component\HttpKernel\Bundle\Bundle;
@@ -37,14 +39,19 @@ class SprykerApiPlatformBundle extends Bundle
     {
         parent::build($container);
 
+        // One locator/discovery instance is shared across all passes so the schema file
+        // lookup hits the filesystem only once per container build instead of once per pass.
+        $apiDirectoryLocator = new ApiDirectoryLocator();
+        $schemaFileDiscovery = new SchemaFileDiscovery($apiDirectoryLocator);
+
         $container->addCompilerPass(
-            new SchemaServiceRegistrationPass(),
+            new SchemaServiceRegistrationPass($schemaFileDiscovery),
             PassConfig::TYPE_BEFORE_OPTIMIZATION,
             50,
         );
 
         $container->addCompilerPass(
-            new ApiClassAutoDiscoveryPass(),
+            new ApiClassAutoDiscoveryPass($apiDirectoryLocator),
             PassConfig::TYPE_BEFORE_OPTIMIZATION,
             50,
         );
@@ -62,13 +69,13 @@ class SprykerApiPlatformBundle extends Bundle
         );
 
         $container->addCompilerPass(
-            new RelationshipConfigurationPass(),
+            new RelationshipConfigurationPass($schemaFileDiscovery),
             PassConfig::TYPE_BEFORE_OPTIMIZATION,
             45,
         );
 
         $container->addCompilerPass(
-            new SecurityServiceRegistrationPass(),
+            new SecurityServiceRegistrationPass($schemaFileDiscovery),
             PassConfig::TYPE_BEFORE_OPTIMIZATION,
             40,
         );
