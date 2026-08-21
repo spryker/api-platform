@@ -48,8 +48,6 @@ class PhpTemplateRenderer
 {
     /**
      * @param array{className: string, namespace: string, uses: array<string>, resourceAttribute: string, properties: array<array{name: string, type: string, phpType: string, attributes: string, description: string, phpDoc: string, serializedName?: string, serializedPath?: string, nullable?: bool}>, codeBucket: ?string, synthesizeMissingFieldsWhenEmpty?: bool, metadata: array{timestamp: string, sourceFiles: array<string>, validationSourceFiles: array<string>}}|array $templateData
-     *
-     * @return string
      */
     public function render(array $templateData): string
     {

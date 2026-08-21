@@ -28,8 +28,6 @@ class SchemaValidator implements SchemaValidatorInterface
      * @param array<string, mixed>|null $coreSchema
      *
      * @throws \Spryker\ApiPlatform\Exception\ApiSchemaValidationException
-     *
-     * @return void
      */
     public function validatePostMerge(array $mergedSchema, ?array $coreSchema = null): void
     {

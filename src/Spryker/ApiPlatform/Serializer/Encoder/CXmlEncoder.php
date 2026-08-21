@@ -47,13 +47,9 @@ class CXmlEncoder implements EncoderInterface, DecoderInterface, NormalizationAw
     }
 
     /**
-     * @param mixed $data
-     * @param string $format
      * @param array<string, mixed> $context
      *
      * @throws \Symfony\Component\Serializer\Exception\UnexpectedValueException
-     *
-     * @return string
      */
     public function encode(mixed $data, string $format, array $context = []): string
     {
@@ -73,13 +69,9 @@ class CXmlEncoder implements EncoderInterface, DecoderInterface, NormalizationAw
     }
 
     /**
-     * @param string $data
-     * @param string $format
      * @param array<string, mixed> $context
      *
      * @throws \Symfony\Component\Serializer\Exception\UnexpectedValueException
-     *
-     * @return mixed
      */
     public function decode(string $data, string $format, array $context = []): mixed
     {

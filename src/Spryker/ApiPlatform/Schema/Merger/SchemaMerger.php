@@ -323,14 +323,11 @@ class SchemaMerger implements SchemaMergerInterface
      * `type` declared) fall through to the field union / shallow attribute merge and never throw.
      * Applies same-layer and cross-layer, since both routes reach this method.
      *
-     * @param string $propertyName
      * @param array<string, mixed> $baseProperty
      * @param array<string, mixed> $overrideProperty
      * @param array<string, mixed> $overrideSchema
      *
      * @throws \Spryker\ApiPlatform\Exception\ApiSchemaGenerationException
-     *
-     * @return void
      */
     protected function assertNoShapeConflict(
         string $propertyName,
@@ -367,8 +364,6 @@ class SchemaMerger implements SchemaMergerInterface
      * e.g. map/scalar/plain array/object-without-properties), or null when no `type` is declared.
      *
      * @param array<string, mixed> $property
-     *
-     * @return string|null
      */
     protected function propertyShapeKind(array $property): ?string
     {
@@ -390,10 +385,7 @@ class SchemaMerger implements SchemaMergerInterface
     }
 
     /**
-     * @param string $kind
      * @param array<string, mixed> $property
-     *
-     * @return string
      */
     protected function describeShapeKind(string $kind, array $property): string
     {
@@ -406,8 +398,6 @@ class SchemaMerger implements SchemaMergerInterface
 
     /**
      * @param array<string, mixed> $property
-     *
-     * @return string
      */
     protected function describeContributingFiles(array $property): string
     {

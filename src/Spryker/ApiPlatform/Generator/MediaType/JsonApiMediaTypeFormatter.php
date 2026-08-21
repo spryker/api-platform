@@ -80,8 +80,6 @@ class JsonApiMediaTypeFormatter implements MediaTypeFormatterInterface
 
     /**
      * @param array<string, mixed> $example
-     *
-     * @return string
      */
     public function formatExampleAsCode(array $example): string
     {

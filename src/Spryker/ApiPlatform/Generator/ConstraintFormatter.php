@@ -61,8 +61,6 @@ class ConstraintFormatter
 
     /**
      * @param array<string, array{fqcn: string, shortName: string, alias: string}> $fqcnConstraintMap
-     *
-     * @return void
      */
     public function setFqcnConstraintMap(array $fqcnConstraintMap): void
     {

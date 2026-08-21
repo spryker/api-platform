@@ -258,8 +258,6 @@ YAML,
      *
      * @param string $apiType The API type in ucfirst format (e.g., 'backend')
      * @param string $resourceName The resource name (e.g., 'Customers')
-     *
-     * @return void
      */
     public function assertGeneratedClassExists(string $apiType, string $resourceName): void
     {
@@ -282,8 +280,6 @@ YAML,
      * @param string $apiType The API type in ucfirst format
      * @param string $resourceName The resource name
      * @param string $expectedNamespace The expected namespace pattern
-     *
-     * @return void
      */
     public function assertGeneratedNamespace(
         string $apiType,
@@ -307,8 +303,6 @@ YAML,
      *
      * @param string $apiType The API type in ucfirst format
      * @param array<string> $expectedFiles List of expected file paths relative to API type directory
-     *
-     * @return void
      */
     public function assertGeneratedDirectoryStructure(
         string $apiType,

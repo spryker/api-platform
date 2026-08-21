@@ -65,8 +65,6 @@ abstract class AbstractProcessor implements ProcessorInterface
 
     /**
      * @throws \BadMethodCallException
-     *
-     * @return mixed
      */
     protected function processPost(mixed $data): mixed
     {
@@ -80,8 +78,6 @@ abstract class AbstractProcessor implements ProcessorInterface
 
     /**
      * @throws \BadMethodCallException
-     *
-     * @return mixed
      */
     protected function processPatch(mixed $data): mixed
     {
@@ -95,8 +91,6 @@ abstract class AbstractProcessor implements ProcessorInterface
 
     /**
      * @throws \BadMethodCallException
-     *
-     * @return mixed
      */
     protected function processDelete(): mixed
     {

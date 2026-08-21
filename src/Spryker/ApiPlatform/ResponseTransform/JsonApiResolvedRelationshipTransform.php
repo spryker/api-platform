@@ -489,8 +489,6 @@ class JsonApiResolvedRelationshipTransform
      * This method detects such cases and replaces the flat URL with the correct nested one.
      *
      * @param array<string, mixed> $normalizedData
-     *
-     * @return void
      */
     protected function overrideNestedCollectionSelfLink(object $resource, array &$normalizedData): void
     {
@@ -727,8 +725,6 @@ class JsonApiResolvedRelationshipTransform
 
     /**
      * @param array<string, mixed> $normalizedData
-     *
-     * @return void
      */
     protected function stripNonReadableAttributes(object $resource, array &$normalizedData): void
     {
@@ -753,8 +749,6 @@ class JsonApiResolvedRelationshipTransform
      * to empty strings or empty arrays during JSON:API serialization.
      *
      * @param array<string, mixed> $normalizedData
-     *
-     * @return void
      */
     protected function restoreNullAttributes(object $resource, array &$normalizedData): void
     {
@@ -811,8 +805,6 @@ class JsonApiResolvedRelationshipTransform
      * @param array<string, mixed> $data
      * @param array<array{type: string, id: string}> $relationshipRefs
      * @param array<string, array<object>>|null $perItemData Parent ID → related resources
-     *
-     * @return void
      */
     protected function attachRelationshipToData(
         array &$data,

@@ -43,6 +43,7 @@
         "spryker/code-sniffer": "*",
         "spryker/console": "*",
         "spryker/container": "*",
+        "spryker/customer": "*",
         "spryker/decimal-object": "*",
         "spryker/symfony": "*",
         "spryker/testify": "*",

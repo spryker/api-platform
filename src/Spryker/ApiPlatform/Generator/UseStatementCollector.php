@@ -96,8 +96,6 @@ class UseStatementCollector
 
     /**
      * @param array<string, string> $constraintData
-     *
-     * @return string
      */
     protected function formatUseStatement(array $constraintData): string
     {

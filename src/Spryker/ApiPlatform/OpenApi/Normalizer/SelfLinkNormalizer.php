@@ -110,8 +110,6 @@ class SelfLinkNormalizer implements NormalizerInterface, NormalizerAwareInterfac
     /**
      * @param array<string, mixed> $data
      * @param array<string, mixed> $context
-     *
-     * @return void
      */
     protected function addSelfLinksToData(array &$data, array $context = []): void
     {
@@ -181,8 +179,6 @@ class SelfLinkNormalizer implements NormalizerInterface, NormalizerAwareInterfac
     /**
      * @param array<string, mixed> $resource
      * @param array<string, mixed> $context
-     *
-     * @return void
      */
     protected function addSelfLinkToResource(array &$resource, array $context = []): void
     {
@@ -287,8 +283,6 @@ class SelfLinkNormalizer implements NormalizerInterface, NormalizerAwareInterfac
      *
      * @param array<string, mixed> $data
      * @param array<string, mixed> $context
-     *
-     * @return void
      */
     protected function addRequestUriSelfLink(array &$data, array $context): void
     {
@@ -313,8 +307,6 @@ class SelfLinkNormalizer implements NormalizerInterface, NormalizerAwareInterfac
     /**
      * @param array<string, mixed> $resource
      * @param array<string, mixed> $context
-     *
-     * @return void
      */
     protected function addSelfLinkToIncludedResource(array &$resource, array $context = []): void
     {

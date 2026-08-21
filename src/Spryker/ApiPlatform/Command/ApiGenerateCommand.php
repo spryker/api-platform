@@ -256,8 +256,6 @@ class ApiGenerateCommand extends Command
 
     /**
      * @param array<array{resource: string, file: string, className: string, sourceFiles: array<string>, validationSourceFiles: array<string>}> $generatedResources
-     *
-     * @return void
      */
     protected function displayGenerationResults(
         array $generatedResources,
@@ -328,9 +326,6 @@ class ApiGenerateCommand extends Command
     /**
      * Resolves which API types should be processed based on user input.
      *
-     * @param \Symfony\Component\Console\Input\InputInterface $input
-     * @param \Symfony\Component\Console\Style\SymfonyStyle $io
-     *
      * @return array<string> Array of API types to process
      */
     protected function resolveApiTypes(InputInterface $input, SymfonyStyle $io): array
@@ -375,10 +370,7 @@ class ApiGenerateCommand extends Command
     /**
      * Display diagnostic information for troubleshooting schema generation issues.
      *
-     * @param \Symfony\Component\Console\Style\SymfonyStyle $io
      * @param array<string, mixed> $diagnostics
-     *
-     * @return void
      */
     protected function displayDiagnostics(SymfonyStyle $io, array $diagnostics): void
     {

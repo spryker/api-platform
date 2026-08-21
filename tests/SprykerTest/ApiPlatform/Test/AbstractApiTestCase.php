@@ -123,8 +123,6 @@ abstract class AbstractApiTestCase extends Unit
 
     /**
      * Returns the project root directory.
-     *
-     * @return string
      */
     protected function getProjectRoot(): string
     {
@@ -409,10 +407,6 @@ abstract class AbstractApiTestCase extends Unit
 
     /**
      * Assert that the response contains a validation violation for the specified property.
-     *
-     * @param string $propertyPath
-     *
-     * @return void
      */
     protected function assertResponseHasViolationForProperty(string $propertyPath): void
     {
@@ -430,8 +424,6 @@ abstract class AbstractApiTestCase extends Unit
      * Assert that the response contains validation violations for all specified properties.
      *
      * @param array<string> $propertyPaths
-     *
-     * @return void
      */
     protected function assertResponseHasViolations(array $propertyPaths): void
     {

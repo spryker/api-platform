@@ -102,8 +102,6 @@ abstract class AbstractApiServiceRegistrationPass implements CompilerPassInterfa
      * Applies tags from registered autoconfiguration rules to the service definition.
      * This bridges the gap between `registerForAutoconfiguration()` (called in extensions)
      * and services registered by this compiler pass (which bypass standard autoconfiguration).
-     *
-     * @return void
      */
     protected function applyAutoconfigurationTags(
         ContainerBuilder $container,

@@ -19,11 +19,7 @@ use Throwable;
 class ApiSchemaMergeException extends ApiSchemaException
 {
     /**
-     * @param string $message
-     * @param string|null $coreFile
-     * @param string|null $projectFile
      * @param array<string, mixed> $conflictDetails
-     * @param \Throwable|null $previous
      */
     public function __construct(
         string $message,
@@ -38,8 +34,6 @@ class ApiSchemaMergeException extends ApiSchemaException
 
     /**
      * Get the core schema file path.
-     *
-     * @return string|null
      */
     public function getCoreFile(): ?string
     {
@@ -48,8 +42,6 @@ class ApiSchemaMergeException extends ApiSchemaException
 
     /**
      * Get the project schema file path.
-     *
-     * @return string|null
      */
     public function getProjectFile(): ?string
     {
@@ -68,10 +60,6 @@ class ApiSchemaMergeException extends ApiSchemaException
 
     /**
      * Build a detailed error message with conflict information.
-     *
-     * @param string $message
-     *
-     * @return string
      */
     protected function buildMessage(string $message): string
     {

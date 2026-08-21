@@ -34,8 +34,6 @@ class SprykerApiPlatformExtensionTest extends Unit
     /**
      * A capitalized api-type key in canonical_object_search_directories must be normalized when stored,
      * so the lowercased lookup in the config getter resolves it for both casings.
-     *
-     * @return void
      */
     public function testGivenCapitalizedApiTypeKeyWhenLoadingThenGetterResolvesForBothCasings(): void
     {
@@ -58,8 +56,6 @@ class SprykerApiPlatformExtensionTest extends Unit
     /**
      * A %kernel.project_dir% placeholder in a canonical search directory must be expanded to the project
      * dir exactly once, leaving no literal placeholder and no doubled project dir.
-     *
-     * @return void
      */
     public function testGivenProjectDirPlaceholderDirectoryWhenLoadingThenResolvesPlaceholderExactlyOnce(): void
     {
@@ -83,8 +79,6 @@ class SprykerApiPlatformExtensionTest extends Unit
 
     /**
      * A plain relative path must still be prepended with the project dir.
-     *
-     * @return void
      */
     public function testGivenRelativeDirectoryWhenLoadingThenPrependsProjectDir(): void
     {
@@ -107,8 +101,6 @@ class SprykerApiPlatformExtensionTest extends Unit
 
     /**
      * An absolute path must be left untouched.
-     *
-     * @return void
      */
     public function testGivenAbsoluteDirectoryWhenLoadingThenLeavesItUntouched(): void
     {
@@ -131,8 +123,6 @@ class SprykerApiPlatformExtensionTest extends Unit
      * canonical_object_search_directories parameter.
      *
      * @param array<string, mixed> $config
-     *
-     * @return \Spryker\ApiPlatform\Configuration\ApiPlatformConfig
      */
     protected function loadExtension(array $config): ApiPlatformConfig
     {

@@ -200,8 +200,6 @@ class GlueApiExceptionSubscriberThrowableTest extends Unit
              * @param mixed $level
              * @param \Stringable|string $message
              * @param array<string, mixed> $context
-             *
-             * @return void
              */
             public function log($level, $message, array $context = []): void
             {

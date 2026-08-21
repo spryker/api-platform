@@ -50,9 +50,6 @@ class ApiPlatformRelationshipResolver implements ApiPlatformRelationshipResolver
 
     /**
      * @param array<string, array<string, mixed>> $relationships
-     * @param \Psr\Container\ContainerInterface $providerLocator
-     * @param \Psr\Container\ContainerInterface $resolverLocator
-     * @param \Psr\Container\ContainerInterface $iriConverterLocator
      */
     public function __construct(
         protected array $relationships,
@@ -63,7 +60,6 @@ class ApiPlatformRelationshipResolver implements ApiPlatformRelationshipResolver
     }
 
     /**
-     * @param string $mainResourceType
      * @param array<object> $mainResources
      * @param array<string> $requestedIncludes
      * @param array<string, mixed> $context
@@ -373,9 +369,7 @@ class ApiPlatformRelationshipResolver implements ApiPlatformRelationshipResolver
     }
 
     /**
-     * @param string $mainResourceType
      * @param array<object> $mainResources
-     * @param string $includePath
      * @param array<string, mixed> $context
      * @param array<string, array<object>> $processedIncludes
      * @param array<string, mixed> $resourceTypesByPath
@@ -531,7 +525,6 @@ class ApiPlatformRelationshipResolver implements ApiPlatformRelationshipResolver
 
     /**
      * @param array<object> $parentResources
-     * @param string $resolverClass
      * @param array<string, mixed> $context
      *
      * @return array<object>
@@ -586,8 +579,6 @@ class ApiPlatformRelationshipResolver implements ApiPlatformRelationshipResolver
     /**
      * @param array<object> $mainResources
      * @param array<string, mixed> $config
-     *
-     * @return string
      */
     protected function buildCacheKey(array $mainResources, array $config): string
     {
@@ -927,9 +918,6 @@ class ApiPlatformRelationshipResolver implements ApiPlatformRelationshipResolver
     }
 
     /**
-     * @param string $mainResourceType
-     * @param string $relationshipName
-     *
      * @return array<string, mixed>|null
      */
     protected function getRelationshipConfig(string $mainResourceType, string $relationshipName): ?array
@@ -940,8 +928,6 @@ class ApiPlatformRelationshipResolver implements ApiPlatformRelationshipResolver
     }
 
     /**
-     * @param string $serviceId
-     *
      * @return \ApiPlatform\State\ProviderInterface<object>|null
      */
     protected function getProvider(string $serviceId): ?ProviderInterface
@@ -959,7 +945,6 @@ class ApiPlatformRelationshipResolver implements ApiPlatformRelationshipResolver
      * to avoid invoking it with empty URI variables, which would otherwise fall through to the
      * provider's unfiltered `GetCollection` branch and attach every available item as relationships.
      *
-     * @param object $mainResource
      * @param array<string, string> $mappings
      *
      * @return array<string, mixed>|null

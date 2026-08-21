@@ -92,8 +92,6 @@ class CanonicalObjectGenerationIntegrationTest extends Unit
      * `Address` canonical definition collapse to exactly ONE canonical value-object class in the
      * shared `Generated\Api\Storefront` namespace, and `Address` is reported as a known canonical
      * object name.
-     *
-     * @return void
      */
     public function testGivenTwoResourcesTaggingSameObjectNameWhenGeneratingThenCollapsesOntoOneCanonicalClass(): void
     {
@@ -133,8 +131,6 @@ class CanonicalObjectGenerationIntegrationTest extends Unit
      * Assertion 2 (reference typing): with `Address` known, BOTH referencing resources type the
      * `address` property to the canonical class, import it from the shared canonical namespace, and
      * emit NO per-resource `*AddressStorefrontObject` companion class.
-     *
-     * @return void
      */
     public function testGivenReferencingResourcesWhenGeneratingThenTypeCanonicalClassAndEmitNoCompanion(): void
     {
@@ -187,8 +183,6 @@ class CanonicalObjectGenerationIntegrationTest extends Unit
      * Assertion 3 (extends/omit): `AddressSnapshot` extends `Address`, omits `id`, and adds
      * `country`. The generated `AddressSnapshot` canonical class carries the inherited fields plus
      * `country` and lacks `id`.
-     *
-     * @return void
      */
     public function testGivenObjectExtendingAnotherWithOmitWhenGeneratingThenProducesInheritedFieldsMinusOmittedPlusOwn(): void
     {
@@ -222,8 +216,6 @@ class CanonicalObjectGenerationIntegrationTest extends Unit
      * resource imports and types.
      *
      * @param array<string, string> $canonicalObjectClasses
-     *
-     * @return string
      */
     protected function findCanonicalClassFor(string $objectName, array $canonicalObjectClasses): string
     {

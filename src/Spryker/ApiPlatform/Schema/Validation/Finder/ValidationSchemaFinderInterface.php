@@ -25,16 +25,12 @@ interface ValidationSchemaFinderInterface
     ): ?SplFileInfo;
 
     /**
-     * @param string $apiType
-     *
      * @return \Generator<\SplFileInfo>
      */
     public function findAllValidationSchemas(string $apiType): Generator;
 
     /**
      * Get diagnostic information about validation schema search for troubleshooting.
-     *
-     * @param string $apiType
      *
      * @return array<string, mixed>
      */

@@ -70,8 +70,6 @@ abstract class AbstractProvider implements ProviderInterface
 
     /**
      * @throws \BadMethodCallException
-     *
-     * @return object|null
      */
     protected function provideItem(): object|null
     {

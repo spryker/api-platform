@@ -60,8 +60,6 @@ class MediaTypeFormatterRegistry
      * Checks if a formatter exists for the given media type.
      *
      * @param string $mediaType The media type to check
-     *
-     * @return bool
      */
     public function hasFormatter(string $mediaType): bool
     {

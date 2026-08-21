@@ -52,8 +52,6 @@ interface MediaTypeFormatterInterface
      *
      * This should be the primary MIME type for the format (e.g., 'application/vnd.api+json',
      * 'application/xml', 'application/json').
-     *
-     * @return string
      */
     public function getMediaType(): string;
 

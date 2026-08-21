@@ -93,8 +93,6 @@ class RelationshipConfigurationPass implements CompilerPassInterface
      * This enables cross-module target resource resolution.
      *
      * @param array<\SplFileInfo> $schemaFiles
-     *
-     * @return void
      */
     protected function buildProviderIndex(array $schemaFiles): void
     {
@@ -119,8 +117,6 @@ class RelationshipConfigurationPass implements CompilerPassInterface
      * Indexes a resource definition by all available identifiers (name, resource key, shortName).
      *
      * @param array<string, mixed> $resource
-     *
-     * @return void
      */
     protected function indexResourceProvider(array $resource): void
     {
@@ -283,7 +279,6 @@ class RelationshipConfigurationPass implements CompilerPassInterface
 
     /**
      * @param array<string, mixed> $include
-     * @param string $resourceShortName
      *
      * @return array{key: string, config: array<string, mixed>}|null
      */
@@ -327,8 +322,6 @@ class RelationshipConfigurationPass implements CompilerPassInterface
     /**
      * Finds a target resource entry from the global provider index.
      *
-     * @param string $targetResource
-     *
      * @return array{provider: string, shortName: string}|null
      */
     protected function findTargetResourceEntry(string $targetResource): ?array
@@ -339,10 +332,7 @@ class RelationshipConfigurationPass implements CompilerPassInterface
     /**
      * Registers resolver classes as public autowired services in the container.
      *
-     * @param \Symfony\Component\DependencyInjection\ContainerBuilder $container
      * @param array<string, array<string, mixed>> $relationships
-     *
-     * @return void
      */
     protected function registerResolverServices(ContainerBuilder $container, array $relationships): void
     {
@@ -367,10 +357,7 @@ class RelationshipConfigurationPass implements CompilerPassInterface
      * with scoped ServiceLocator instances containing only the provider and resolver
      * services that are actually referenced by the relationship configuration.
      *
-     * @param \Symfony\Component\DependencyInjection\ContainerBuilder $container
      * @param array<string, array<string, mixed>> $relationships
-     *
-     * @return void
      */
     protected function replaceWithScopedLocators(ContainerBuilder $container, array $relationships): void
     {

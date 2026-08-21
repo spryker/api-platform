@@ -31,8 +31,6 @@ class CanonicalObjectDefinitionResolverTest extends Unit
 
     /**
      * Project layer overrides core per-key and adds new fields.
-     *
-     * @return void
      */
     public function testGivenSameObjectAcrossLayersWhenResolvingThenProjectLayerWins(): void
     {
@@ -48,8 +46,6 @@ class CanonicalObjectDefinitionResolverTest extends Unit
 
     /**
      * extends inherits base fields, omit removes named keys, own properties add on top.
-     *
-     * @return void
      */
     public function testGivenExtendsAndOmitWhenResolvingThenAppliesExtendsThenOmitThenOwnProperties(): void
     {
@@ -66,8 +62,6 @@ class CanonicalObjectDefinitionResolverTest extends Unit
 
     /**
      * An extends cycle (A→B→A) throws ApiSchemaGenerationException.
-     *
-     * @return void
      */
     public function testGivenExtendsCycleWhenResolvingThenThrows(): void
     {
@@ -80,8 +74,6 @@ class CanonicalObjectDefinitionResolverTest extends Unit
 
     /**
      * Feature layer sits between core and project in precedence.
-     *
-     * @return void
      */
     public function testGivenAllThreeLayersWhenResolvingThenProjectWinsOverFeatureOverCore(): void
     {
@@ -97,8 +89,6 @@ class CanonicalObjectDefinitionResolverTest extends Unit
 
     /**
      * Feature layer overrides core but is itself overridden by project.
-     *
-     * @return void
      */
     public function testGivenFeatureAndCoreOnlyWhenResolvingThenFeatureOverridesCore(): void
     {
@@ -113,8 +103,6 @@ class CanonicalObjectDefinitionResolverTest extends Unit
 
     /**
      * A self-referencing extends (A→A) throws ApiSchemaGenerationException.
-     *
-     * @return void
      */
     public function testGivenSelfExtendsWhenResolvingThenThrows(): void
     {
@@ -126,8 +114,6 @@ class CanonicalObjectDefinitionResolverTest extends Unit
 
     /**
      * An extends pointing to a non-existent object throws ApiSchemaGenerationException.
-     *
-     * @return void
      */
     public function testGivenUnknownExtendsTargetWhenResolvingThenThrows(): void
     {
@@ -140,8 +126,6 @@ class CanonicalObjectDefinitionResolverTest extends Unit
     /**
      * The same objectName defined twice in the SAME layer (two source files) must throw,
      * and the message must name both source files.
-     *
-     * @return void
      */
     public function testGivenSameObjectNameInSameLayerFromTwoFilesWhenResolvingThenThrowsNamingBothFiles(): void
     {
@@ -161,8 +145,6 @@ class CanonicalObjectDefinitionResolverTest extends Unit
 
     /**
      * The same objectName across DIFFERENT layers still merges (existing override behavior), no throw.
-     *
-     * @return void
      */
     public function testGivenSameObjectNameAcrossDifferentLayersFromTwoFilesWhenResolvingThenMergesWithoutThrow(): void
     {

@@ -34,8 +34,6 @@ class ApiSchemaValidationException extends ApiSchemaException
 
     /**
      * Get the file path where the error occurred.
-     *
-     * @return string|null
      */
     public function getFilePath(): ?string
     {
@@ -54,10 +52,6 @@ class ApiSchemaValidationException extends ApiSchemaException
 
     /**
      * Build a detailed error message with file and line context.
-     *
-     * @param string $message
-     *
-     * @return string
      */
     protected function buildMessage(string $message): string
     {

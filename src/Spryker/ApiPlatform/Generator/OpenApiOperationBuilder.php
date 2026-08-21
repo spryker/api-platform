@@ -64,11 +64,8 @@ class OpenApiOperationBuilder
      *
      * @param array<string, mixed> $parsedSchema
      * @param array<string, mixed> $operation
-     * @param string $operationType
      * @param array<string>|null $tags
      * @param int $indentLevel The indent level of the openapi key (content renders at $indentLevel + 1)
-     *
-     * @return string
      */
     public function generateOpenApiOperation(
         array $parsedSchema,
@@ -140,8 +137,6 @@ class OpenApiOperationBuilder
      *
      * @param array<string> $parts Pre-formatted `key: value` strings
      * @param int $indentLevel The indent level of the Operation opening/closing
-     *
-     * @return string
      */
     protected function buildOperationString(array $parts, int $indentLevel): string
     {
@@ -158,8 +153,6 @@ class OpenApiOperationBuilder
 
     /**
      * @param array<string> $tags
-     *
-     * @return string
      */
     protected function formatTagsParameter(array $tags): string
     {
@@ -191,8 +184,6 @@ class OpenApiOperationBuilder
 
     /**
      * @param array<string, mixed> $content
-     *
-     * @return string
      */
     protected function formatOpenapiContextContent(array $content): string
     {
@@ -208,8 +199,6 @@ class OpenApiOperationBuilder
 
     /**
      * @param array<string, mixed> $context
-     *
-     * @return string
      */
     protected function formatOpenapiContext(array $context): string
     {
@@ -246,8 +235,6 @@ class OpenApiOperationBuilder
 
     /**
      * @param array<mixed> $array
-     *
-     * @return string
      */
     protected function formatOpenapiContextArray(array $array): string
     {

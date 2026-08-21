@@ -257,8 +257,6 @@ class ObjectSchemaFinderTest extends Unit
 
     /**
      * @param array<string, array<string>> $centralDirectoriesByApiType
-     *
-     * @return \Spryker\ApiPlatform\Schema\Object\Finder\ObjectSchemaFinder
      */
     protected function createObjectSchemaFinderWithCentralDirectories(array $centralDirectoriesByApiType): ObjectSchemaFinder
     {

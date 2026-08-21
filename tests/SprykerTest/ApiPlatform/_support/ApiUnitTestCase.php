@@ -59,8 +59,6 @@ abstract class ApiUnitTestCase extends Unit
      * @param string $exceptionClass The exception class name
      * @param string $messagePattern Regex pattern for exception message
      * @param callable $callback The code that should throw
-     *
-     * @return void
      */
     protected function assertExceptionWithMessage(
         string $exceptionClass,

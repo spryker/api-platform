@@ -30,8 +30,6 @@ class ApiSchemaGenerationException extends ApiSchemaException
 
     /**
      * Get the resource name being generated.
-     *
-     * @return string|null
      */
     public function getResourceName(): ?string
     {
@@ -40,8 +38,6 @@ class ApiSchemaGenerationException extends ApiSchemaException
 
     /**
      * Get the ApiType being generated.
-     *
-     * @return string|null
      */
     public function getApiType(): ?string
     {
@@ -50,10 +46,6 @@ class ApiSchemaGenerationException extends ApiSchemaException
 
     /**
      * Build a detailed error message with resource context.
-     *
-     * @param string $message
-     *
-     * @return string
      */
     protected function buildMessage(string $message): string
     {

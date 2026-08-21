@@ -77,8 +77,6 @@ class ValidationSchemaMerger implements ValidationSchemaMergerInterface
     }
 
     /**
-     * @param mixed $constraint
-     *
      * @return array{type: string, parameters: array<mixed>}
      */
     protected function normalizeConstraint(mixed $constraint): array

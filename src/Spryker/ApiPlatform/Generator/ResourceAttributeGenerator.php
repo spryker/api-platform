@@ -61,8 +61,6 @@ class ResourceAttributeGenerator
     /**
      * @param array<string, mixed> $schema
      * @param array<string> $uses
-     *
-     * @return string
      */
     public function generate(array $schema, array &$uses): string
     {
@@ -215,7 +213,6 @@ class ResourceAttributeGenerator
 
     /**
      * @param array<string, mixed> $operation
-     * @param int $indentLevel
      *
      * @return array<string, mixed>
      */
@@ -296,9 +293,6 @@ class ResourceAttributeGenerator
 
     /**
      * @param array<string, mixed> $parameters
-     * @param int $indentLevel
-     *
-     * @return string
      */
     protected function formatOperationParameters(array $parameters, int $indentLevel): string
     {
@@ -352,8 +346,6 @@ class ResourceAttributeGenerator
 
     /**
      * @param array<string, mixed> $array
-     *
-     * @return string
      */
     protected function formatArrayParameter(array $array): string
     {
@@ -382,8 +374,6 @@ class ResourceAttributeGenerator
     /**
      * @param array<string, mixed> $uriVariables
      * @param int $keyIndentLevel The indent level of the uriVariables key
-     *
-     * @return string
      */
     protected function buildUriVariablesParameter(array $uriVariables, int $keyIndentLevel): string
     {
@@ -408,7 +398,6 @@ class ResourceAttributeGenerator
     }
 
     /**
-     * @param string $variableName
      * @param array<string, mixed> $config
      *
      * @return array<string>
@@ -441,10 +430,7 @@ class ResourceAttributeGenerator
 
     /**
      * @param array<string, mixed> $schema
-     * @param string $type
      * @param array<string, mixed> $operation
-     *
-     * @return string
      */
     protected function generateOperationAttribute(array $schema, string $type, array $operation): string
     {
@@ -511,8 +497,6 @@ class ResourceAttributeGenerator
     /**
      * @param array<string> $tags
      * @param int $indentLevel The indent level of the openapi key
-     *
-     * @return string
      */
     protected function buildOpenApiOperationWithTags(array $tags, int $indentLevel): string
     {
@@ -531,8 +515,6 @@ class ResourceAttributeGenerator
      * @param array<string, mixed> $schema
      * @param array<string, mixed> $operations
      * @param array<string> $uses
-     *
-     * @return void
      */
     protected function addOperationUseStatements(array $schema, array $operations, array &$uses): void
     {
@@ -587,8 +569,6 @@ class ResourceAttributeGenerator
     /**
      * @param array<string, mixed> $operations
      * @param array<string> $uses
-     *
-     * @return void
      */
     protected function collectOperationServiceUseStatements(array $operations, array &$uses): void
     {

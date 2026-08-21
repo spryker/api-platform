@@ -40,8 +40,6 @@ class SprykerApiPlatformExtension extends Extension implements PrependExtensionI
 
     /**
      * @param array<mixed> $configs
-     *
-     * @return void
      */
     public function load(array $configs, ContainerBuilder $container): void
     {
@@ -145,8 +143,6 @@ class SprykerApiPlatformExtension extends Extension implements PrependExtensionI
 
     /**
      * @param array<string> $apiTypes
-     *
-     * @return void
      */
     protected function ensureGeneratedDirectoriesExist(ContainerBuilder $container, string $generatedDir, array $apiTypes): void
     {
@@ -173,8 +169,6 @@ class SprykerApiPlatformExtension extends Extension implements PrependExtensionI
     /**
      * We need to ensure that for the currently running application the assets directory exists. This is needed for the
      * `assets:install` command to work properly.
-     *
-     * @return void
      */
     protected function ensureAssetsDirectoryExist(ContainerBuilder $container): void
     {

@@ -35,7 +35,6 @@ class RelationshipProvider implements ProviderInterface
     }
 
     /**
-     * @param \ApiPlatform\Metadata\Operation $operation
      * @param array<string, mixed> $uriVariables
      * @param array<string, mixed> $context
      *

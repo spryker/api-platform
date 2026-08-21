@@ -58,8 +58,6 @@ class ResourceNameNormalizer
 
     /**
      * @throws \Spryker\ApiPlatform\Exception\ApiSchemaGenerationException
-     *
-     * @return void
      */
     protected static function validateNotEmpty(string $trimmed, string $original): void
     {
@@ -122,8 +120,6 @@ class ResourceNameNormalizer
 
     /**
      * @throws \Spryker\ApiPlatform\Exception\ApiSchemaGenerationException
-     *
-     * @return void
      */
     protected static function validateResult(string $normalized, string $original): void
     {

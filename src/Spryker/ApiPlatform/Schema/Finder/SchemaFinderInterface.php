@@ -29,8 +29,6 @@ interface SchemaFinderInterface
     /**
      * Get diagnostic information about schema file search for troubleshooting.
      *
-     * @param string $apiType
-     *
      * @return array<string, mixed>
      */
     public function getDiagnosticInfo(string $apiType): array;

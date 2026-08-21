@@ -26,8 +26,6 @@ class PreMergeValidator implements PreMergeValidatorInterface
 
     /**
      * @param array<string, mixed> $schema
-     *
-     * @return void
      */
     public function validate(array $schema, string $filePath): void
     {
@@ -39,8 +37,6 @@ class PreMergeValidator implements PreMergeValidatorInterface
      * @param array<string, mixed> $schema
      *
      * @throws \Spryker\ApiPlatform\Exception\ApiSchemaValidationException
-     *
-     * @return void
      */
     protected function validateResourceName(array $schema, string $filePath): void
     {
@@ -56,8 +52,6 @@ class PreMergeValidator implements PreMergeValidatorInterface
      * @param array<string, mixed> $schema
      *
      * @throws \Spryker\ApiPlatform\Exception\ApiSchemaValidationException
-     *
-     * @return void
      */
     protected function validateProperties(array $schema, string $filePath): void
     {

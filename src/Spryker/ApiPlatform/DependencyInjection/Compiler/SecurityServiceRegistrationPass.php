@@ -32,8 +32,6 @@ class SecurityServiceRegistrationPass implements CompilerPassInterface
 
     /**
      * @throws \InvalidArgumentException
-     *
-     * @return void
      */
     public function process(ContainerBuilder $container): void
     {
@@ -113,8 +111,6 @@ class SecurityServiceRegistrationPass implements CompilerPassInterface
 
     /**
      * @param array<string, mixed> $resource
-     *
-     * @return bool
      */
     protected function resourceHasSecurityExpressions(array $resource): bool
     {

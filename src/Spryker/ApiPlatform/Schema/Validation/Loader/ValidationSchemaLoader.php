@@ -15,8 +15,6 @@ use Symfony\Component\Yaml\Yaml;
 class ValidationSchemaLoader implements ValidationSchemaLoaderInterface
 {
     /**
-     * @param \SplFileInfo $file
-     *
      * @return array<string, mixed>
      */
     public function load(SplFileInfo $file): array

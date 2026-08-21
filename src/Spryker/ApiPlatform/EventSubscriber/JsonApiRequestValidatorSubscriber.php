@@ -62,8 +62,6 @@ class JsonApiRequestValidatorSubscriber implements EventSubscriberInterface
      * like PATCH /carts/ or DELETE /carts/ before Symfony returns HTML 404.
      *
      * @throws \Spryker\ApiPlatform\Exception\GlueApiException
-     *
-     * @return void
      */
     public function onKernelRequestTrailingSlash(RequestEvent $event): void
     {
@@ -139,8 +137,6 @@ class JsonApiRequestValidatorSubscriber implements EventSubscriberInterface
      * Only runs for API Platform routes (where _api_operation is set by the router).
      *
      * @throws \Spryker\ApiPlatform\Exception\GlueApiException
-     *
-     * @return void
      */
     public function onKernelRequestTypeValidation(RequestEvent $event): void
     {
@@ -226,8 +222,6 @@ class JsonApiRequestValidatorSubscriber implements EventSubscriberInterface
      * that BC inspect this attribute.
      *
      * @param array<string, mixed> $body
-     *
-     * @return void
      */
     protected function sanitizeRequestBody(Request $request, array $body): void
     {
@@ -374,8 +368,6 @@ class JsonApiRequestValidatorSubscriber implements EventSubscriberInterface
      * Collapses consecutive slashes in the request pathInfo so the legacy
      * Glue router can parse the URL. Without this, UriParser::splitPath()
      * produces empty-string segments from //, which don't match any resource plugin.
-     *
-     * @return void
      */
     protected function collapseConsecutiveSlashes(Request $request): void
     {
@@ -714,8 +706,6 @@ class JsonApiRequestValidatorSubscriber implements EventSubscriberInterface
      * the // to correctly pair resource types with their identifiers.
      *
      * @param array<string> $segments
-     *
-     * @return void
      */
     protected function restoreEmptyPathSegment(Request $request, array $segments, int $insertAtIndex): void
     {

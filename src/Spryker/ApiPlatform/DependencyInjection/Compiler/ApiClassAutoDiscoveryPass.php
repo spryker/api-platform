@@ -46,8 +46,6 @@ class ApiClassAutoDiscoveryPass extends AbstractApiServiceRegistrationPass
 
     /**
      * @param array<string> $sourceDirectories
-     *
-     * @return void
      */
     protected function discoverApiClasses(
         ContainerBuilder $container,
@@ -93,8 +91,6 @@ class ApiClassAutoDiscoveryPass extends AbstractApiServiceRegistrationPass
     /**
      * Creates interface-to-implementation aliases for discovered interfaces
      * whose implementations were registered as services.
-     *
-     * @return void
      */
     protected function registerInterfaceAliases(ContainerBuilder $container): void
     {

@@ -126,11 +126,6 @@ YAML;
 
     /**
      * @dataProvider objectValidationFileNameProvider
-     *
-     * @param string $fileName
-     * @param string $expectedObjectName
-     *
-     * @return void
      */
     public function testGivenValidationFilenameWhenDerivingObjectNameThenReturnsPascalCase(string $fileName, string $expectedObjectName): void
     {
@@ -164,8 +159,6 @@ YAML;
     /**
      * Two validation files resolving to the same objectName within the same layer (one module file,
      * one central-directory file, both project) must fail loud naming both source files.
-     *
-     * @return void
      */
     public function testGivenTwoValidationFilesSameObjectNameSameLayerWhenLoadingThenThrowsNamingBoth(): void
     {
@@ -189,8 +182,6 @@ YAML;
     /**
      * The same objectName across DIFFERENT layers (a feature-layer module file and a project-layer
      * central file) is the legitimate override and must NOT throw.
-     *
-     * @return void
      */
     public function testGivenTwoValidationFilesSameObjectNameDifferentLayersWhenLoadingThenDoesNotThrow(): void
     {

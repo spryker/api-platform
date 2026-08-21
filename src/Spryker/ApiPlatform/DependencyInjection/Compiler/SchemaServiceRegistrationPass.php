@@ -72,8 +72,6 @@ class SchemaServiceRegistrationPass extends AbstractApiServiceRegistrationPass
     /**
      * @param array<string, mixed> $resource
      * @param array<string> $services
-     *
-     * @return void
      */
     protected function collectServicesFromResource(array $resource, array &$services): void
     {
@@ -109,8 +107,6 @@ class SchemaServiceRegistrationPass extends AbstractApiServiceRegistrationPass
     /**
      * @param array<string, mixed> $resource
      * @param array<string> $services
-     *
-     * @return void
      */
     protected function collectResolverClassesFromResource(array $resource, array &$services): void
     {

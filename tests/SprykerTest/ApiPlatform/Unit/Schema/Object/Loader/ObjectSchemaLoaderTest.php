@@ -37,8 +37,6 @@ class ObjectSchemaLoaderTest extends Unit
 
     /**
      * A core-path fixture (no /Pyz/ in path) with a type alias should be normalized and detected as core.
-     *
-     * @return void
      */
     public function testGivenCorePathObjectFileWhenLoadingThenNormalizesTypeAliasAndDetectsCoreLayer(): void
     {
@@ -66,8 +64,6 @@ YAML;
 
     /**
      * A /Pyz/ path should yield layer === 'project'.
-     *
-     * @return void
      */
     public function testGivenPyzPathObjectFileWhenLoadingThenDetectsProjectLayer(): void
     {
@@ -91,8 +87,6 @@ YAML;
 
     /**
      * A /SprykerFeature/ path should yield layer === 'feature'.
-     *
-     * @return void
      */
     public function testGivenFeaturePathObjectFileWhenLoadingThenDetectsFeatureLayer(): void
     {
@@ -116,8 +110,6 @@ YAML;
 
     /**
      * extends and omit fields must pass through to the output array.
-     *
-     * @return void
      */
     public function testGivenExtendsAndOmitWhenLoadingThenCarriesThemThrough(): void
     {
@@ -146,8 +138,6 @@ YAML;
 
     /**
      * int type alias should be normalized to integer.
-     *
-     * @return void
      */
     public function testGivenIntTypeAliasWhenLoadingThenNormalizesToInteger(): void
     {
@@ -172,8 +162,6 @@ YAML;
 
     /**
      * A file missing the `object:` root key must throw ApiSchemaValidationException.
-     *
-     * @return void
      */
     public function testGivenFileWithoutObjectKeyWhenLoadingThenThrows(): void
     {
@@ -195,8 +183,6 @@ YAML;
 
     /**
      * A file with an `object:` key but an empty `name` must throw ApiSchemaValidationException.
-     *
-     * @return void
      */
     public function testGivenObjectWithEmptyNameWhenLoadingThenThrows(): void
     {
@@ -220,8 +206,6 @@ YAML;
 
     /**
      * A non-/Pyz/ path loaded with layerOverride='project' must report layer === 'project'.
-     *
-     * @return void
      */
     public function testGivenNonPyzPathWithProjectLayerOverrideWhenLoadingThenUsesOverriddenLayer(): void
     {
@@ -245,8 +229,6 @@ YAML;
 
     /**
      * Without a layerOverride, path detection still applies (a non-/Pyz/ path reads core).
-     *
-     * @return void
      */
     public function testGivenNonPyzPathWithoutLayerOverrideWhenLoadingThenDetectsLayerFromPath(): void
     {
@@ -270,8 +252,6 @@ YAML;
     /**
      * An invalid layerOverride (not one of core/feature/project) must fail loud rather than silently
      * sorting as core in the resolver.
-     *
-     * @return void
      */
     public function testGivenInvalidLayerOverrideWhenLoadingThenThrows(): void
     {
@@ -295,8 +275,6 @@ YAML;
 
     /**
      * A valid layerOverride (feature) must be accepted and reported verbatim.
-     *
-     * @return void
      */
     public function testGivenValidLayerOverrideWhenLoadingThenUsesOverriddenLayer(): void
     {

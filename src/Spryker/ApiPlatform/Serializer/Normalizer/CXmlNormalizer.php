@@ -41,7 +41,6 @@ class CXmlNormalizer implements NormalizerInterface, DenormalizerInterface, Seri
 
     /**
      * @param mixed $object
-     * @param string|null $format
      * @param array<string, mixed> $context
      *
      * @return mixed
@@ -54,12 +53,7 @@ class CXmlNormalizer implements NormalizerInterface, DenormalizerInterface, Seri
     /**
      * Denormalizes array data into a CXml object.
      *
-     * @param mixed $data
-     * @param string $type
-     * @param string|null $format
      * @param array<string, mixed> $context
-     *
-     * @return mixed
      */
     public function denormalize(mixed $data, string $type, ?string $format = null, array $context = []): mixed
     {
@@ -78,11 +72,7 @@ class CXmlNormalizer implements NormalizerInterface, DenormalizerInterface, Seri
      * format that relies on the decorated normalizer (for example `csv`) to Symfony's plain object normalizer,
      * which ignores API Platform property metadata and therefore exposes non-readable properties.
      *
-     * @param mixed $data
-     * @param string|null $format
      * @param array<string, mixed> $context
-     *
-     * @return bool
      */
     public function supportsNormalization(mixed $data, ?string $format = null, array $context = []): bool
     {
@@ -94,12 +84,7 @@ class CXmlNormalizer implements NormalizerInterface, DenormalizerInterface, Seri
      *
      * Already decoded cXML data is passed through as is, everything else follows the decorated normalizer.
      *
-     * @param mixed $data
-     * @param string $type
-     * @param string|null $format
      * @param array<string, mixed> $context
-     *
-     * @return bool
      */
     public function supportsDenormalization(mixed $data, string $type, ?string $format = null, array $context = []): bool
     {
@@ -115,8 +100,6 @@ class CXmlNormalizer implements NormalizerInterface, DenormalizerInterface, Seri
      *
      * The decorated normalizer reports its object support as non-cacheable, which keeps the `supports*()` methods
      * above in play — including the cXML pass-through.
-     *
-     * @param string|null $format
      *
      * @return array<class-string|'object'|'*', bool|null>
      */

@@ -85,10 +85,7 @@ class FqcnConstraintResolver
     }
 
     /**
-     * @param mixed $constraint
      * @param array<string, array{fqcn: string, shortName: string, alias: string, namespaceParts: array<string>}> $fqcnConstraints
-     *
-     * @return void
      */
     protected function extractFqcnFromConstraint(mixed $constraint, array &$fqcnConstraints): void
     {
@@ -207,10 +204,7 @@ class FqcnConstraintResolver
 
     /**
      * @param array<string, array<string>> $vendorGroups
-     * @param string $shortName
      * @param array<string, array{fqcn: string, shortName: string, alias: string, namespaceParts: array<string>}> $fqcnConstraints
-     *
-     * @return void
      */
     protected function resolveVendorGroupAliases(array $vendorGroups, string $shortName, array &$fqcnConstraints): void
     {
@@ -225,11 +219,7 @@ class FqcnConstraintResolver
 
     /**
      * @param array<string> $vendorFqcns
-     * @param string $vendor
-     * @param string $shortName
      * @param array<string, array{fqcn: string, shortName: string, alias: string, namespaceParts: array<string>}> $fqcnConstraints
-     *
-     * @return void
      */
     protected function resolveVendorAliases(array $vendorFqcns, string $vendor, string $shortName, array &$fqcnConstraints): void
     {
@@ -246,11 +236,7 @@ class FqcnConstraintResolver
 
     /**
      * @param array<string> $vendorFqcns
-     * @param string $vendor
-     * @param string $shortName
      * @param array<string, array{fqcn: string, shortName: string, alias: string, namespaceParts: array<string>}> $fqcnConstraints
-     *
-     * @return void
      */
     protected function resolveVendorCollisionAliases(array $vendorFqcns, string $vendor, string $shortName, array &$fqcnConstraints): void
     {
@@ -267,8 +253,6 @@ class FqcnConstraintResolver
 
     /**
      * @param array<string> $namespaceParts
-     *
-     * @return string
      */
     protected function extractDisambiguatingPart(array $namespaceParts): string
     {
@@ -314,8 +298,6 @@ class FqcnConstraintResolver
     }
 
     /**
-     * @param string $fqcn
-     *
      * @return array{namespace: string, shortName: string, namespaceParts: array<string>}
      */
     protected function parseConstraintFqcn(string $fqcn): array

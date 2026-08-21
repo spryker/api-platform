@@ -23,8 +23,6 @@ class Customer implements UserInterface
     protected array $roles;
 
     /**
-     * @param string $customerReference
-     * @param string $email
      * @param array<string> $roles
      */
     public function __construct(string $customerReference, string $email, array $roles = ['ROLE_USER'])

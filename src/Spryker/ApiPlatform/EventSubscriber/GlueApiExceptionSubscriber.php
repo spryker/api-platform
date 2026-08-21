@@ -390,8 +390,6 @@ class GlueApiExceptionSubscriber implements EventSubscriberInterface
     /**
      * Converts API Platform's 400 deserialization errors to 422 with Spryker error code 901,
      * preserving backward compatibility with the old REST API validation error format.
-     *
-     * @return void
      */
     public function onKernelResponse(ResponseEvent $event): void
     {
@@ -706,8 +704,6 @@ class GlueApiExceptionSubscriber implements EventSubscriberInterface
      * Forces the translator locale to English for validation messages on API Platform routes.
      * The old REST API returned English because validation ran before locale was set.
      * Only applies to API Platform routes to avoid affecting legacy Glue endpoints.
-     *
-     * @return void
      */
     public function onKernelRequestForceEnglishValidation(RequestEvent $event): void
     {
@@ -753,8 +749,6 @@ class GlueApiExceptionSubscriber implements EventSubscriberInterface
      * Splits single-error validation responses (where all violations are concatenated
      * with newlines in one detail string) into separate error objects with code 901
      * and "property => message" format, matching the old REST API behavior.
-     *
-     * @return void
      */
     protected function normalizeValidationErrorFormat(Response $response, Request $request): void
     {
@@ -853,8 +847,6 @@ class GlueApiExceptionSubscriber implements EventSubscriberInterface
      * but are missing Type and comparison constraint errors. This happens when API Platform
      * converts empty strings to null for typed properties (e.g. ?int) before validation runs.
      * The old REST API validated raw strings, so all constraints fired.
-     *
-     * @return void
      */
     protected function augmentValidationErrorsForEmptyStringValues(Response $response, Request $request, string $resourceClass): void
     {

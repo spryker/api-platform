@@ -17,8 +17,6 @@ use SplFileInfo;
 interface ValidationSchemaLoaderInterface
 {
     /**
-     * @param \SplFileInfo $file
-     *
      * @return array<string, mixed>
      */
     public function load(SplFileInfo $file): array;
