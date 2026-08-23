@@ -134,7 +134,6 @@ YAML;
         $reflectionClass = new ReflectionClass(ResourceGenerator::class);
         $generator = $reflectionClass->newInstanceWithoutConstructor();
         $method = $reflectionClass->getMethod('deriveObjectNameFromValidationFile');
-        $method->setAccessible(true);
 
         // Act
         $objectName = $method->invoke($generator, new SplFileInfo($fileName));
@@ -208,7 +207,6 @@ YAML;
     {
         $reflectionClass = new ReflectionClass(ResourceGenerator::class);
         $method = $reflectionClass->getMethod('loadObjectValidationSchemas');
-        $method->setAccessible(true);
 
         /** @var array<string, mixed> $result */
         $result = $method->invoke($generator, 'Storefront');
@@ -261,7 +259,6 @@ YAML;
     protected function setProperty(object $object, string $property, mixed $value): void
     {
         $reflectionProperty = (new ReflectionClass($object))->getProperty($property);
-        $reflectionProperty->setAccessible(true);
         $reflectionProperty->setValue($object, $value);
     }
 

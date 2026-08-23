@@ -570,7 +570,6 @@ class ClassGeneratorTest extends Unit
         // directly with operations that do not match the validation schema.
         $generator = $this->createClassGenerator();
         $method = new ReflectionMethod(ClassGenerator::class, 'buildValidCascadeAttribute');
-        $method->setAccessible(true);
 
         // Act — operations declare only Get, but the validation lives under Post → no group resolves.
         $result = $method->invoke(

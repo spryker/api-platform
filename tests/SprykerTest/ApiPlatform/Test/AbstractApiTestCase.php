@@ -455,7 +455,6 @@ abstract class AbstractApiTestCase extends Unit
             ContainerDelegator::class,
             'instance',
         );
-        $reflectedProperty->setAccessible(true);
         $reflectedProperty->setValue(null);
     }
 }
