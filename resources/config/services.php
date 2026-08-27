@@ -45,6 +45,8 @@ use Spryker\ApiPlatform\Generator\Template\PhpTemplateRenderer;
 use Spryker\ApiPlatform\Generator\UseStatementCollector;
 use Spryker\ApiPlatform\Generator\ValidationAttributeGenerator;
 use Spryker\ApiPlatform\Metadata\Property\NestedObjectPropertyMetadataFactory;
+use Spryker\ApiPlatform\Metadata\ResourceClassIndexProvider;
+use Spryker\ApiPlatform\Metadata\ResourceClassIndexProviderInterface;
 use Spryker\ApiPlatform\OpenApi\FormatTransformer\JsonApiFormatTransformer;
 use Spryker\ApiPlatform\OpenApi\Normalizer\EmptyRelationshipNormalizer;
 use Spryker\ApiPlatform\OpenApi\Normalizer\IdNormalizer;
@@ -126,7 +128,6 @@ return static function (ContainerConfigurator $container): void {
     $services->set(YamlSchemaLoader::class)
         ->tag('spryker_api_platform.schema_loader');
 
-    // Schema Directory Locator (shared by the schema/object/validation finders)
     $services->set(ApiDirectoryLocator::class);
 
     // Schema Finder
@@ -353,6 +354,11 @@ return static function (ContainerConfigurator $container): void {
     // Normalize relationship keys (camelCase to kebab-case) and IRI IDs to entity IDs
     $services->set(JsonApiRelationshipNormalizerTransform::class);
 
+    $services->set(ResourceClassIndexProvider::class)
+        ->arg('$resourceClassIndex', param('spryker_api_platform.resource_class_index'));
+
+    $services->alias(ResourceClassIndexProviderInterface::class, ResourceClassIndexProvider::class);
+
     // Inject resolver-based relationship data into JSON:API responses
     $services->set(JsonApiResolvedRelationshipTransform::class)
         ->arg('$normalizer', service('serializer'));
@@ -477,7 +483,8 @@ return static function (ContainerConfigurator $container): void {
 
     // Surface the native type of generated nested value-object properties so API Platform
     // denormalizes writable ones into their value object instead of assigning the raw array.
+    // Priority 0 beats the cached decorator's -10, so this runs inside the metadata cache.
     $services->set(NestedObjectPropertyMetadataFactory::class)
-        ->decorate('api_platform.metadata.property.metadata_factory.cached')
+        ->decorate('api_platform.metadata.property.metadata_factory', null, 0)
         ->arg('$decorated', service('.inner'));
 };

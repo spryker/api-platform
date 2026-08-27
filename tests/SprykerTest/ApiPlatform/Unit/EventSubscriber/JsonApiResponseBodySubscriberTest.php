@@ -11,6 +11,7 @@ namespace SprykerTest\ApiPlatform\Unit\EventSubscriber;
 
 use Codeception\Test\Unit;
 use Spryker\ApiPlatform\EventSubscriber\JsonApiResponseBodySubscriber;
+use Spryker\ApiPlatform\Metadata\ResourceClassIndexProviderInterface;
 use Spryker\ApiPlatform\ResponseTransform\JsonApiRelationshipNormalizerTransform;
 use Spryker\ApiPlatform\ResponseTransform\JsonApiResolvedRelationshipTransform;
 use Spryker\ApiPlatform\ResponseTransform\PaginationLinksTransform;
@@ -151,7 +152,7 @@ class JsonApiResponseBodySubscriberTest extends Unit
     {
         return new JsonApiResponseBodySubscriber(
             new JsonApiRelationshipNormalizerTransform(),
-            new JsonApiResolvedRelationshipTransform($this->createMock(NormalizerInterface::class)),
+            new JsonApiResolvedRelationshipTransform($this->createMock(NormalizerInterface::class), $this->createMock(ResourceClassIndexProviderInterface::class)),
             new PaginationLinksTransform(),
         );
     }

@@ -16,6 +16,7 @@ use Spryker\ApiPlatform\State\OptionalFieldFilteringValidateProvider;
 use Symfony\Component\DependencyInjection\Argument\TaggedIteratorArgument;
 use Symfony\Component\DependencyInjection\Compiler\CompilerPassInterface;
 use Symfony\Component\DependencyInjection\ContainerBuilder;
+use Symfony\Component\DependencyInjection\Parameter;
 use Symfony\Component\DependencyInjection\Reference;
 
 /**
@@ -57,7 +58,10 @@ class ApiPlatformDecoratorPass implements CompilerPassInterface
         if ($container->has(static::SERVICE_ID_NAME_COLLECTION_FACTORY_CACHED)) {
             $container->register(CodeBucketResourceNameCollectionFactory::class, CodeBucketResourceNameCollectionFactory::class)
                 ->setDecoratedService(static::SERVICE_ID_NAME_COLLECTION_FACTORY_CACHED)
-                ->setArguments([new Reference(static::REFERENCE_INNER)]);
+                ->setArguments([
+                    new Reference(static::REFERENCE_INNER),
+                    new Parameter(ResourceClassIndexPass::PARAMETER_RESOURCE_CLASS_INDEX),
+                ]);
         }
 
         if ($container->has(static::SERVICE_ID_OPENAPI_FACTORY)) {

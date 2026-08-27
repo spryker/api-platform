@@ -11,6 +11,7 @@ namespace SprykerTest\ApiPlatform\Unit\ResponseTransform;
 
 use Codeception\Test\Unit;
 use ReflectionMethod;
+use Spryker\ApiPlatform\Metadata\ResourceClassIndexProviderInterface;
 use Spryker\ApiPlatform\ResponseTransform\JsonApiResolvedRelationshipTransform;
 use SprykerTest\ApiPlatform\ApiUnitTester;
 use Symfony\Component\Serializer\Normalizer\NormalizerInterface;
@@ -35,7 +36,7 @@ class JsonApiResolvedRelationshipTransformTest extends Unit
         $resource = $this->createResource();
         $normalizer = $this->createMock(NormalizerInterface::class);
         $normalizer->expects($this->once())->method('normalize')->willReturn($this->createNormalizedPayload());
-        $transform = new JsonApiResolvedRelationshipTransform($normalizer);
+        $transform = new JsonApiResolvedRelationshipTransform($normalizer, $this->createMock(ResourceClassIndexProviderInterface::class));
 
         // Act
         $first = $this->normalizeRelatedResource($transform, $resource);
@@ -50,7 +51,7 @@ class JsonApiResolvedRelationshipTransformTest extends Unit
         // Arrange
         $normalizer = $this->createMock(NormalizerInterface::class);
         $normalizer->expects($this->exactly(2))->method('normalize')->willReturn($this->createNormalizedPayload());
-        $transform = new JsonApiResolvedRelationshipTransform($normalizer);
+        $transform = new JsonApiResolvedRelationshipTransform($normalizer, $this->createMock(ResourceClassIndexProviderInterface::class));
 
         // Act & Assert: two objects of the same class do not share a memo entry
         $this->normalizeRelatedResource($transform, $this->createResource());

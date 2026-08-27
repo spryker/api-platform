@@ -166,6 +166,35 @@ The following invariants are enforced by the locator and pinned by unit tests (`
 - **Fixed depth.** Directories nested deeper than the layouts above are not discovered. Point `source_directories` one level deeper instead of relying on recursive lookup.
 - **Memoized per instance.** All compiler passes share one discovery instance per container build; repeated lookups with identical input return the first result. Code that creates schema directories mid-process must not expect a re-lookup on the same instance to see them.
 
+## Resource class index (compile-time metadata)
+
+The container compiler pass `ResourceClassIndexPass` scans the generated resources of each
+configured API type and compiles an index of every resource's short name, class, and
+`includedSortPriority` extra property into the container parameter
+`spryker_api_platform.resource_class_index`, grouped by base resource class with the code bucket
+as inner key (`''` for the base resource). Runtime consumers (`ResourceClassIndexProvider` for
+short-name-to-class lookups, `CodeBucketResourceNameCollectionFactory` for code bucket filtering)
+read that parameter — an opcache-served part of the compiled container with zero per-request
+reflection.
+
+Contracts:
+
+- **The index shares the compiled container's lifecycle.** It is produced at deployment warmup,
+  baked into the immutable application image, and can never be stale relative to the container that
+  serves it: adding or removing resources requires `api:generate` plus the container rebuild that
+  recompiles the parameter — the same rebuild routes and API Platform metadata already require.
+- **`api:generate` must be followed by `cache:clear` for each Glue application.** The command's own
+  boot compiles the container before the classes it generates exist, and with runtime debugging
+  disabled neither the container nor the frozen router dump is ever recompiled on its own — a plain
+  `cache:warmup` keeps the pre-generation container. The install recipes (`config/install/*.yml`)
+  already run the three `cache:clear` steps right after the `api:generate` steps; a manual
+  `api:generate` run needs a manual `vendor/bin/glue cache:clear` (per `GLUE_APPLICATION`) after it.
+- **Code bucket resolution happens at read time.** Each group carries the base entry and its
+  code-bucket variants; consumers pick the current code bucket's variant with the base entry as
+  fallback in a plain array lookup, so one compiled container serves all code buckets.
+- **Classes outside the generated index pass through the code bucket filter unfiltered** (for
+  example project-level resources) — code bucket variants are a generated-resource concept.
+
 ## Serializer decorators
 
 `CXmlEncoder` and `CXmlNormalizer` decorate serializer-aware services (`serializer.encoder.xml`, `api_platform.serializer.normalizer.item`) and therefore take their place in the serializer chain. Two contracts apply to these (and any future) serializer decorators; both were the source of production bugs and are pinned by `CXmlSerializerAwarenessTest` and `CXmlNormalizerDelegationTest`:

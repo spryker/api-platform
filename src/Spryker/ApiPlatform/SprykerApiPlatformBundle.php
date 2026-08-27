@@ -14,6 +14,7 @@ use Spryker\ApiPlatform\DependencyInjection\Compiler\ApiPlatformDecoratorPass;
 use Spryker\ApiPlatform\DependencyInjection\Compiler\ApiTypeServiceFilterPass;
 use Spryker\ApiPlatform\DependencyInjection\Compiler\JsonEncoderConfigurationPass;
 use Spryker\ApiPlatform\DependencyInjection\Compiler\RelationshipConfigurationPass;
+use Spryker\ApiPlatform\DependencyInjection\Compiler\ResourceClassIndexPass;
 use Spryker\ApiPlatform\DependencyInjection\Compiler\SchemaFileDiscovery;
 use Spryker\ApiPlatform\DependencyInjection\Compiler\SchemaServiceRegistrationPass;
 use Spryker\ApiPlatform\DependencyInjection\Compiler\SecurityServiceRegistrationPass;
@@ -58,6 +59,12 @@ class SprykerApiPlatformBundle extends Bundle
 
         $container->addCompilerPass(
             new ApiPlatformDecoratorPass(),
+            PassConfig::TYPE_BEFORE_OPTIMIZATION,
+            50,
+        );
+
+        $container->addCompilerPass(
+            new ResourceClassIndexPass(),
             PassConfig::TYPE_BEFORE_OPTIMIZATION,
             50,
         );

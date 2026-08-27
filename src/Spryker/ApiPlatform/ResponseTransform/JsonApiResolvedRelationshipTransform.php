@@ -15,6 +15,8 @@ use ApiPlatform\Metadata\CollectionOperationInterface;
 use ApiPlatform\Metadata\Get;
 use ReflectionClass;
 use ReflectionProperty;
+use Spryker\ApiPlatform\Metadata\CodeBucketResolverTrait;
+use Spryker\ApiPlatform\Metadata\ResourceClassIndexProviderInterface;
 use Symfony\Component\HttpFoundation\Request;
 use Symfony\Component\Serializer\Attribute\SerializedName;
 use Symfony\Component\Serializer\Normalizer\NormalizerInterface;
@@ -28,17 +30,9 @@ use WeakMap;
  */
 class JsonApiResolvedRelationshipTransform
 {
+    use CodeBucketResolverTrait;
+
     public const string REQUEST_ATTRIBUTE_RESOLVED_RELATIONSHIPS = '_spryker_resolved_relationships';
-
-    /**
-     * @var array<string, class-string>|null
-     */
-    protected ?array $resourceClassIndex = null;
-
-    /**
-     * @var array<string, int>|null
-     */
-    protected ?array $includedSortPriorityIndex = null;
 
     /**
      * Per-class reflection metadata cache (perf). Reflection results are static per class,
@@ -68,8 +62,10 @@ class JsonApiResolvedRelationshipTransform
      */
     protected WeakMap $normalizedRelatedResourceCache;
 
-    public function __construct(protected NormalizerInterface $normalizer)
-    {
+    public function __construct(
+        protected NormalizerInterface $normalizer,
+        protected ResourceClassIndexProviderInterface $resourceClassIndexProvider,
+    ) {
         $this->normalizedRelatedResourceCache = new WeakMap();
     }
 
@@ -684,43 +680,9 @@ class JsonApiResolvedRelationshipTransform
      */
     protected function resolveResourceClassByShortName(string $shortName): ?string
     {
-        if ($this->resourceClassIndex === null) {
-            $this->resourceClassIndex = $this->buildResourceClassIndex();
-        }
+        $resourceClassIndex = $this->resourceClassIndexProvider->getResourceClassIndex($this->getCurrentCodeBucket());
 
-        return $this->resourceClassIndex[$shortName] ?? null;
-    }
-
-    /**
-     * @return array<string, class-string>
-     */
-    protected function buildResourceClassIndex(): array
-    {
-        $index = [];
-        $prefixes = ['Generated\\Api\\Storefront\\', 'Generated\\Api\\Backend\\'];
-
-        foreach (get_declared_classes() as $className) {
-            foreach ($prefixes as $prefix) {
-                if (!str_starts_with($className, $prefix)) {
-                    continue;
-                }
-
-                $ref = new ReflectionClass($className);
-                $apiResourceAttrs = $ref->getAttributes(ApiResource::class);
-
-                if ($apiResourceAttrs === []) {
-                    continue;
-                }
-
-                $shortName = $apiResourceAttrs[0]->newInstance()->getShortName();
-
-                if ($shortName !== null) {
-                    $index[$shortName] = $className;
-                }
-            }
-        }
-
-        return $index;
+        return $resourceClassIndex[$shortName] ?? null;
     }
 
     /**
@@ -950,46 +912,7 @@ class JsonApiResolvedRelationshipTransform
      */
     protected function getIncludedSortPriorityIndex(): array
     {
-        if ($this->includedSortPriorityIndex !== null) {
-            return $this->includedSortPriorityIndex;
-        }
-
-        if ($this->resourceClassIndex === null) {
-            $this->resourceClassIndex = $this->buildResourceClassIndex();
-        }
-
-        $this->includedSortPriorityIndex = [];
-
-        foreach ($this->resourceClassIndex as $shortName => $resourceClass) {
-            $priority = $this->resolveIncludedSortPriority($resourceClass);
-
-            if ($priority !== null) {
-                $this->includedSortPriorityIndex[$shortName] = $priority;
-            }
-        }
-
-        return $this->includedSortPriorityIndex;
-    }
-
-    /**
-     * @param class-string $resourceClass
-     */
-    protected function resolveIncludedSortPriority(string $resourceClass): ?int
-    {
-        try {
-            $apiResourceAttrs = (new ReflectionClass($resourceClass))->getAttributes(ApiResource::class);
-        } catch (Throwable) {
-            return null;
-        }
-
-        if ($apiResourceAttrs === []) {
-            return null;
-        }
-
-        $extraProperties = $apiResourceAttrs[0]->newInstance()->getExtraProperties() ?? [];
-        $priority = $extraProperties['includedSortPriority'] ?? null;
-
-        return is_int($priority) ? $priority : null;
+        return $this->resourceClassIndexProvider->getIncludedSortPriorityIndex($this->getCurrentCodeBucket());
     }
 
     protected function camelToKebabCase(string $value): string
