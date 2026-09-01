@@ -67,7 +67,13 @@ class ConstraintFormatter
         $this->fqcnConstraintMap = $fqcnConstraintMap;
     }
 
-    protected const string OPTIONAL_PAYLOAD_SUFFIX = ", payload: ['source' => 'optional']";
+    protected const string PAYLOAD_OPTION_KEY = 'payload';
+
+    protected const string OPTIONAL_PAYLOAD_KEY = 'source';
+
+    protected const string OPTIONAL_PAYLOAD_VALUE = 'optional';
+
+    protected const string OPTIONAL_PAYLOAD_SUFFIX = ", payload: ['" . self::OPTIONAL_PAYLOAD_KEY . "' => '" . self::OPTIONAL_PAYLOAD_VALUE . "']";
 
     /**
      * @param array<string> $groups
@@ -110,6 +116,11 @@ class ConstraintFormatter
         $constraintName = (string)array_key_first($constraint);
         $options = $constraint[$constraintName];
 
+        if ($payloadSuffix !== '' && is_array($options) && array_key_exists(static::PAYLOAD_OPTION_KEY, $options)) {
+            $options = $this->mergeOptionalPayload($options);
+            $payloadSuffix = '';
+        }
+
         if ($this->isFqcn($constraintName)) {
             $normalized = $this->normalizeFqcn($constraintName);
             $alias = $this->fqcnConstraintMap[$normalized]['alias'] ?? $this->parseConstraintFqcn($constraintName)['shortName'];
@@ -138,6 +149,23 @@ class ConstraintFormatter
         }
 
         return sprintf("#[Assert\\%s(%s, groups: ['%s']%s)]", $constraintName, $formattedOptions, $groupsString, $payloadSuffix);
+    }
+
+    /**
+     * A constraint declaring its own `payload` would otherwise get a second `payload:` named
+     * argument from the suffix, which is a fatal at class load.
+     *
+     * @param array<string, mixed> $options
+     *
+     * @return array<string, mixed>
+     */
+    protected function mergeOptionalPayload(array $options): array
+    {
+        $payload = is_array($options[static::PAYLOAD_OPTION_KEY]) ? $options[static::PAYLOAD_OPTION_KEY] : [];
+        $payload[static::OPTIONAL_PAYLOAD_KEY] = static::OPTIONAL_PAYLOAD_VALUE;
+        $options[static::PAYLOAD_OPTION_KEY] = $payload;
+
+        return $options;
     }
 
     /**
@@ -334,22 +362,25 @@ class ConstraintFormatter
      */
     protected function formatArrayValue(array $array): string
     {
+        $isList = array_is_list($array);
         $items = [];
 
-        foreach ($array as $value) {
+        foreach ($array as $key => $value) {
+            $prefix = $isList ? '' : sprintf("'%s' => ", addslashes((string)$key));
+
             if (is_string($value)) {
-                $items[] = sprintf("'%s'", addslashes($value));
+                $items[] = $prefix . sprintf("'%s'", addslashes($value));
 
                 continue;
             }
 
             if (is_array($value)) {
-                $items[] = $this->formatArrayValue($value);
+                $items[] = $prefix . $this->formatArrayValue($value);
 
                 continue;
             }
 
-            $items[] = (string)$value;
+            $items[] = $prefix . (string)$value;
         }
 
         return '[' . implode(', ', $items) . ']';

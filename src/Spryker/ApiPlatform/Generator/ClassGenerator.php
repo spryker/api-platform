@@ -10,6 +10,7 @@ declare(strict_types=1);
 namespace Spryker\ApiPlatform\Generator;
 
 use Spryker\ApiPlatform\Generator\Result\GeneratedResourceResult;
+use Spryker\ApiPlatform\Generator\Result\ResolvedPropertyType;
 use Spryker\ApiPlatform\Generator\Template\PhpTemplateRenderer;
 use Spryker\ApiPlatform\Schema\Validation\Mapper\ValidationGroupMapperInterface;
 use Spryker\ApiPlatform\Utility\ApiTypeNormalizer;
@@ -305,7 +306,7 @@ class ClassGenerator
      * @param array<array{relationshipName: string, targetResource: string}> $includes
      * @param array<string> $sourceFiles
      *
-     * @return array<array{name: string, type: string, phpType: string, attributes: string, description: string, phpDoc: string, default: mixed, hasDefault: bool, serializedName: string|null, serializedPath: string|null, nullable: bool}>
+     * @return array<array{name: string, type: string, phpType: string, itemClass: string|null, attributes: string, description: string, phpDoc: string, default: mixed, hasDefault: bool, serializedName: string|null, serializedPath: string|null, nullable: bool}>
      */
     protected function transformProperties(
         array $properties,
@@ -321,7 +322,7 @@ class ClassGenerator
 
         foreach ($properties as $name => $property) {
             $type = (string)($property['type'] ?? 'string');
-            $phpType = $this->resolveNestedObjectOrScalarType(
+            $resolvedType = $this->resolveNestedObjectOrScalarType(
                 (string)$name,
                 $property,
                 $resourceClassBaseName,
@@ -341,10 +342,17 @@ class ClassGenerator
                 $apiType,
             );
 
+            // A relationship property is never an inline object collection, so the two never compete
+            // for the single docblock slot the renderer emits.
+            if ($phpDoc === '' && $resolvedType->itemClassFqcn !== null) {
+                $phpDoc = sprintf('@var array<int, %s>', $resolvedType->itemClassFqcn);
+            }
+
             $transformed[] = [
                 'name' => $name,
                 'type' => $type,
-                'phpType' => $phpType,
+                'phpType' => $resolvedType->phpType,
+                'itemClass' => $resolvedType->itemClassFqcn,
                 'attributes' => $attributes,
                 'description' => (string)($property['description'] ?? ''),
                 'phpDoc' => $phpDoc,
@@ -367,9 +375,9 @@ class ClassGenerator
      * companion value-object class named `{ResourceName}{Field}{ApiType}Resource` (collections
      * pluralize the field segment). This lifts the property's `Collection` field validation onto the
      * companion, generates that class (and any descendants) as a side effect into
-     * {@see $nestedObjectClasses}, and returns its class name (or `array` for a collection). Every
-     * other property maps straight to its scalar/array PHP type. Kept as guarded early returns so the
-     * caller loop stays free of nested branching.
+     * {@see $nestedObjectClasses}, and returns its class name (or `array` plus the element class for
+     * a collection). Every other property maps straight to its scalar/array PHP type. Kept as guarded
+     * early returns so the caller loop stays free of nested branching.
      *
      * @param array<string, mixed> $property
      * @param array<string, mixed> $validationSchema
@@ -385,23 +393,36 @@ class ClassGenerator
         array $operations,
         string $apiType,
         array $sourceFiles
-    ): string {
+    ): ResolvedPropertyType {
+        $isCollection = ($property['type'] ?? null) === 'array';
+
         // Shared canonical object: type to the canonical class without emitting a companion class.
         // The registry generates the canonical class from its `*.object.yml` definition; here we only
         // consume the resolved class name. A property carrying a known `objectName` is a reference
         // site (with or without inline `properties`) and types to that shared class.
         $objectName = $property['objectName'] ?? null;
         if (is_string($objectName) && isset($this->knownCanonicalObjectNames[$objectName])) {
+            // A canonical *collection* stays a bare `array` and names its element class through the
+            // `@var array<...>` docblock; only a single reference is typed to the shared class and
+            // imported.
+            if ($isCollection) {
+                return new ResolvedPropertyType('array', sprintf(
+                    '\\%s\\%s\\%s',
+                    static::GENERATED_NAMESPACE_PREFIX,
+                    $apiType,
+                    $objectName,
+                ));
+            }
+
             $this->referencedCanonicalObjectNames[] = $objectName;
 
-            return $objectName;
+            return new ResolvedPropertyType($objectName);
         }
 
         if (!$this->isGeneratedNestedObjectProperty($property)) {
-            return $this->mapToPhpType($property['type'] ?? 'string');
+            return new ResolvedPropertyType($this->mapToPhpType($property['type'] ?? 'string'));
         }
 
-        $isCollection = ($property['type'] ?? null) === 'array';
         $nestedProperties = $isCollection ? $property['items']['properties'] : $property['properties'];
 
         // Lift the parent property's Collection field validation onto the value object's fields, so
@@ -427,14 +448,23 @@ class ClassGenerator
             $resourceClassBaseName,
         );
 
+        $helperShortName = $this->nestedObjectClassGenerator->buildClassName($childBaseName, $apiType);
+
+        // A collection stays a bare `array`: the element class travels as a `@var array<...>`
+        // docblock instead, so the resource never imports the companion's short name.
         if ($isCollection) {
-            return 'array';
+            return new ResolvedPropertyType('array', sprintf(
+                '\\%s\\%s\\%s\\%s',
+                static::GENERATED_NAMESPACE_PREFIX,
+                $apiType,
+                $resourceClassBaseName,
+                $helperShortName,
+            ));
         }
 
-        $helperShortName = $this->nestedObjectClassGenerator->buildClassName($childBaseName, $apiType);
         $this->resourceReferencedHelperClassNames[] = $helperShortName;
 
-        return $helperShortName;
+        return new ResolvedPropertyType($helperShortName);
     }
 
     /**

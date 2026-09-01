@@ -45,10 +45,10 @@ use Spryker\ApiPlatform\Schema\Validation\Mapper\ValidationGroupMapperInterface;
  * Key behaviors:
  * - Maps operations to validation groups (Post → 'customers:create', Patch → 'customers:update')
  * - Deduplicates same constraints across groups (merges groups when constraint is identical)
- * - Unwraps Optional constraints and emits their inner constraints as property attributes;
- *   together with the ClassGenerator omitting `= null` defaults for `required: false` properties,
- *   this preserves Optional semantics — Symfony Validator skips uninitialized properties,
- *   so an absent field bypasses validation while an explicit-null field is validated.
+ * - Unwraps Optional constraints and emits their inner constraints as property attributes, tagged
+ *   `payload: ['source' => 'optional']`. The attribute itself is unconditional — absence is decided
+ *   at runtime from the request body by
+ *   {@see \Spryker\ApiPlatform\State\OptionalFieldFilteringValidateProvider}.
  * - Handles fully qualified class name constraints with alias resolution
  */
 class ValidationAttributeGenerator

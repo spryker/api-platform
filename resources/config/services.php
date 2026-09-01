@@ -14,6 +14,7 @@ use ApiPlatform\Serializer\Filter\PropertyFilter;
 use ApiPlatform\Serializer\SerializerContextBuilder;
 use ApiPlatform\State\ErrorProvider;
 use Spryker\ApiPlatform\Cache\ApiResourceCacheWarmer;
+use Spryker\ApiPlatform\Command\ApiCollectionsReportCommand;
 use Spryker\ApiPlatform\Command\ApiDebugCommand;
 use Spryker\ApiPlatform\Command\ApiGenerateCommand;
 use Spryker\ApiPlatform\Configuration\ApiPlatformConfig;
@@ -72,6 +73,7 @@ use Spryker\ApiPlatform\Schema\Object\Loader\ObjectSchemaLoader;
 use Spryker\ApiPlatform\Schema\Object\Loader\ObjectSchemaLoaderInterface;
 use Spryker\ApiPlatform\Schema\Parser\SchemaParser;
 use Spryker\ApiPlatform\Schema\Parser\SchemaParserInterface;
+use Spryker\ApiPlatform\Schema\Report\CollectionInventoryBuilder;
 use Spryker\ApiPlatform\Schema\Validation\Finder\ValidationSchemaFinder;
 use Spryker\ApiPlatform\Schema\Validation\Finder\ValidationSchemaFinderInterface;
 use Spryker\ApiPlatform\Schema\Validation\Loader\ValidationSchemaLoader;
@@ -281,6 +283,16 @@ return static function (ContainerConfigurator $container): void {
         ->tag('console.command');
 
     $services->alias('console.command.api_debug', ApiDebugCommand::class)
+        ->public();
+
+    $services->set(CollectionInventoryBuilder::class);
+
+    $services->set(ApiCollectionsReportCommand::class)
+        ->public()
+        ->arg('$loaders', tagged_iterator('spryker_api_platform.schema_loader'))
+        ->tag('console.command');
+
+    $services->alias('console.command.api_collections_report', ApiCollectionsReportCommand::class)
         ->public();
 
     // Drive API Platform's error rendering off the single spryker_api_platform.debug

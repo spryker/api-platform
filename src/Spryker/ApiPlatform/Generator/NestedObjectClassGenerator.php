@@ -9,6 +9,7 @@ declare(strict_types=1);
 
 namespace Spryker\ApiPlatform\Generator;
 
+use Spryker\ApiPlatform\Generator\Result\ResolvedPropertyType;
 use Spryker\ApiPlatform\Generator\Template\PhpTemplateRenderer;
 use Spryker\ApiPlatform\Utility\ApiTypeNormalizer;
 use Spryker\ApiPlatform\Utility\ResourceNameInflector;
@@ -97,7 +98,7 @@ class NestedObjectClassGenerator
             // A nested object (or a collection of them) becomes its own child class (recursively);
             // its descendants are merged into $classes here so the caller writes one file per class.
             $classes += $this->generateChildClasses($baseName, $name, $property, $apiType, $sourceFiles, $ownerResourceName);
-            $phpType = $this->resolvePropertyType($baseName, $name, $property, $apiType);
+            $resolvedType = $this->resolvePropertyType($baseName, $name, $property, $apiType, $ownerResourceName);
 
             $attributes = $this->propertyAttributeGenerator->generate($property, [], [], $name, $className);
 
@@ -136,10 +137,13 @@ class NestedObjectClassGenerator
             $templateProperties[] = [
                 'name' => $name,
                 'type' => $type,
-                'phpType' => $phpType,
+                'phpType' => $resolvedType->phpType,
+                'itemClass' => $resolvedType->itemClassFqcn,
                 'attributes' => $attributes,
                 'description' => $property['description'] ?? '',
-                'phpDoc' => $this->resolveCollectionPhpDoc($baseName, $name, $property, $apiType, $ownerResourceName),
+                'phpDoc' => $resolvedType->itemClassFqcn !== null
+                    ? sprintf('@var array<int, %s>', $resolvedType->itemClassFqcn)
+                    : '',
                 'hasDefault' => false,
                 'serializedName' => $serializedName,
                 'serializedPath' => $serializedPath,
@@ -190,38 +194,35 @@ class NestedObjectClassGenerator
 
     /**
      * Resolves the PHP type of a single property: a nested object resolves to its generated child
-     * class name, a collection of objects to `array`, everything else to its mapped scalar/array type.
+     * class name, a collection of objects to `array` plus the fully qualified element class,
+     * everything else to its mapped scalar/array type.
      *
      * @param array<string, mixed> $property
      */
-    protected function resolvePropertyType(string $baseName, string $name, array $property, string $apiType): string
-    {
+    protected function resolvePropertyType(
+        string $baseName,
+        string $name,
+        array $property,
+        string $apiType,
+        string $ownerResourceName
+    ): ResolvedPropertyType {
         if ($this->isNestedObject($property)) {
-            return $this->buildClassName($this->childBaseName($baseName, $name, $property), $apiType);
+            return new ResolvedPropertyType($this->buildClassName($this->childBaseName($baseName, $name, $property), $apiType));
         }
 
-        return static::TYPE_MAPPING[$property['type'] ?? 'string'] ?? ($property['type'] ?? 'string');
-    }
+        if ($this->isObjectCollection($property)) {
+            $childClassName = $this->buildClassName($this->childBaseName($baseName, $name, $property), $apiType);
 
-    /**
-     * A `@var array<\Generated\Api\{ApiType}\{Owner}\{ChildClass}>` docblock for an object collection, so the
-     * serializer denormalizes each element into the generated value-object class. Empty otherwise.
-     *
-     * @param array<string, mixed> $property
-     */
-    protected function resolveCollectionPhpDoc(string $baseName, string $name, array $property, string $apiType, string $ownerResourceName = ''): string
-    {
-        if (!$this->isObjectCollection($property)) {
-            return '';
+            $itemClassFqcn = $ownerResourceName !== ''
+                ? sprintf('\\%s\\%s\\%s\\%s', static::GENERATED_NAMESPACE_PREFIX, $apiType, $ownerResourceName, $childClassName)
+                : sprintf('\\%s\\%s\\%s', static::GENERATED_NAMESPACE_PREFIX, $apiType, $childClassName);
+
+            return new ResolvedPropertyType('array', $itemClassFqcn);
         }
 
-        $childClassName = $this->buildClassName($this->childBaseName($baseName, $name, $property), $apiType);
+        $type = $property['type'] ?? 'string';
 
-        if ($ownerResourceName !== '') {
-            return sprintf('@var array<\\%s\\%s\\%s\\%s>', static::GENERATED_NAMESPACE_PREFIX, $apiType, $ownerResourceName, $childClassName);
-        }
-
-        return sprintf('@var array<\\%s\\%s\\%s>', static::GENERATED_NAMESPACE_PREFIX, $apiType, $childClassName);
+        return new ResolvedPropertyType(static::TYPE_MAPPING[$type] ?? $type);
     }
 
     /**

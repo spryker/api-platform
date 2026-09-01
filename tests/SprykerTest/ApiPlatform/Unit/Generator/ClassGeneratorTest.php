@@ -829,4 +829,140 @@ class ClassGeneratorTest extends Unit
         $this->assertStringContainsString('public ?bool $active = null;', $result);
         $this->assertStringContainsString('public array $tags = [];', $result);
     }
+
+    public function testGivenObjectCollectionWhenGeneratingThenEmitsVarDocblock(): void
+    {
+        // Arrange
+        $schema = [
+            'name' => 'Products',
+            'shortName' => 'products',
+            'properties' => [
+                'prices' => [
+                    'type' => 'array',
+                    'writable' => false,
+                    'description' => 'Prices per store and currency',
+                    'items' => [
+                        'type' => 'object',
+                        'properties' => [
+                            'grossAmount' => ['type' => 'integer'],
+                            'currency' => ['type' => 'string'],
+                        ],
+                    ],
+                ],
+            ],
+        ];
+
+        // Act
+        $result = $this->createClassGenerator()->generateAll($schema, 'Backend');
+        $code = $result->getMainClassCode();
+
+        // Assert — the property stays a bare array (PHP has no generics); the element type travels
+        // in a docblock, which API Platform's metadata chain reads to build `items.$ref`.
+        $this->assertStringContainsString('public array $prices = [];', $code);
+        $this->assertStringContainsString(
+            '@var array<int, \Generated\Api\Backend\Products\ProductsPricesBackendObject>',
+            $code,
+        );
+        $this->assertStringNotContainsString('#[CollectionOf(', $code);
+        // The companion class is emitted for the item shape, in the per-owner sub-namespace.
+        $this->assertArrayHasKey('ProductsPricesBackendObject', $result->getNestedObjectClasses());
+    }
+
+    public function testGivenScalarListWhenGeneratingThenEmitsNoTypedElementDocblock(): void
+    {
+        // Arrange
+        $schema = [
+            'name' => 'Products',
+            'shortName' => 'products',
+            'properties' => [
+                'skus' => ['type' => 'array', 'items' => ['type' => 'string']],
+            ],
+        ];
+
+        // Act
+        $code = $this->createClassGenerator()->generate($schema, 'Backend');
+
+        // Assert
+        $this->assertStringContainsString('public array $skus = [];', $code);
+        $this->assertStringNotContainsString('#[CollectionOf(', $code);
+        $this->assertStringNotContainsString('@var array<int, \Generated\\', $code);
+    }
+
+    public function testGivenCanonicalObjectCollectionWhenGeneratingThenTypesArrayWithCanonicalElement(): void
+    {
+        // Arrange — a known canonical object referenced as a list, not a single object.
+        $schema = [
+            'name' => 'Products',
+            'shortName' => 'products',
+            'properties' => [
+                'addresses' => ['type' => 'array', 'objectName' => 'Address'],
+            ],
+        ];
+
+        // Act
+        $code = $this->createClassGenerator()->generate($schema, 'Backend', ['Address' => true]);
+
+        // Assert — a canonical list stays a bare array; only a single canonical reference is typed
+        // to the shared class and imported by short name.
+        $this->assertStringContainsString('public array $addresses = [];', $code);
+        $this->assertStringContainsString('@var array<int, \Generated\Api\Backend\Address>', $code);
+        $this->assertStringNotContainsString('public ?Address $addresses', $code);
+        $this->assertStringNotContainsString('use Generated\Api\Backend\Address;', $code);
+    }
+
+    public function testGivenSingleCanonicalObjectWhenGeneratingThenTypesPropertyToCanonicalClass(): void
+    {
+        // Arrange
+        $schema = [
+            'name' => 'Products',
+            'shortName' => 'products',
+            'properties' => [
+                'address' => ['type' => 'object', 'objectName' => 'Address'],
+            ],
+        ];
+
+        // Act
+        $code = $this->createClassGenerator()->generate($schema, 'Backend', ['Address' => true]);
+
+        // Assert
+        $this->assertStringContainsString('public ?Address $address = null;', $code);
+        $this->assertStringContainsString('use Generated\Api\Backend\Address;', $code);
+        $this->assertStringNotContainsString('#[CollectionOf(', $code);
+    }
+
+    public function testGivenValidatedCanonicalCollectionWhenGeneratingThenCascadesWithAssertValid(): void
+    {
+        // Arrange — a canonical collection with array-shaped Collection validation on the site; the
+        // parent property must swap to an Assert\Valid cascade, same as a single canonical reference.
+        $schema = [
+            'name' => 'Products',
+            'shortName' => 'products',
+            'properties' => [
+                'addresses' => ['type' => 'array', 'objectName' => 'Address'],
+            ],
+            'validation' => [
+                'post' => [
+                    'addresses' => [
+                        [
+                            'Collection' => [
+                                'fields' => [
+                                    'street' => ['NotBlank'],
+                                ],
+                            ],
+                        ],
+                    ],
+                ],
+            ],
+            'operations' => ['Post' => []],
+        ];
+        $validationGroupMapper = $this->createValidationGroupMapper('products:create');
+        $generator = $this->createClassGeneratorWithMapper($validationGroupMapper);
+
+        // Act
+        $code = $generator->generate($schema, 'Backend', ['Address' => true]);
+
+        // Assert
+        $this->assertStringContainsString('#[Assert\Valid(', $code);
+        $this->assertStringNotContainsString('#[Assert\Collection(', $code);
+    }
 }

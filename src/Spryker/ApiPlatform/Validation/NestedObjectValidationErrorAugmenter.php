@@ -18,7 +18,7 @@ use Symfony\Component\Validator\Constraints\NotNull;
 
 /**
  * Augments validation for present-but-empty nested value objects (generated `objectName`
- * canonical objects typed as `?Generated\Api\Storefront\*` and cascaded via `Assert\Valid`).
+ * canonical objects typed as `?Generated\Api\*` and cascaded via `Assert\Valid`), for every ApiType.
  *
  * Three behaviors, all driven off the RAW submitted body so coercion and `allowNull` cannot
  * erase the submitted shape:
@@ -47,7 +47,13 @@ class NestedObjectValidationErrorAugmenter
 
     protected const string TYPE_BOOLEAN_ERROR_MESSAGE = 'This value should be of type boolean.';
 
-    protected const string GENERATED_VALUE_OBJECT_NAMESPACE = 'Generated\\Api\\Storefront\\';
+    /**
+     * ApiType-agnostic on purpose: the same prefix
+     * {@see \Spryker\ApiPlatform\Metadata\Property\NestedObjectPropertyMetadataFactory} uses to decide
+     * which properties become typed value objects in the first place. Enumerating ApiTypes here would
+     * silently exclude every one not listed — Backend value objects went unaugmented for that reason.
+     */
+    protected const string GENERATED_API_NAMESPACE_PREFIX = 'Generated\\Api\\';
 
     /**
      * `sprintf` template for a regex that matches a nested-leaf detail prefix `<object>.<leaf> => `.
@@ -279,9 +285,8 @@ class NestedObjectValidationErrorAugmenter
     /**
      * Returns the resource's nested value-object properties as `propertyName => valueObjectClass`.
      * A nested value object is a property typed as a non-nullable-stripped class under the generated
-     * `Generated\Api\Storefront` namespace (the canonical `objectName` objects cascaded via
-     * `Assert\Valid`). Properties typed `mixed`/`array` (no class metadata to cascade into) are
-     * ignored.
+     * `Generated\Api` namespace (the canonical `objectName` objects cascaded via `Assert\Valid`).
+     * Properties typed `mixed`/`array` (no class metadata to cascade into) are ignored.
      *
      * @return array<string, string>
      */
@@ -302,7 +307,7 @@ class NestedObjectValidationErrorAugmenter
 
             $valueObjectClass = $type->getName();
 
-            if (!str_starts_with($valueObjectClass, static::GENERATED_VALUE_OBJECT_NAMESPACE) || !class_exists($valueObjectClass)) {
+            if (!str_starts_with($valueObjectClass, static::GENERATED_API_NAMESPACE_PREFIX) || !class_exists($valueObjectClass)) {
                 continue;
             }
 

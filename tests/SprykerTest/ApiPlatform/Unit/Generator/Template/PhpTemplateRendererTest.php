@@ -143,6 +143,121 @@ class PhpTemplateRendererTest extends Unit
         $this->assertLessThan($getNamePosition, $setNamePosition, 'setName should come before getName');
     }
 
+    public function testGivenCollectionPropertyWhenRenderingThenMapsElementsInBothDirections(): void
+    {
+        // Arrange
+        $templateData = $this->createTemplateDataWithCollectionProperty(nullable: false);
+
+        // Act
+        $code = (new PhpTemplateRenderer())->render($templateData);
+
+        // Assert — the full toArray()/fromArray() assignment blocks are pinned (not just the inner
+        // arrow functions), so a dropped array_map() wrapper or guard would fail this test; a raw
+        // array assigned by a provider that bypasses the serializer still passes through untouched.
+        $this->assertStringContainsString(
+            <<<'PHP'
+            'prices' => array_map(
+                static fn (mixed $item): mixed => $item instanceof \Generated\Api\Backend\Products\ProductsPricesBackendObject ? $item->toArray() : $item,
+                $this->prices,
+            ),
+PHP,
+            $code,
+        );
+        $this->assertStringContainsString(
+            <<<'PHP'
+        $instance->prices = is_array($data['prices'] ?? null)
+            ? array_map(
+                static fn (mixed $item): mixed => is_array($item) ? \Generated\Api\Backend\Products\ProductsPricesBackendObject::fromArray($item) : $item,
+                $data['prices'],
+            )
+            : [];
+PHP,
+            $code,
+        );
+        $this->assertGeneratesValidPhp($code);
+    }
+
+    public function testGivenNullableCollectionPropertyWhenRenderingThenNullGuardWrapsElementMapping(): void
+    {
+        // Arrange
+        $templateData = $this->createTemplateDataWithCollectionProperty(nullable: true);
+
+        // Act
+        $code = (new PhpTemplateRenderer())->render($templateData);
+
+        // Assert — the nullable form short-circuits to null instead of calling array_map(null, ...),
+        // which would otherwise be a TypeError; fromArray()'s is_array() guard is nullable-agnostic
+        // and only the trailing default changes.
+        $this->assertStringContainsString(
+            <<<'PHP'
+            'prices' => $this->prices === null ? null : array_map(
+                static fn (mixed $item): mixed => $item instanceof \Generated\Api\Backend\Products\ProductsPricesBackendObject ? $item->toArray() : $item,
+                $this->prices,
+            ),
+PHP,
+            $code,
+        );
+        $this->assertStringContainsString(
+            <<<'PHP'
+        $instance->prices = is_array($data['prices'] ?? null)
+            ? array_map(
+                static fn (mixed $item): mixed => is_array($item) ? \Generated\Api\Backend\Products\ProductsPricesBackendObject::fromArray($item) : $item,
+                $data['prices'],
+            )
+            : null;
+PHP,
+            $code,
+        );
+        $this->assertGeneratesValidPhp($code);
+    }
+
+    /**
+     * @return array{className: string, namespace: string, uses: array<string>, resourceAttribute: string, codeBucket: string|null, properties: array<mixed>, metadata: array{timestamp: string, sourceFiles: array<string>, validationSourceFiles: array<string>}}
+     */
+    protected function createTemplateDataWithCollectionProperty(bool $nullable): array
+    {
+        return [
+            'className' => 'ProductsBackendResource',
+            'namespace' => 'Generated\Api\Backend',
+            'uses' => [],
+            'resourceAttribute' => '',
+            'codeBucket' => null,
+            'properties' => [
+                [
+                    'name' => 'prices',
+                    'type' => 'array',
+                    'phpType' => 'array',
+                    'itemClass' => '\Generated\Api\Backend\Products\ProductsPricesBackendObject',
+                    'attributes' => '',
+                    'description' => '',
+                    'phpDoc' => '',
+                    'default' => null,
+                    'hasDefault' => false,
+                    'serializedName' => null,
+                    'serializedPath' => null,
+                    'nullable' => $nullable,
+                ],
+            ],
+            'metadata' => ['timestamp' => '2026-01-01 00:00:00', 'sourceFiles' => [], 'validationSourceFiles' => []],
+        ];
+    }
+
+    /**
+     * Lints generated source with the PHP CLI itself — the failure mode this renderer is most
+     * exposed to is a broken string template that still happens to contain the substrings under
+     * test, which only a real parse can catch.
+     */
+    protected function assertGeneratesValidPhp(string $code): void
+    {
+        $path = sys_get_temp_dir() . '/api-platform-template-renderer-' . uniqid() . '.php';
+        file_put_contents($path, $code);
+
+        exec(sprintf('php -l %s 2>&1', escapeshellarg($path)), $output, $exitCode);
+        unlink($path);
+
+        $this->assertSame(0, $exitCode, implode("\n", $output));
+    }
+
     /**
      * @return array{className: string, namespace: string, uses: array<string>, resourceAttribute: string, properties: array<mixed>, metadata: array{timestamp: string, sourceFiles: array<string>, validationSourceFiles: array<string>}}
      */

@@ -37,7 +37,7 @@ class UseStatementCollector
 {
     /**
      * @param array<string, mixed> $schema
-     * @param array<array{name: string, type: string, phpType: string, attributes: string, description: string, phpDoc: string, default: mixed, hasDefault: bool, serializedName: string|null, serializedPath: string|null, nullable: bool}> $properties
+     * @param array<array{name: string, type: string, phpType: string, itemClass: string|null, attributes: string, description: string, phpDoc: string, default: mixed, hasDefault: bool, serializedName: string|null, serializedPath: string|null, nullable: bool}> $properties
      * @param array<string, array{fqcn: string, shortName: string, alias: string}> $fqcnConstraintMap
      *
      * @return array<string>

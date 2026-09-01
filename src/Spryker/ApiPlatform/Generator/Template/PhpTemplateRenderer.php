@@ -47,7 +47,7 @@ namespace Spryker\ApiPlatform\Generator\Template;
 class PhpTemplateRenderer
 {
     /**
-     * @param array{className: string, namespace: string, uses: array<string>, resourceAttribute: string, properties: array<array{name: string, type: string, phpType: string, attributes: string, description: string, phpDoc: string, serializedName?: string, serializedPath?: string, nullable?: bool}>, codeBucket: ?string, synthesizeMissingFieldsWhenEmpty?: bool, metadata: array{timestamp: string, sourceFiles: array<string>, validationSourceFiles: array<string>}}|array $templateData
+     * @param array{className: string, namespace: string, uses: array<string>, resourceAttribute: string, properties: array<array{name: string, type: string, phpType: string, itemClass: string|null, attributes: string, description: string, phpDoc: string, serializedName?: string, serializedPath?: string, nullable?: bool}>, codeBucket: ?string, synthesizeMissingFieldsWhenEmpty?: bool, metadata: array{timestamp: string, sourceFiles: array<string>, validationSourceFiles: array<string>}}|array $templateData
      */
     public function render(array $templateData): string
     {
@@ -162,7 +162,7 @@ PHP;
     }
 
     /**
-     * @param array<array{name: string, type: string, phpType: string, attributes: string, description: string, phpDoc: string, serializedName?: string, serializedPath?: string, nullable?: bool}> $properties
+     * @param array<array{name: string, type: string, phpType: string, itemClass: string|null, attributes: string, description: string, phpDoc: string, serializedName?: string, serializedPath?: string, nullable?: bool}> $properties
      */
     protected function renderProperties(array $properties): string
     {
@@ -271,7 +271,7 @@ PHP;
     }
 
     /**
-     * @param array<array{name: string, type: string, phpType: string, attributes: string, description: string, phpDoc: string, serializedName?: string, serializedPath?: string, nullable?: bool}> $properties
+     * @param array<array{name: string, type: string, phpType: string, itemClass: string|null, attributes: string, description: string, phpDoc: string, serializedName?: string, serializedPath?: string, nullable?: bool}> $properties
      */
     protected function renderGettersAndSetters(array $properties): string
     {
@@ -306,7 +306,7 @@ PHP;
     }
 
     /**
-     * @param array<array{name: string, type: string, phpType: string, attributes: string, description: string, phpDoc: string, serializedName?: string, serializedPath?: string, nullable?: bool}> $properties
+     * @param array<array{name: string, type: string, phpType: string, itemClass: string|null, attributes: string, description: string, phpDoc: string, serializedName?: string, serializedPath?: string, nullable?: bool}> $properties
      */
     protected function renderToArray(array $properties): string
     {
@@ -317,6 +317,23 @@ PHP;
         $assignments = [];
 
         foreach ($properties as $property) {
+            // An object collection round-trips element by element. The instanceof guard keeps a raw
+            // array assigned by a provider that bypasses the serializer working unchanged.
+            if (!empty($property['itemClass'])) {
+                $name = $property['name'];
+                $itemClass = $property['itemClass'];
+                $mapped = "array_map(\n"
+                    . "                static fn (mixed \$item): mixed => \$item instanceof {$itemClass} ? \$item->toArray() : \$item,\n"
+                    . "                \$this->{$name},\n"
+                    . '            )';
+
+                $assignments[] = empty($property['nullable'])
+                    ? "            '{$name}' => {$mapped},"
+                    : "            '{$name}' => \$this->{$name} === null ? null : {$mapped},";
+
+                continue;
+            }
+
             // A typed nested object serializes back to an array via its own toArray(), so the
             // payload stays a plain nested array rather than embedding the value-object instance.
             if ($this->isNestedObjectProperty($property)) {
@@ -345,7 +362,7 @@ PHP;
     }
 
     /**
-     * @param array<array{name: string, type: string, phpType: string, attributes: string, description: string, phpDoc: string, serializedName?: string, serializedPath?: string, nullable?: bool}> $properties
+     * @param array<array{name: string, type: string, phpType: string, itemClass: string|null, attributes: string, description: string, phpDoc: string, serializedName?: string, serializedPath?: string, nullable?: bool}> $properties
      */
     protected function renderFromArray(string $className, array $properties): string
     {
@@ -356,6 +373,20 @@ PHP;
         $assignments = [];
 
         foreach ($properties as $property) {
+            if (!empty($property['itemClass'])) {
+                $name = $property['name'];
+                $itemClass = $property['itemClass'];
+                $default = !empty($property['nullable']) ? 'null' : '[]';
+                $assignments[] = "        \$instance->{$name} = is_array(\$data['{$name}'] ?? null)\n"
+                    . "            ? array_map(\n"
+                    . "                static fn (mixed \$item): mixed => is_array(\$item) ? {$itemClass}::fromArray(\$item) : \$item,\n"
+                    . "                \$data['{$name}'],\n"
+                    . "            )\n"
+                    . "            : {$default};";
+
+                continue;
+            }
+
             // A typed nested object arrives as a sub-array and must be hydrated through that
             // class's fromArray() — assigning the raw array to the typed property is a TypeError.
             // An already-hydrated object (or null) is passed through unchanged.

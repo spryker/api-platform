@@ -32,7 +32,24 @@ class NestedObjectValidationLifter
      *
      * @var array<string>
      */
-    protected const array COLLECTION_FIELD_WRAPPERS = ['Optional', 'Required', 'All'];
+    protected const array COLLECTION_FIELD_WRAPPERS = [self::WRAPPER_OPTIONAL, self::WRAPPER_REQUIRED, self::WRAPPER_ALL];
+
+    protected const string WRAPPER_ALL = 'All';
+
+    protected const string WRAPPER_REQUIRED = 'Required';
+
+    protected const string WRAPPER_OPTIONAL = 'Optional';
+
+    /**
+     * Symfony rejects `Valid` nested inside any `Composite` constraint, and these two wrappers reach
+     * the attribute emitter verbatim — so a cascade produced under them is hoisted out to sit
+     * alongside the wrapper rather than inside it. `Optional` is absent on purpose: it keeps its
+     * cascade because {@see ValidationAttributeGenerator} unwraps that wrapper later to emit the
+     * optional payload marker.
+     *
+     * @var array<string>
+     */
+    protected const array VALID_HOISTING_WRAPPERS = [self::WRAPPER_ALL, self::WRAPPER_REQUIRED];
 
     protected const string VALID_CONSTRAINT_NAME = 'Valid';
 
@@ -92,11 +109,8 @@ class NestedObjectValidationLifter
 
             $fields = $collection['fields'];
 
-            // `allowMissingFields: true` (e.g. checkout billingAddress referenced by id) tolerates
-            // absent keys. On a value object an absent field denormalizes to null, so relax NotBlank
-            // to `allowNull: true` — an absent field passes, a present-but-empty one still fails.
             if ($collection['allowMissingFields']) {
-                $fields = $this->relaxRequiredFieldConstraints($fields);
+                $fields = $this->wrapFieldsInOptional($fields);
             }
 
             foreach ($fields as $fieldName => $fieldConstraints) {
@@ -257,28 +271,75 @@ class NestedObjectValidationLifter
      */
     protected function replaceCollectionConstraint(array $constraints): array
     {
-        foreach ($constraints as $index => $constraint) {
-            if (!is_array($constraint)) {
-                continue;
-            }
+        $replacedConstraints = [];
 
-            if (isset($constraint['Collection']['fields']) && is_array($constraint['Collection']['fields'])) {
-                $constraints[$index] = static::VALID_CONSTRAINT_NAME;
-
-                continue;
-            }
-
-            foreach (static::COLLECTION_FIELD_WRAPPERS as $wrapper) {
-                if (!isset($constraint[$wrapper]['constraints']) || !is_array($constraint[$wrapper]['constraints'])) {
-                    continue;
-                }
-
-                $constraint[$wrapper]['constraints'] = $this->replaceCollectionConstraint($constraint[$wrapper]['constraints']);
-                $constraints[$index] = $constraint;
+        foreach ($constraints as $constraint) {
+            // A hoisted cascade turns one entry into two, so the list is rebuilt rather than
+            // rewritten in place. Constraint lists are consumed by iteration only, never by key.
+            foreach ($this->replaceConstraint($constraint) as $replacedConstraint) {
+                $replacedConstraints[] = $replacedConstraint;
             }
         }
 
-        return $constraints;
+        return $replacedConstraints;
+    }
+
+    /**
+     * @return array<int, mixed> Normally one entry; two when a hoisted cascade leaves its wrapper in place.
+     */
+    protected function replaceConstraint(mixed $constraint): array
+    {
+        if (!is_array($constraint)) {
+            return [$constraint];
+        }
+
+        if (isset($constraint['Collection']['fields']) && is_array($constraint['Collection']['fields'])) {
+            return [static::VALID_CONSTRAINT_NAME];
+        }
+
+        foreach (static::COLLECTION_FIELD_WRAPPERS as $wrapper) {
+            if (!isset($constraint[$wrapper]['constraints']) || !is_array($constraint[$wrapper]['constraints'])) {
+                continue;
+            }
+
+            return $this->replaceWrappedConstraint($constraint, $wrapper);
+        }
+
+        return [$constraint];
+    }
+
+    /**
+     * @param array<array-key, mixed> $constraint
+     *
+     * @return array<int, mixed>
+     */
+    protected function replaceWrappedConstraint(array $constraint, string $wrapper): array
+    {
+        $wrappedConstraints = $this->replaceCollectionConstraint($constraint[$wrapper]['constraints']);
+        $hasCascade = in_array(static::VALID_CONSTRAINT_NAME, $wrappedConstraints, true);
+
+        if (!$hasCascade || !in_array($wrapper, static::VALID_HOISTING_WRAPPERS, true)) {
+            $constraint[$wrapper]['constraints'] = $wrappedConstraints;
+
+            return [$constraint];
+        }
+
+        // `Valid` cascades element-wise over an array by itself, so it is lifted out of the wrapper
+        // Symfony would reject it in. Everything else the wrapper held still applies per element and
+        // stays inside it — dropping those would silently discard declared validation.
+        $validConstraintName = static::VALID_CONSTRAINT_NAME;
+        $siblingConstraints = array_values(array_filter(
+            $wrappedConstraints,
+            static fn (mixed $wrappedConstraint): bool => $wrappedConstraint !== $validConstraintName,
+        ));
+
+        if ($siblingConstraints === []) {
+            return [static::VALID_CONSTRAINT_NAME];
+        }
+
+        $constraint[$wrapper]['constraints'] = $siblingConstraints;
+
+        return [$constraint, static::VALID_CONSTRAINT_NAME];
     }
 
     /**
@@ -343,62 +404,42 @@ class NestedObjectValidationLifter
     }
 
     /**
-     * Relaxes presence constraints for `allowMissingFields: true`: each `NotBlank` gains
-     * `allowNull: true` and each `NotNull` is dropped, so an absent (null) field is tolerated while a
-     * present-but-empty value is still rejected. Recurses through {@see COLLECTION_FIELD_WRAPPERS}.
+     * `allowMissingFields: true` is per-field `Optional` applied to every key, so it reuses that
+     * wrapper: the constraints stay as declared and
+     * {@see \Spryker\ApiPlatform\State\OptionalFieldFilteringValidateProvider} decides absence from
+     * the request body, which is the only place absent and explicit-null still differ.
      *
      * @param array<array-key, mixed> $fields
      *
      * @return array<array-key, mixed>
      */
-    protected function relaxRequiredFieldConstraints(array $fields): array
+    protected function wrapFieldsInOptional(array $fields): array
     {
         foreach ($fields as $fieldName => $constraints) {
-            if (is_array($constraints)) {
-                $fields[$fieldName] = $this->relaxConstraintList($constraints);
+            if (!is_array($constraints) || $this->hasOptionalWrapper($constraints)) {
+                continue;
             }
+
+            $fields[$fieldName] = [[static::WRAPPER_OPTIONAL => ['constraints' => $constraints]]];
         }
 
         return $fields;
     }
 
     /**
-     * @param array<array-key, mixed> $constraints
+     * Double wrapping would leave an inner `Optional` behind after the generator unwraps the outer
+     * one, emitting `#[Assert\Optional(...)]` — not a valid attribute outside a `Collection`.
      *
-     * @return array<array-key, mixed>
+     * @param array<array-key, mixed> $constraints
      */
-    protected function relaxConstraintList(array $constraints): array
+    protected function hasOptionalWrapper(array $constraints): bool
     {
-        $relaxed = [];
-
         foreach ($constraints as $constraint) {
-            if ($constraint === 'NotNull' || (is_array($constraint) && array_key_first($constraint) === 'NotNull')) {
-                continue;
+            if (is_array($constraint) && array_key_exists(static::WRAPPER_OPTIONAL, $constraint)) {
+                return true;
             }
-
-            if ($constraint === 'NotBlank') {
-                $relaxed[] = ['NotBlank' => ['allowNull' => true]];
-
-                continue;
-            }
-
-            if (is_array($constraint) && array_key_first($constraint) === 'NotBlank') {
-                $options = is_array($constraint['NotBlank']) ? $constraint['NotBlank'] : [];
-                $options['allowNull'] = true;
-                $relaxed[] = ['NotBlank' => $options];
-
-                continue;
-            }
-
-            foreach (static::COLLECTION_FIELD_WRAPPERS as $wrapper) {
-                if (is_array($constraint) && isset($constraint[$wrapper]['constraints']) && is_array($constraint[$wrapper]['constraints'])) {
-                    $constraint[$wrapper]['constraints'] = $this->relaxConstraintList($constraint[$wrapper]['constraints']);
-                }
-            }
-
-            $relaxed[] = $constraint;
         }
 
-        return $relaxed;
+        return false;
     }
 }

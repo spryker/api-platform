@@ -109,8 +109,39 @@ class NestedObjectClassGeneratorTest extends Unit
         $this->assertArrayHasKey('CartsStorefrontObject', $classes);
         $this->assertArrayHasKey('CartsCustomersStorefrontObject', $classes);
         $this->assertStringContainsString(
-            '@var array<\Generated\Api\Storefront\Carts\CartsCustomersStorefrontObject>',
+            '@var array<int, \Generated\Api\Storefront\Carts\CartsCustomersStorefrontObject>',
             $classes['CartsStorefrontObject'],
         );
+    }
+
+    public function testGivenObjectCollectionInsideObjectWhenGeneratingThenEmitsVarDocblock(): void
+    {
+        // Arrange
+        $generator = new NestedObjectClassGenerator(new PropertyAttributeGenerator(), new PhpTemplateRenderer());
+        $properties = [
+            'availabilities' => [
+                'type' => 'array',
+                'items' => [
+                    'type' => 'object',
+                    'properties' => [
+                        'availableQuantity' => ['type' => 'integer'],
+                    ],
+                ],
+            ],
+        ];
+
+        // Act
+        $classes = $generator->generate('ProductsStocks', $properties, 'Backend', ['products.resource.yml'], false, 'Products');
+
+        // Assert — the parent value object keeps a bare array and names its element class; the child
+        // value object is emitted in the same per-owner sub-namespace.
+        $parent = $classes['ProductsStocksBackendObject'];
+        $this->assertStringContainsString('public array $availabilities = [];', $parent);
+        $this->assertStringContainsString(
+            '@var array<int, \Generated\Api\Backend\Products\ProductsStocksAvailabilitiesBackendObject>',
+            $parent,
+        );
+        $this->assertStringNotContainsString('#[CollectionOf(', $parent);
+        $this->assertArrayHasKey('ProductsStocksAvailabilitiesBackendObject', $classes);
     }
 }

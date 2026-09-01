@@ -14,17 +14,22 @@ use ApiPlatform\State\ProviderInterface;
 use ApiPlatform\Validator\Exception\ValidationException;
 use Symfony\Component\HttpFoundation\Request;
 use Symfony\Component\Validator\Constraint;
+use Symfony\Component\Validator\Constraints\Collection;
 use Symfony\Component\Validator\ConstraintViolationInterface;
 use Symfony\Component\Validator\ConstraintViolationList;
 
 /**
- * Drops validation violations whose constraint was emitted from an `Optional` block in the
- * validation YAML AND whose property was not present in the submitted request body.
+ * Drops validation violations whose constraint was emitted from an `Optional` block (or an
+ * `allowMissingFields` collection) in the validation YAML AND whose property was not present in the
+ * submitted request body.
  *
- * Preserves legacy Glue REST semantics for fields wrapped in `Optional`:
+ * Preserves legacy Glue REST semantics for conditionally-present fields, at any nesting depth:
  * - field absent from request body → no error (legacy behavior preserved)
  * - field present with null/empty value → validation fires normally (NotBlank → 422)
  * - bare-NotBlank required fields absent → "must not be blank" fires normally (no change)
+ *
+ * The body is the only place absence and explicit null still differ — Symfony validates an
+ * uninitialized typed property exactly like one defaulted to null.
  *
  * Optional-sourced constraints are tagged at generation time with `payload: ['source' => 'optional']`
  * by `ConstraintFormatter::generateConstraintAttributeWithOptionalPayload()`. This decorator inspects
@@ -63,16 +68,16 @@ class OptionalFieldFilteringValidateProvider implements ProviderInterface
                 throw $exception;
             }
 
-            $submittedFields = $this->resolveSubmittedFields($request);
+            $submittedAttributes = $this->resolveSubmittedAttributes($request);
 
-            if ($submittedFields === null) {
+            if ($submittedAttributes === null) {
                 throw $exception;
             }
 
             $remainingViolations = [];
 
             foreach ($exception->getConstraintViolationList() as $violation) {
-                if ($this->shouldDropViolation($violation, $submittedFields)) {
+                if ($this->shouldDropViolation($violation, $submittedAttributes)) {
                     continue;
                 }
 
@@ -91,19 +96,11 @@ class OptionalFieldFilteringValidateProvider implements ProviderInterface
     }
 
     /**
-     * @param array<string> $submittedFields
+     * @param array<string, mixed> $submittedAttributes
      */
-    protected function shouldDropViolation(ConstraintViolationInterface $violation, array $submittedFields): bool
+    protected function shouldDropViolation(ConstraintViolationInterface $violation, array $submittedAttributes): bool
     {
-        $propertyPath = $violation->getPropertyPath();
-
-        // Only top-level properties can be checked against the submitted body map.
-        // Nested paths (e.g. `items[0].sku`) keep their original violation.
-        if (str_contains($propertyPath, '.') || str_contains($propertyPath, '[')) {
-            return false;
-        }
-
-        if (in_array($propertyPath, $submittedFields, true)) {
+        if ($this->isSubmitted($this->resolveMarkedPropertyPath($violation), $submittedAttributes)) {
             return false;
         }
 
@@ -123,9 +120,67 @@ class OptionalFieldFilteringValidateProvider implements ProviderInterface
     }
 
     /**
-     * @return array<string>|null
+     * The Optional payload rides on the constraint, so absence must be judged at the path that
+     * constraint was applied to — which is not always the path the violation reports.
+     *
+     * A `Collection` reports a missing declared field one segment BELOW itself
+     * (`productConfigurationInstance[isComplete]`) while the Optional marker sits on the Collection
+     * governing `productConfigurationInstance`. That leaf is absent by definition — it is what the
+     * violation is about — so judging absence there would drop every required-presence violation the
+     * Collection exists to raise, and the request would pass with the field silently missing.
+     *
+     * An empty result means the Collection sat at the attributes root, which is always submitted.
      */
-    protected function resolveSubmittedFields(Request $request): ?array
+    protected function resolveMarkedPropertyPath(ConstraintViolationInterface $violation): string
+    {
+        $propertyPath = $violation->getPropertyPath();
+
+        if ($violation->getCode() !== Collection::MISSING_FIELD_ERROR) {
+            return $propertyPath;
+        }
+
+        $segments = $this->splitPropertyPath($propertyPath);
+        array_pop($segments);
+
+        return implode('.', $segments);
+    }
+
+    /**
+     * Walks a violation property path (`shipments[1].shippingAddress`) through the decoded body.
+     *
+     * @param array<string, mixed> $submittedAttributes
+     */
+    protected function isSubmitted(string $propertyPath, array $submittedAttributes): bool
+    {
+        $cursor = $submittedAttributes;
+
+        foreach ($this->splitPropertyPath($propertyPath) as $segment) {
+            // array_key_exists, not isset: an explicitly submitted null is present, and must keep
+            // its violation so `"field": null` stays a 422 as it was under the legacy Collection.
+            if (!is_array($cursor) || !array_key_exists($segment, $cursor)) {
+                return false;
+            }
+
+            $cursor = $cursor[$segment];
+        }
+
+        return true;
+    }
+
+    /**
+     * @return array<int, string>
+     */
+    protected function splitPropertyPath(string $propertyPath): array
+    {
+        $normalized = str_replace(['[', ']'], ['.', ''], $propertyPath);
+
+        return array_values(array_filter(explode('.', $normalized), static fn (string $segment): bool => $segment !== ''));
+    }
+
+    /**
+     * @return array<string, mixed>|null
+     */
+    protected function resolveSubmittedAttributes(Request $request): ?array
     {
         $body = json_decode((string)$request->getContent(), true);
 
@@ -133,6 +188,6 @@ class OptionalFieldFilteringValidateProvider implements ProviderInterface
             return null;
         }
 
-        return array_map('strval', array_keys($body['data']['attributes']));
+        return $body['data']['attributes'];
     }
 }
