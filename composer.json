@@ -40,13 +40,18 @@
         "symfony/yaml": "^6.0.0 || ^7.0.0"
     },
     "require-dev": {
+        "spryker/auth-rest-api": "*",
         "spryker/code-sniffer": "*",
         "spryker/console": "*",
         "spryker/container": "*",
         "spryker/customer": "*",
         "spryker/decimal-object": "*",
+        "spryker/glue-backend-api-application": "*",
+        "spryker/kernel-feature": "*",
+        "spryker/propel": "*",
         "spryker/symfony": "*",
         "spryker/testify": "*",
+        "spryker/user": "*",
         "symfony/framework-bundle": "*"
     },
     "autoload": {

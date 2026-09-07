@@ -12,6 +12,8 @@ namespace SprykerTest\ApiPlatform\Test;
 use ApiPlatform\Symfony\Security\ResourceAccessChecker;
 use Spryker\ApiPlatform\DependencyInjection\Compiler\ApiClassAutoDiscoveryPass;
 use Spryker\ApiPlatform\DependencyInjection\Compiler\SchemaServiceRegistrationPass;
+use Spryker\Service\Container\Pass\StackResolverPass;
+use Spryker\Service\Container\ProxyFactory;
 use SprykerTest\ApiPlatform\DependencyInjection\Compiler\FilterApiResourcesByTypePass;
 use SprykerTest\ApiPlatform\DependencyInjection\Compiler\RegisterGeneratedResourcesPass;
 use SprykerTest\ApiPlatform\DependencyInjection\Compiler\SuppressUnresolvableServicesPass;
@@ -43,11 +45,30 @@ class ApiTestKernel extends TestKernel
     {
         parent::build($container);
 
-        $container->addCompilerPass(new SchemaServiceRegistrationPass());
-        $container->addCompilerPass(new ApiClassAutoDiscoveryPass());
+        // Priority 50 is what `SprykerApiPlatformBundle` gives them, and it is load-bearing rather
+        // than cosmetic: it puts the discovery ahead of `StackResolverPass` (priority 0), which is
+        // what turns a `#[Plugins]` constructor attribute into a real argument. Registered at the
+        // default priority the discovery runs last, every discovered provider keeps its empty
+        // default plugin list, and the resource behaves as though the project registered nothing.
+        $container->addCompilerPass(new SchemaServiceRegistrationPass(), PassConfig::TYPE_BEFORE_OPTIMIZATION, 50);
+        $container->addCompilerPass(new ApiClassAutoDiscoveryPass(), PassConfig::TYPE_BEFORE_OPTIMIZATION, 50);
+
+        // `TestKernel::build()` replaces the application kernel's pass list rather than extending
+        // it, so the pass that turns a `#[Plugins]` / `#[Plugin]` / `#[Stack]` constructor
+        // attribute into a real argument was missing here. Without it every discovered provider
+        // kept the empty default of its plugin argument and behaved as though the project had
+        // registered no plugins at all — a silent wrong answer, never an error.
+        $container->register(ProxyFactory::class, ProxyFactory::class)->setPublic(true);
+        $container->addCompilerPass(new StackResolverPass());
+
+        // Applies in both modes: a project-mode boot loads every module's generated
+        // resources, so processors/providers from modules other than the one under
+        // test may reference extension-plugin interfaces that are not wired in the
+        // test container. Stubbing them (synthetic, only fail if instantiated) lets
+        // the full pre-generated resource set compile for module-scoped contract tests.
+        $container->addCompilerPass(new SuppressUnresolvableServicesPass(), PassConfig::TYPE_BEFORE_OPTIMIZATION, -100);
 
         if (TestModeConfiguration::isCoreMode()) {
-            $container->addCompilerPass(new SuppressUnresolvableServicesPass(), PassConfig::TYPE_BEFORE_OPTIMIZATION, -100);
             $container->addCompilerPass(new FilterApiResourcesByTypePass($this->apiType));
             $container->addCompilerPass(new RegisterGeneratedResourcesPass($this->resourcePaths));
         }
@@ -174,7 +195,7 @@ class ApiTestKernel extends TestKernel
             'api_types' => [$this->apiType],
             'cache_dir' => sprintf('%s/tests/_data/cache', $moduleRoot),
             'generated_dir' => sprintf('%s/tests/_data/Api', $moduleRoot),
-            'debug' => true,
+            'debug' => TestModeConfiguration::isDebug(),
         ]);
     }
 

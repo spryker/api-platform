@@ -9,10 +9,13 @@ declare(strict_types=1);
 
 namespace SprykerTest\ApiPlatform\DependencyInjection\Compiler;
 
+use Psr\Container\ContainerInterface as PsrContainerInterface;
 use ReflectionClass;
 use ReflectionNamedType;
+use ReflectionParameter;
 use Symfony\Component\DependencyInjection\Compiler\CompilerPassInterface;
 use Symfony\Component\DependencyInjection\ContainerBuilder;
+use Symfony\Component\DependencyInjection\Definition;
 use Throwable;
 
 /**
@@ -45,7 +48,7 @@ class SuppressUnresolvableServicesPass implements CompilerPassInterface
                 continue;
             }
 
-            if ($this->hasUnresolvableDependency($container, $className)) {
+            if ($this->hasUnresolvableDependency($container, $definition, $className)) {
                 $definition->setAutowired(false);
                 $definition->setArguments([]);
                 $definition->setSynthetic(true);
@@ -53,7 +56,7 @@ class SuppressUnresolvableServicesPass implements CompilerPassInterface
         }
     }
 
-    protected function hasUnresolvableDependency(ContainerBuilder $container, string $className): bool
+    protected function hasUnresolvableDependency(ContainerBuilder $container, Definition $definition, string $className): bool
     {
         try {
             $reflection = new ReflectionClass($className);
@@ -65,6 +68,13 @@ class SuppressUnresolvableServicesPass implements CompilerPassInterface
 
             foreach ($constructor->getParameters() as $parameter) {
                 if ($parameter->isOptional()) {
+                    continue;
+                }
+
+                // An earlier pass may have bound the argument by hand — `StackResolverPass` does
+                // this for `#[Plugin]`, whose parameter is typed by an extension-plugin interface
+                // that is deliberately absent from the container. Autowiring never sees it.
+                if ($this->hasExplicitArgument($definition, $parameter)) {
                     continue;
                 }
 
@@ -80,6 +90,13 @@ class SuppressUnresolvableServicesPass implements CompilerPassInterface
                     continue;
                 }
 
+                // PSR/Symfony ContainerInterface args are service locators injected by
+                // the framework (tag/attribute), never autowired by interface — treat as
+                // resolvable so genuine infra services are not stubbed as a false positive.
+                if (is_a($typeName, PsrContainerInterface::class, true)) {
+                    continue;
+                }
+
                 if (class_exists($typeName) && !interface_exists($typeName)) {
                     continue;
                 }
@@ -91,5 +108,16 @@ class SuppressUnresolvableServicesPass implements CompilerPassInterface
         }
 
         return false;
+    }
+
+    /**
+     * Definition arguments are keyed either by position or by `$name`.
+     */
+    protected function hasExplicitArgument(Definition $definition, ReflectionParameter $parameter): bool
+    {
+        $arguments = $definition->getArguments();
+
+        return array_key_exists($parameter->getPosition(), $arguments)
+            || array_key_exists(sprintf('$%s', $parameter->getName()), $arguments);
     }
 }

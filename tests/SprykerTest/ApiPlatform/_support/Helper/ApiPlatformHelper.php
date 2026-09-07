@@ -10,6 +10,9 @@ declare(strict_types=1);
 namespace SprykerTest\ApiPlatform\Helper;
 
 use Codeception\Module;
+use Codeception\Test\TestCaseWrapper;
+use Codeception\TestInterface;
+use SprykerTest\ApiPlatform\Test\AbstractApiTestCase;
 use SprykerTest\ApiPlatform\Test\TestMode;
 use SprykerTest\ApiPlatform\Test\TestModeConfiguration;
 use Symfony\Component\Filesystem\Filesystem;
@@ -51,16 +54,42 @@ class ApiPlatformHelper extends Module
     protected array $config = [
         'mode' => 'project',
         'apiType' => '',
+        'debug' => null,
+        'bootOnce' => null,
+        'reuseApplicationContainer' => null,
     ];
 
-    /**
-     * Called during module initialization.
-     * Sets the test mode in TestModeConfiguration so it's available to test cases.
-     */
     public function _initialize(): void
     {
         $mode = TestMode::fromString($this->config['mode']);
         TestModeConfiguration::setTestMode($mode);
+
+        if ($this->config['debug'] !== null) {
+            TestModeConfiguration::setDebug((bool)$this->config['debug']);
+        }
+
+        if ($this->config['bootOnce'] !== null) {
+            TestModeConfiguration::setBootOnce((bool)$this->config['bootOnce']);
+        }
+
+        if ($this->config['reuseApplicationContainer'] !== null) {
+            TestModeConfiguration::setReuseApplicationContainer((bool)$this->config['reuseApplicationContainer']);
+        }
+    }
+
+    public function _before(TestInterface $test): void
+    {
+        if (!TestModeConfiguration::isBootOnce()) {
+            return;
+        }
+
+        $testCase = $test instanceof TestCaseWrapper ? $test->getTestCase() : $test;
+
+        if (!$testCase instanceof AbstractApiTestCase) {
+            return;
+        }
+
+        $testCase->getTestKernel();
     }
 
     public function _beforeSuite(array $settings = []): void
@@ -88,6 +117,8 @@ class ApiPlatformHelper extends Module
 
     public function _afterSuite(): void
     {
+        AbstractApiTestCase::resetSharedKernel();
+
         if ($this->isProjectMode()) {
             return;
         }
@@ -110,9 +141,6 @@ class ApiPlatformHelper extends Module
         return $this->config['apiType'];
     }
 
-    /**
-     * Checks if the helper is configured for project mode.
-     */
     protected function isProjectMode(): bool
     {
         return TestMode::fromString($this->config['mode']) === TestMode::PROJECT;
@@ -193,9 +221,6 @@ class ApiPlatformHelper extends Module
         );
     }
 
-    /**
-     * Cleans up all test-generated directories and files.
-     */
     protected function cleanupContainerCache(): void
     {
         $containerDirectory = codecept_data_dir('symfony_test_kernel_cache');

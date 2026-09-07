@@ -26,12 +26,57 @@ class TestModeConfiguration
 {
     protected static ?TestMode $testMode = null;
 
+    protected static ?bool $debug = null;
+
+    protected static ?bool $bootOnce = null;
+
+    protected static ?bool $reuseApplicationContainer = null;
+
     /**
      * Sets the test mode. Called by ApiPlatformHelper during initialization.
      */
     public static function setTestMode(TestMode $mode): void
     {
         static::$testMode = $mode;
+    }
+
+    /**
+     * Default (null → true) preserves the historical hardcoded behaviour.
+     */
+    public static function setDebug(bool $debug): void
+    {
+        static::$debug = $debug;
+    }
+
+    public static function isDebug(): bool
+    {
+        return static::$debug ?? true;
+    }
+
+    /**
+     * Default (null → false) preserves the historical per-method boot behaviour.
+     */
+    public static function setBootOnce(bool $bootOnce): void
+    {
+        static::$bootOnce = $bootOnce;
+    }
+
+    public static function isBootOnce(): bool
+    {
+        return static::$bootOnce ?? false;
+    }
+
+    /**
+     * Default (null → false) preserves the historical per-method reset behaviour.
+     */
+    public static function setReuseApplicationContainer(bool $reuse): void
+    {
+        static::$reuseApplicationContainer = $reuse;
+    }
+
+    public static function isReuseApplicationContainer(): bool
+    {
+        return static::$reuseApplicationContainer ?? false;
     }
 
     /**
@@ -66,5 +111,8 @@ class TestModeConfiguration
     public static function reset(): void
     {
         static::$testMode = null;
+        static::$debug = null;
+        static::$bootOnce = null;
+        static::$reuseApplicationContainer = null;
     }
 }

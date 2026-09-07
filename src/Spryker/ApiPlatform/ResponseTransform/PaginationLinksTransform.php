@@ -122,9 +122,9 @@ class PaginationLinksTransform
 
     protected function resolveItemsPerPage(Request $request, mixed $pagination): int
     {
-        $pageParam = $request->query->all(static::PAGINATION_PARAM_PAGE);
+        $pageParam = $request->query->all()[static::PAGINATION_PARAM_PAGE] ?? null;
 
-        if (isset($pageParam[static::PAGINATION_PARAM_LIMIT])) {
+        if (is_array($pageParam) && isset($pageParam[static::PAGINATION_PARAM_LIMIT])) {
             return (int)$pageParam[static::PAGINATION_PARAM_LIMIT];
         }
 

@@ -136,6 +136,36 @@ class JsonApiResponseBodySubscriberTest extends Unit
         $this->assertStringNotContainsString('\/', (string)$event->getResponse()->getContent());
     }
 
+    public function testGivenScalarPageQueryParameterWhenOnKernelResponseThenPaginationLinksAreStillAdded(): void
+    {
+        $content = '{"data":[{"id":"1","type":"test-resources","attributes":{"pagination":{"currentPage":2,"maxPage":3,"currentItemsPerPage":10}}}]}';
+        $subscriber = $this->createSubscriberWithRealTransforms();
+        $event = $this->createResponseEvent($content, static::CONTENT_TYPE_JSON_API, '/test-resources?page=2');
+
+        // Act
+        $subscriber->onKernelResponse($event);
+
+        // Assert
+        $data = json_decode((string)$event->getResponse()->getContent(), true);
+        $this->assertArrayHasKey('first', $data['links'] ?? []);
+        $this->assertStringContainsString('page[limit]=10', $data['links']['first']);
+    }
+
+    public function testGivenPageLimitQueryParameterWhenOnKernelResponseThenLinksUseThatLimit(): void
+    {
+        // Arrange
+        $content = '{"data":[{"id":"1","type":"test-resources","attributes":{"pagination":{"currentPage":1,"maxPage":3,"currentItemsPerPage":10}}}]}';
+        $subscriber = $this->createSubscriberWithRealTransforms();
+        $event = $this->createResponseEvent($content, static::CONTENT_TYPE_JSON_API, '/test-resources?page[limit]=4');
+
+        // Act
+        $subscriber->onKernelResponse($event);
+
+        // Assert
+        $data = json_decode((string)$event->getResponse()->getContent(), true);
+        $this->assertStringContainsString('page[limit]=4', $data['links']['first'] ?? '');
+    }
+
     protected function createSubscriberWithNeverInvokedTransforms(): JsonApiResponseBodySubscriber
     {
         $relationshipNormalizer = $this->createMock(JsonApiRelationshipNormalizerTransform::class);
@@ -157,9 +187,12 @@ class JsonApiResponseBodySubscriberTest extends Unit
         );
     }
 
-    protected function createResponseEvent(string $content, string $contentType = self::CONTENT_TYPE_JSON_API): ResponseEvent
-    {
-        $request = Request::create('/test-resources');
+    protected function createResponseEvent(
+        string $content,
+        string $contentType = self::CONTENT_TYPE_JSON_API,
+        string $uri = '/test-resources'
+    ): ResponseEvent {
+        $request = Request::create($uri);
         $response = new Response($content, Response::HTTP_OK, ['Content-Type' => $contentType]);
 
         return new ResponseEvent($this->createMock(HttpKernelInterface::class), $request, HttpKernelInterface::MAIN_REQUEST, $response);
