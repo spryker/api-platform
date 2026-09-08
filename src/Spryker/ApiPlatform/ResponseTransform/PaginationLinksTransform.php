@@ -20,6 +20,8 @@ use Symfony\Component\HttpFoundation\Request;
  */
 class PaginationLinksTransform
 {
+    public const string REQUEST_ATTRIBUTE_PAGINATION = '_spryker_api_platform_pagination';
+
     protected const string CONTENT_TYPE_JSON_API = 'application/vnd.api+json';
 
     protected const string PAGINATION_PARAM_OFFSET = 'offset';
@@ -34,6 +36,18 @@ class PaginationLinksTransform
 
     protected const string ATTRIBUTE_PAGINATION = 'pagination';
 
+    protected const string DOCUMENT_SECTION_META = 'meta';
+
+    protected const string DOCUMENT_SECTION_LINKS = 'links';
+
+    protected const string META_PAGINATION = 'pagination';
+
+    protected const string META_TOTAL_ITEMS = 'totalItems';
+
+    protected const string PAGINATION_KEY_CURRENT_PAGE = 'currentPage';
+
+    protected const string PAGINATION_KEY_MAX_PAGE = 'maxPage';
+
     /**
      * Adds pagination links to an already-decoded JSON:API document, if it carries pagination
      * metadata on the first resource.
@@ -46,32 +60,64 @@ class PaginationLinksTransform
     {
         $modified = $this->stripNullPaginationAttribute($data);
 
-        $pagination = $data['data'][0]['attributes']['pagination'] ?? null;
+        $requestPagination = $request->attributes->get(static::REQUEST_ATTRIBUTE_PAGINATION);
+        if (is_array($requestPagination) && $this->isCollectionDocument($data)) {
+            unset($data[static::DOCUMENT_SECTION_META][static::META_TOTAL_ITEMS]);
+            $data[static::DOCUMENT_SECTION_META][static::META_PAGINATION] = $requestPagination;
+            $this->addPaginationLinks($data, $request, $requestPagination);
 
-        if (!is_array($pagination) || !isset($pagination['currentPage'], $pagination['maxPage'])) {
+            return true;
+        }
+
+        $pagination = $data[static::DOCUMENT_SECTION_DATA][0]['attributes'][static::ATTRIBUTE_PAGINATION] ?? null;
+
+        if (!is_array($pagination)) {
             return $modified;
         }
 
-        $currentPage = (int)$pagination['currentPage'];
-        $maxPage = (int)$pagination['maxPage'];
+        return $this->addPaginationLinks($data, $request, $pagination) || $modified;
+    }
+
+    /**
+     * @param array<string, mixed> $data
+     */
+    protected function isCollectionDocument(array $data): bool
+    {
+        return isset($data[static::DOCUMENT_SECTION_DATA])
+            && is_array($data[static::DOCUMENT_SECTION_DATA])
+            && array_is_list($data[static::DOCUMENT_SECTION_DATA]);
+    }
+
+    /**
+     * @param array<string, mixed> $data
+     * @param array<string, mixed> $pagination
+     */
+    protected function addPaginationLinks(array &$data, Request $request, array $pagination): bool
+    {
+        if (!isset($pagination[static::PAGINATION_KEY_CURRENT_PAGE], $pagination[static::PAGINATION_KEY_MAX_PAGE])) {
+            return false;
+        }
+
+        $currentPage = (int)$pagination[static::PAGINATION_KEY_CURRENT_PAGE];
+        $maxPage = (int)$pagination[static::PAGINATION_KEY_MAX_PAGE];
 
         // Skip only when there is no result page at all. For a single-page result (maxPage == 1)
         // JSON:API still requires `first` and `last` links (they coincide with `self`).
         if ($maxPage < 1) {
-            return $modified;
+            return false;
         }
 
         $itemsPerPage = $this->resolveItemsPerPage($request, $pagination);
 
-        $data['links']['first'] = $this->buildPaginationLink($request, 0, $itemsPerPage);
-        $data['links']['last'] = $this->buildPaginationLink($request, ($maxPage - 1) * $itemsPerPage, $itemsPerPage);
+        $data[static::DOCUMENT_SECTION_LINKS]['first'] = $this->buildPaginationLink($request, 0, $itemsPerPage);
+        $data[static::DOCUMENT_SECTION_LINKS]['last'] = $this->buildPaginationLink($request, ($maxPage - 1) * $itemsPerPage, $itemsPerPage);
 
         if ($currentPage > 1) {
-            $data['links']['prev'] = $this->buildPaginationLink($request, ($currentPage - 2) * $itemsPerPage, $itemsPerPage);
+            $data[static::DOCUMENT_SECTION_LINKS]['prev'] = $this->buildPaginationLink($request, ($currentPage - 2) * $itemsPerPage, $itemsPerPage);
         }
 
         if ($currentPage < $maxPage) {
-            $data['links']['next'] = $this->buildPaginationLink($request, $currentPage * $itemsPerPage, $itemsPerPage);
+            $data[static::DOCUMENT_SECTION_LINKS]['next'] = $this->buildPaginationLink($request, $currentPage * $itemsPerPage, $itemsPerPage);
         }
 
         return true;

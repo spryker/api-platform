@@ -79,6 +79,7 @@ class JsonApiResponseBodySubscriber implements EventSubscriberInterface
             && !str_contains($content, '"currentPage"')
             && !str_contains($content, '"pagination":null')
             && !$request->attributes->get(JsonApiResolvedRelationshipTransform::REQUEST_ATTRIBUTE_RESOLVED_RELATIONSHIPS)
+            && !$request->attributes->has(PaginationLinksTransform::REQUEST_ATTRIBUTE_PAGINATION)
         ) {
             return;
         }

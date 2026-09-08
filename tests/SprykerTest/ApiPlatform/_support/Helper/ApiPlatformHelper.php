@@ -15,6 +15,7 @@ use Codeception\TestInterface;
 use SprykerTest\ApiPlatform\Test\AbstractApiTestCase;
 use SprykerTest\ApiPlatform\Test\TestMode;
 use SprykerTest\ApiPlatform\Test\TestModeConfiguration;
+use SprykerTest\Shared\Propel\Helper\TransactionHelper;
 use Symfony\Component\Filesystem\Filesystem;
 
 /**
@@ -59,6 +60,14 @@ class ApiPlatformHelper extends Module
         'reuseApplicationContainer' => null,
     ];
 
+    /**
+     * Called during module initialization.
+     * Sets the test mode in TestModeConfiguration so it's available to test cases.
+     *
+     * The optional fast-path keys (debug/bootOnce/reuseApplicationContainer) are pushed into
+     * TestModeConfiguration only when present; absent keys leave the historical
+     * per-method-boot, debug-on behaviour untouched.
+     */
     public function _initialize(): void
     {
         $mode = TestMode::fromString($this->config['mode']);
@@ -89,7 +98,34 @@ class ApiPlatformHelper extends Module
             return;
         }
 
+        $bootCountBeforeTest = AbstractApiTestCase::getBootCount();
         $testCase->getTestKernel();
+
+        if (AbstractApiTestCase::getBootCount() === $bootCountBeforeTest) {
+            return;
+        }
+
+        $this->reopenTestTransaction($test);
+    }
+
+    /**
+     * The boot ran the application plugins, and `PropelApplicationPlugin` installed a fresh
+     * connection manager: a transaction `TransactionHelper::_before()` opened BEFORE the boot lives
+     * on the previous connection, while the test body and every request write on the new one — the
+     * first test of the process would leak its rows. Re-opening the transaction on the connection
+     * that is current after the boot keeps that test as isolated as all the following ones.
+     */
+    protected function reopenTestTransaction(TestInterface $test): void
+    {
+        $transactionHelperName = '\\' . TransactionHelper::class;
+
+        if (!$this->hasModule($transactionHelperName)) {
+            return;
+        }
+
+        /** @var \SprykerTest\Shared\Propel\Helper\TransactionHelper $transactionHelper */
+        $transactionHelper = $this->getModule($transactionHelperName);
+        $transactionHelper->_before($test);
     }
 
     public function _beforeSuite(array $settings = []): void
@@ -118,6 +154,14 @@ class ApiPlatformHelper extends Module
     public function _afterSuite(): void
     {
         AbstractApiTestCase::resetSharedKernel();
+
+        // Unconditional: `reuseApplicationContainer` keeps the compiled container (and the
+        // ContainerDelegator's memoized services) alive between this suite's OWN test methods, but
+        // that reuse must not survive the suite itself. Without this, a project-mode `run:filtered`
+        // process that runs two suites with `reuseApplicationContainer` back to back (e.g. two
+        // different modules' BackendApiIntegration suites) leaks the first suite's resolved
+        // services — auth stubs included — into the second suite's requests.
+        AbstractApiTestCase::resetContainerDelegator();
 
         if ($this->isProjectMode()) {
             return;

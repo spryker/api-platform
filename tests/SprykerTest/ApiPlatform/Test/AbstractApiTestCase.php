@@ -753,10 +753,18 @@ abstract class AbstractApiTestCase extends Unit
             return;
         }
 
-        $this->resetContainerDelegator();
+        static::resetContainerDelegator();
     }
 
-    protected function resetContainerDelegator(): void
+    /**
+     * Reuse is a within-suite concern (survives between test methods so the compiled application
+     * container is not rebuilt per method); it must not survive the suite itself. Called
+     * unconditionally from {@see \SprykerTest\ApiPlatform\Helper\ApiPlatformHelper::_afterSuite()}
+     * so a stale, memoized service (e.g. an OAuth stub bound by a different module's suite) cannot
+     * leak into the next suite's `ContainerDelegator::$resolvedServices` cache when both suites run
+     * `reuseApplicationContainer` in the same `codecept run:filtered` process.
+     */
+    public static function resetContainerDelegator(): void
     {
         if (!class_exists(ContainerDelegator::class)) {
             return;

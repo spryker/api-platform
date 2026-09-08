@@ -166,6 +166,79 @@ class JsonApiResponseBodySubscriberTest extends Unit
         $this->assertStringContainsString('page[limit]=4', $data['links']['first'] ?? '');
     }
 
+    public function testGivenStorefrontPaginationAttributeWhenOnKernelResponseThenAttributeAndMetaStayUntouched(): void
+    {
+        // Arrange: storefront convention — pagination on the first item, API Platform meta present
+        $content = '{"links":{"self":"http://localhost/test-resources"},"meta":{"totalItems":1},"data":[{"id":"1","type":"test-resources","attributes":{"pagination":{"numFound":3,"currentPage":1,"maxPage":3,"currentItemsPerPage":1}}}]}';
+        $subscriber = $this->createSubscriberWithRealTransforms();
+        $event = $this->createResponseEvent($content);
+
+        // Act
+        $subscriber->onKernelResponse($event);
+
+        // Assert
+        $data = json_decode((string)$event->getResponse()->getContent(), true);
+        $this->assertSame(3, $data['data'][0]['attributes']['pagination']['numFound'], 'The storefront contract keeps pagination on the first item.');
+        $this->assertSame(['totalItems' => 1], $data['meta'], 'The storefront contract keeps API Platform meta untouched.');
+        $this->assertArrayHasKey('next', $data['links']);
+    }
+
+    public function testGivenPaginationRequestAttributeWhenOnKernelResponseThenPaginationIsEmittedAsMetaAndLinksAreAdded(): void
+    {
+        // Arrange: backend convention — no marker in the body, pagination published on the request
+        $content = '{"links":{"self":"http://localhost/test-resources"},"meta":{"totalItems":1},"data":[{"id":"1","type":"test-resources","attributes":{"name":"first"}}]}';
+        $pagination = ['numFound' => 3, 'currentPage' => 2, 'maxPage' => 3, 'currentItemsPerPage' => 1];
+        $request = Request::create('/test-resources?page[limit]=1&page[offset]=1');
+        $request->attributes->set(PaginationLinksTransform::REQUEST_ATTRIBUTE_PAGINATION, $pagination);
+        $subscriber = $this->createSubscriberWithRealTransforms();
+        $event = $this->createResponseEventForRequest($content, $request);
+
+        // Act
+        $subscriber->onKernelResponse($event);
+
+        // Assert
+        $data = json_decode((string)$event->getResponse()->getContent(), true);
+        $this->assertSame(['pagination' => $pagination], $data['meta'], 'meta.pagination replaces the page-count-only totalItems.');
+        $this->assertArrayNotHasKey('pagination', $data['data'][0]['attributes']);
+        $this->assertSame(['self', 'first', 'last', 'prev', 'next'], array_keys($data['links']));
+        $this->assertStringContainsString('page[offset]=2', $data['links']['next']);
+    }
+
+    public function testGivenPaginationRequestAttributeWithoutResultPagesWhenOnKernelResponseThenMetaPaginationIsEmittedWithoutLinks(): void
+    {
+        // Arrange
+        $content = '{"links":{"self":"http://localhost/test-resources"},"meta":{"totalItems":0},"data":[]}';
+        $pagination = ['numFound' => 0, 'currentPage' => 1, 'maxPage' => 0, 'currentItemsPerPage' => 10];
+        $request = Request::create('/test-resources');
+        $request->attributes->set(PaginationLinksTransform::REQUEST_ATTRIBUTE_PAGINATION, $pagination);
+        $subscriber = $this->createSubscriberWithRealTransforms();
+        $event = $this->createResponseEventForRequest($content, $request);
+
+        // Act
+        $subscriber->onKernelResponse($event);
+
+        // Assert
+        $data = json_decode((string)$event->getResponse()->getContent(), true);
+        $this->assertSame(['pagination' => $pagination], $data['meta']);
+        $this->assertSame(['self'], array_keys($data['links']));
+    }
+
+    public function testGivenPaginationRequestAttributeOnItemDocumentWhenOnKernelResponseThenBodyIsUntouched(): void
+    {
+        // Arrange
+        $content = '{"data":{"id":"1","type":"test-resources","attributes":{"name":"first"}}}';
+        $request = Request::create('/test-resources/1');
+        $request->attributes->set(PaginationLinksTransform::REQUEST_ATTRIBUTE_PAGINATION, ['numFound' => 1, 'currentPage' => 1, 'maxPage' => 1, 'currentItemsPerPage' => 10]);
+        $subscriber = $this->createSubscriberWithRealTransforms();
+        $event = $this->createResponseEventForRequest($content, $request);
+
+        // Act
+        $subscriber->onKernelResponse($event);
+
+        // Assert
+        $this->assertSame($content, $event->getResponse()->getContent());
+    }
+
     protected function createSubscriberWithNeverInvokedTransforms(): JsonApiResponseBodySubscriber
     {
         $relationshipNormalizer = $this->createMock(JsonApiRelationshipNormalizerTransform::class);
@@ -185,6 +258,17 @@ class JsonApiResponseBodySubscriberTest extends Unit
             new JsonApiResolvedRelationshipTransform($this->createMock(NormalizerInterface::class), $this->createMock(ResourceClassIndexProviderInterface::class)),
             new PaginationLinksTransform(),
         );
+    }
+
+    /**
+     * Response event for a request that already carries request attributes (e.g. the pagination
+     * published by a backend provider).
+     */
+    protected function createResponseEventForRequest(string $content, Request $request): ResponseEvent
+    {
+        $response = new Response($content, Response::HTTP_OK, ['Content-Type' => static::CONTENT_TYPE_JSON_API]);
+
+        return new ResponseEvent($this->createMock(HttpKernelInterface::class), $request, HttpKernelInterface::MAIN_REQUEST, $response);
     }
 
     protected function createResponseEvent(

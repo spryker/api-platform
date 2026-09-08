@@ -12,35 +12,14 @@ namespace Spryker\ApiPlatform\State\Provider;
 use BadMethodCallException;
 use Generated\Shared\Transfer\CustomerTransfer;
 use Generated\Shared\Transfer\FilterTransfer;
-use Generated\Shared\Transfer\PaginationTransfer;
 
 abstract class AbstractStorefrontProvider extends AbstractProvider
 {
     public const string ATTRIBUTE_CUSTOMER_TRANSFER = 'CustomerTransfer';
 
-    protected const string QUERY_PARAMETER_PAGE = 'page';
-
-    protected const string QUERY_PARAMETER_LIMIT = 'limit';
-
-    protected const string QUERY_PARAMETER_OFFSET = 'offset';
-
     protected const string SEARCH_PARAMETER_PAGE = 'page';
 
     protected const string SEARCH_PARAMETER_ITEMS_PER_PAGE = 'ipp';
-
-    protected const int DEFAULT_PAGE_NUMBER = 1;
-
-    protected const int DEFAULT_OFFSET = 0;
-
-    protected const int DEFAULT_LIMIT = 10;
-
-    protected const string PAGINATION_KEY_NUM_FOUND = 'numFound';
-
-    protected const string PAGINATION_KEY_CURRENT_PAGE = 'currentPage';
-
-    protected const string PAGINATION_KEY_MAX_PAGE = 'maxPage';
-
-    protected const string PAGINATION_KEY_CURRENT_ITEMS_PER_PAGE = 'currentItemsPerPage';
 
     protected function hasCustomer(): bool
     {
@@ -70,57 +49,12 @@ abstract class AbstractStorefrontProvider extends AbstractProvider
     }
 
     /**
-     * Returns the JSON:API `?page[limit]=N` value from the current request, or the default when
-     * the parameter is not present. Used to push the page size onto data-layer transfers
-     * (`FilterTransfer`, `PaginationTransfer`, etc.) so the SQL fetch is bounded.
-     *
-     *  Users can also overwrite the limit by passing it as argument to this method.
-     */
-    protected function getPaginationLimit(int $limit = self::DEFAULT_LIMIT): int
-    {
-        return $this->getPaginationParameter(static::QUERY_PARAMETER_LIMIT) ?? $this->getOperation()->getPaginationItemsPerPage() ?? $limit;
-    }
-
-    /**
-     * Returns the JSON:API `?page[offset]=N` value from the current request, or the default when
-     * the parameter is not present. Used to push the page offset onto data-layer transfers.
-     *
-     * Users can also overwrite the offset by passing it as argument to this method.
-     */
-    protected function getPaginationOffset(int $offset = self::DEFAULT_OFFSET): int
-    {
-        return $this->getPaginationParameter(static::QUERY_PARAMETER_OFFSET) ?? $offset;
-    }
-
-    /**
-     * Builds a {@see PaginationTransfer} pre-populated with `?page[limit]` and `?page[offset]`
-     * from the current request. Convenience helper for criteria-style facades/clients that
-     * accept a `PaginationTransfer` (e.g. `$criteria->setPagination($this->buildPaginationTransfer())`).
-     *
-     * Sets all four equivalent representations of the page coordinate — `limit`/`offset` (search-style)
-     * and `maxPerPage`/`page` (1-based, legacy Zed-reader style) — so the transfer satisfies both
-     * reader flavours without the caller having to translate. Page is derived as
-     * `floor(offset / limit) + 1`; the two pairs stay in sync.
-     */
-    protected function buildPaginationTransfer(int $limit = self::DEFAULT_LIMIT, int $offset = self::DEFAULT_OFFSET): PaginationTransfer
-    {
-        $resolvedLimit = $this->getPaginationLimit($limit);
-        $resolvedOffset = $this->getPaginationOffset($offset);
-
-        return (new PaginationTransfer())
-            ->setLimit($resolvedLimit)
-            ->setOffset($resolvedOffset)
-            ->setMaxPerPage($resolvedLimit)
-            ->setPage(intdiv($resolvedOffset, max($resolvedLimit, 1)) + 1);
-    }
-
-    /**
      * Builds a {@see FilterTransfer} pre-populated with `?page[limit]` and `?page[offset]`
      * from the current request. Convenience helper for legacy-style readers that accept a
      * `FilterTransfer` with limit/offset (e.g.
      * `$collectionRequest->setFilter($this->buildFilterTransfer())`).
      */
-    protected function buildFilterTransfer(int $limit = self::DEFAULT_LIMIT, int $offset = self::DEFAULT_OFFSET): FilterTransfer
+    protected function buildFilterTransfer(int $limit = self::DEFAULT_PER_PAGE, int $offset = self::DEFAULT_OFFSET): FilterTransfer
     {
         return (new FilterTransfer())
             ->setLimit($this->getPaginationLimit($limit))
@@ -141,51 +75,12 @@ abstract class AbstractStorefrontProvider extends AbstractProvider
         $offset = $this->getPaginationOffset();
 
         $page = $itemsPerPage > 0
-            ? (int)floor($offset / $itemsPerPage) + static::DEFAULT_PAGE_NUMBER
-            : static::DEFAULT_PAGE_NUMBER;
+            ? (int)floor($offset / $itemsPerPage) + static::DEFAULT_PAGE
+            : static::DEFAULT_PAGE;
 
         return [
             static::SEARCH_PARAMETER_PAGE => $page,
             static::SEARCH_PARAMETER_ITEMS_PER_PAGE => $itemsPerPage,
         ];
-    }
-
-    /**
-     * Builds the Spryker-style pagination wrapper consumed by
-     * {@see \Spryker\ApiPlatform\ResponseTransform\PaginationLinksTransform} to emit
-     * JSON:API top-level pagination links (first/last/prev/next). Used by collection providers
-     * that need an embedded `pagination` property on the resource — e.g.
-     * `$resource->pagination = $this->calculatePagination($offset, $limit, $nbResults)`.
-     *
-     * @return array<string, int>
-     */
-    protected function calculatePagination(int $offset, int $limit, int $nbResults): array
-    {
-        $maxPage = $limit > 0 ? (int)ceil($nbResults / $limit) : static::DEFAULT_PAGE_NUMBER;
-        $currentPage = $limit > 0
-            ? (int)floor($offset / $limit) + static::DEFAULT_PAGE_NUMBER
-            : static::DEFAULT_PAGE_NUMBER;
-
-        return [
-            static::PAGINATION_KEY_NUM_FOUND => $nbResults,
-            static::PAGINATION_KEY_CURRENT_PAGE => $currentPage,
-            static::PAGINATION_KEY_MAX_PAGE => $maxPage,
-            static::PAGINATION_KEY_CURRENT_ITEMS_PER_PAGE => $limit,
-        ];
-    }
-
-    protected function getPaginationParameter(string $name): ?int
-    {
-        if (!$this->hasRequest()) {
-            return null;
-        }
-
-        $page = $this->getRequest()->query->all()[static::QUERY_PARAMETER_PAGE] ?? [];
-
-        if (!is_array($page) || !isset($page[$name])) {
-            return null;
-        }
-
-        return (int)$page[$name];
     }
 }

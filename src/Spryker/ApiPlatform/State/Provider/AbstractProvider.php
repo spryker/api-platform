@@ -16,6 +16,7 @@ use ApiPlatform\State\ProviderInterface;
 use BadMethodCallException;
 use Generated\Shared\Transfer\PaginationTransfer;
 use Spryker\ApiPlatform\Exception\ApiPlatformContextException;
+use Spryker\ApiPlatform\ResponseTransform\PaginationLinksTransform;
 use Spryker\ApiPlatform\State\Trait\LocaleAwareTrait;
 use Spryker\ApiPlatform\State\Trait\StoreAwareTrait;
 use Spryker\ApiPlatform\State\Trait\UriVariableAwareTrait;
@@ -37,6 +38,20 @@ abstract class AbstractProvider implements ProviderInterface
     protected const int DEFAULT_PAGE = 1;
 
     protected const int DEFAULT_PER_PAGE = 10;
+
+    protected const string QUERY_PARAMETER_LIMIT = 'limit';
+
+    protected const string QUERY_PARAMETER_OFFSET = 'offset';
+
+    protected const int DEFAULT_OFFSET = 0;
+
+    protected const string PAGINATION_KEY_NUM_FOUND = 'numFound';
+
+    protected const string PAGINATION_KEY_CURRENT_PAGE = 'currentPage';
+
+    protected const string PAGINATION_KEY_MAX_PAGE = 'maxPage';
+
+    protected const string PAGINATION_KEY_CURRENT_ITEMS_PER_PAGE = 'currentItemsPerPage';
 
     protected Operation $operation;
 
@@ -116,6 +131,78 @@ abstract class AbstractProvider implements ProviderInterface
         }
 
         return $this->context['request'];
+    }
+
+    protected function getPaginationLimit(int $limit = self::DEFAULT_PER_PAGE): int
+    {
+        $resolvedLimit = $this->getPaginationParameter(static::QUERY_PARAMETER_LIMIT) ?? $this->getOperation()->getPaginationItemsPerPage() ?? $limit;
+        $maximumLimit = $this->getOperation()->getPaginationMaximumItemsPerPage();
+
+        return $maximumLimit === null ? $resolvedLimit : min($resolvedLimit, $maximumLimit);
+    }
+
+    protected function getPaginationOffset(int $offset = self::DEFAULT_OFFSET): int
+    {
+        return $this->getPaginationParameter(static::QUERY_PARAMETER_OFFSET) ?? $offset;
+    }
+
+    protected function buildPaginationTransfer(int $limit = self::DEFAULT_PER_PAGE, int $offset = self::DEFAULT_OFFSET): PaginationTransfer
+    {
+        $resolvedLimit = $this->getPaginationLimit($limit);
+        $resolvedOffset = $this->getPaginationOffset($offset);
+
+        return (new PaginationTransfer())
+            ->setLimit($resolvedLimit)
+            ->setOffset($resolvedOffset)
+            ->setMaxPerPage($resolvedLimit)
+            ->setPage(intdiv($resolvedOffset, max($resolvedLimit, 1)) + 1);
+    }
+
+    protected function setCollectionPagination(int $offset, int $limit, int $nbResults): void
+    {
+        if (!$this->hasRequest()) {
+            return;
+        }
+
+        $this->getRequest()->attributes->set(
+            PaginationLinksTransform::REQUEST_ATTRIBUTE_PAGINATION,
+            $this->calculatePagination($offset, $limit, $nbResults),
+        );
+    }
+
+    /**
+     * Spryker-style pagination array: numFound, currentPage, maxPage, currentItemsPerPage.
+     *
+     * @return array<string, int>
+     */
+    protected function calculatePagination(int $offset, int $limit, int $nbResults): array
+    {
+        $maxPage = $limit > 0 ? (int)ceil($nbResults / $limit) : static::DEFAULT_PAGE;
+        $currentPage = $limit > 0
+            ? (int)floor($offset / $limit) + static::DEFAULT_PAGE
+            : static::DEFAULT_PAGE;
+
+        return [
+            static::PAGINATION_KEY_NUM_FOUND => $nbResults,
+            static::PAGINATION_KEY_CURRENT_PAGE => $currentPage,
+            static::PAGINATION_KEY_MAX_PAGE => $maxPage,
+            static::PAGINATION_KEY_CURRENT_ITEMS_PER_PAGE => $limit,
+        ];
+    }
+
+    protected function getPaginationParameter(string $name): ?int
+    {
+        if (!$this->hasRequest()) {
+            return null;
+        }
+
+        $page = $this->getRequest()->query->all()[static::QUERY_PARAM_PAGE] ?? [];
+
+        if (!is_array($page) || !isset($page[$name])) {
+            return null;
+        }
+
+        return (int)$page[$name];
     }
 
     protected function getPagination(): PaginationTransfer
