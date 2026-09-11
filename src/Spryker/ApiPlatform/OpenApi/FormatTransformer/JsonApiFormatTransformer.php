@@ -127,7 +127,7 @@ class JsonApiFormatTransformer implements FormatTransformerInterface
     }
 
     /**
-     * Adds example values to type and id fields in JSON:API schema.
+     * Adds the resource short name as the example of the type field in the JSON:API schema.
      *
      * @param \ArrayObject<string, mixed>|array<string, mixed> $schemaDefinition
      *
@@ -143,10 +143,6 @@ class JsonApiFormatTransformer implements FormatTransformerInterface
 
         if (isset($schemaDefinition['properties']['data']['properties']['type']) && is_array($schemaDefinition['properties']['data']['properties']['type'])) {
             $schemaDefinition['properties']['data']['properties']['type']['example'] = $resourceShortName;
-        }
-
-        if (isset($schemaDefinition['properties']['data']['properties']['id']) && is_array($schemaDefinition['properties']['data']['properties']['id'])) {
-            $schemaDefinition['properties']['data']['properties']['id']['example'] = sprintf('/%s/1', $resourceShortName);
         }
 
         return $schemaDefinition;

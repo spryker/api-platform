@@ -27,4 +27,15 @@ class PaginationLimitFixtureProvider extends AbstractProvider
 
         return $this->getPaginationLimit($limit);
     }
+
+    /**
+     * @param array<string, mixed> $context
+     */
+    public function callGetPaginationOffset(Operation $operation, array $context, int $offset = self::DEFAULT_OFFSET): int
+    {
+        $this->operation = $operation;
+        $this->context = $context;
+
+        return $this->getPaginationOffset($offset);
+    }
 }

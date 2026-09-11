@@ -83,6 +83,46 @@ class AbstractProviderTest extends Unit
         $this->assertSame(15, $limit);
     }
 
+    public function testGivenNonPositiveRequestedLimitWhenResolvingPaginationLimitThenTheDefaultIsUsed(): void
+    {
+        // Arrange
+        $operation = (new GetCollection())->withPaginationItemsPerPage(10);
+        $context = ['request' => $this->createRequest(0)];
+        $provider = new PaginationLimitFixtureProvider();
+
+        // Act
+        $limit = $provider->callGetPaginationLimit($operation, $context);
+
+        // Assert
+        $this->assertSame(10, $limit);
+    }
+
+    public function testGivenNegativeRequestedOffsetWhenResolvingPaginationOffsetThenItIsClampedToZero(): void
+    {
+        // Arrange
+        $context = ['request' => new Request(['page' => ['offset' => -5]])];
+        $provider = new PaginationLimitFixtureProvider();
+
+        // Act
+        $offset = $provider->callGetPaginationOffset(new GetCollection(), $context);
+
+        // Assert
+        $this->assertSame(0, $offset);
+    }
+
+    public function testGivenNoRequestedOffsetWhenResolvingPaginationOffsetThenTheGivenDefaultIsUsed(): void
+    {
+        // Arrange
+        $context = ['request' => new Request()];
+        $provider = new PaginationLimitFixtureProvider();
+
+        // Act
+        $offset = $provider->callGetPaginationOffset(new GetCollection(), $context, 20);
+
+        // Assert
+        $this->assertSame(20, $offset);
+    }
+
     protected function createRequest(?int $requestedLimit): Request
     {
         return new Request($requestedLimit === null ? [] : ['page' => ['limit' => $requestedLimit]]);

@@ -225,6 +225,30 @@ class SchemaParserTest extends Unit
         $this->assertEquals('/customers/{customerReference}/addresses', $result['operations']['GetCollection']['uriTemplate']);
     }
 
+    public function testGivenOperationWithOpenapiFalseWhenNormalizingThenExtractsOpenapiFlag(): void
+    {
+        // Arrange
+        $rawSchema = [
+            'resource' => [
+                'name' => 'CustomersAddresses',
+                'operations' => [
+                    [
+                        'type' => 'GetCollection',
+                        'uriTemplate' => '/customers/addresses',
+                        'openapi' => false,
+                    ],
+                ],
+            ],
+        ];
+        $parser = $this->createSchemaParser();
+
+        // Act
+        $result = $parser->parse($rawSchema, new SplFileInfo(__FILE__));
+
+        // Assert
+        $this->assertFalse($result['operations']['GetCollection']['openapi']);
+    }
+
     public function testGivenOperationWithSecurityWhenNormalizingThenExtractsSecurity(): void
     {
         $rawSchema = [

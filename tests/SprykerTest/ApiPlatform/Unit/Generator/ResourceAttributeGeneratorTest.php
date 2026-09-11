@@ -10,6 +10,7 @@ declare(strict_types=1);
 namespace SprykerTest\ApiPlatform\Unit\Generator;
 
 use Codeception\Test\Unit;
+use Spryker\ApiPlatform\Generator\MediaType\MediaTypeFormatterRegistry;
 use Spryker\ApiPlatform\Generator\OpenApiOperationBuilder;
 use Spryker\ApiPlatform\Generator\ResourceAttributeGenerator;
 use SprykerTest\ApiPlatform\ApiUnitTester;
@@ -157,6 +158,112 @@ class ResourceAttributeGeneratorTest extends Unit
         $this->assertStringContainsString("fromProperty: 'customerReference'", $result);
     }
 
+    public function testGivenParameterWithNamedExamplesWhenGeneratingThenIncludesExamplesAndOmitsSingleExample(): void
+    {
+        // Arrange
+        $schema = [
+            'name' => 'Order',
+            'shortName' => 'orders',
+            'operations' => [
+                'GetCollection' => [
+                    'type' => 'GetCollection',
+                    'openapiContext' => [
+                        'parameters' => [
+                            [
+                                'name' => 'orderReference',
+                                'in' => 'query',
+                                'example' => 'DE--1234',
+                                'examples' => [
+                                    'single' => ['summary' => 'Exact match', 'value' => 'DE--1234'],
+                                    'multiple' => ['summary' => 'Comma-separated', 'description' => 'Several references.', 'value' => 'DE--1234,DE--1235'],
+                                ],
+                            ],
+                        ],
+                    ],
+                ],
+            ],
+        ];
+        $uses = [];
+        $generator = $this->createResourceAttributeGenerator();
+
+        // Act
+        $result = $generator->generate($schema, $uses);
+
+        // Assert
+        $this->assertStringContainsString("new Parameter(name: 'orderReference', in: 'query', examples: new ArrayObject(['single' => new Example(summary: 'Exact match', value: 'DE--1234'), 'multiple' => new Example(summary: 'Comma-separated', description: 'Several references.', value: 'DE--1234,DE--1235')]))", $result);
+        $this->assertStringNotContainsString("example: 'DE--1234'", $result);
+        $this->assertContains('ApiPlatform\OpenApi\Model\Example', $uses);
+        $this->assertContains('ArrayObject', $uses);
+    }
+
+    public function testGivenGetCollectionWithOpenapiContextParametersWhenGeneratingThenIncludesParametersSummaryAndResponses(): void
+    {
+        // Arrange
+        $schema = [
+            'name' => 'Customer',
+            'shortName' => 'customers',
+            'operations' => [
+                'GetCollection' => [
+                    'type' => 'GetCollection',
+                    'openapiContext' => [
+                        'summary' => 'List customers',
+                        'parameters' => [
+                            [
+                                'name' => 'sort',
+                                'in' => 'query',
+                                'required' => false,
+                                'description' => 'Sort field.',
+                                'schema' => ['type' => 'string', 'enum' => ['email', '-email']],
+                                'example' => '-email',
+                            ],
+                        ],
+                        'responses' => [
+                            200 => ['description' => 'Customers returned.'],
+                            400 => ['description' => 'Unsupported sort field.'],
+                        ],
+                    ],
+                ],
+            ],
+        ];
+        $uses = [];
+        $generator = $this->createResourceAttributeGenerator();
+
+        // Act
+        $result = $generator->generate($schema, $uses);
+
+        // Assert
+        $this->assertStringContainsString("summary: 'List customers'", $result);
+        $this->assertStringContainsString("new Parameter(name: 'sort', in: 'query', description: 'Sort field.', required: false, schema: ['type' => 'string', 'enum' => ['email', '-email']], example: '-email')", $result);
+        $this->assertStringContainsString("200 => new Response(description: 'Customers returned.')", $result);
+        $this->assertStringContainsString("400 => new Response(description: 'Unsupported sort field.')", $result);
+        $this->assertStringNotContainsString('requestBody:', $result);
+        $this->assertContains('ApiPlatform\OpenApi\Model\Operation', $uses);
+        $this->assertContains('ApiPlatform\OpenApi\Model\Parameter', $uses);
+        $this->assertContains('ApiPlatform\OpenApi\Model\Response', $uses);
+    }
+
+    public function testGivenGetOperationWithoutOpenapiContextWhenGeneratingThenNoOpenApiOperationIsEmitted(): void
+    {
+        // Arrange
+        $schema = [
+            'name' => 'Customer',
+            'shortName' => 'customers',
+            'tags' => [],
+            'operations' => [
+                'Get' => ['type' => 'Get'],
+            ],
+        ];
+        $uses = [];
+        $generator = $this->createResourceAttributeGenerator();
+
+        // Act
+        $result = $generator->generate($schema, $uses);
+
+        // Assert
+        $this->assertStringNotContainsString('openapi:', $result);
+        $this->assertNotContains('ApiPlatform\OpenApi\Model\Operation', $uses);
+    }
+
     public function testGivenSchemaWithCustomTagsWhenGeneratingGetOperationThenIncludesTagsInOpenApiOperation(): void
     {
         // Arrange
@@ -179,6 +286,34 @@ class ResourceAttributeGeneratorTest extends Unit
         $this->assertStringContainsString('openapi: new Operation(', $result);
         $this->assertStringContainsString("tags: ['User Management', 'V2']", $result);
         $this->assertContains('ApiPlatform\OpenApi\Model\Operation', $uses);
+    }
+
+    public function testGivenOperationWithOpenapiFalseWhenGeneratingThenOperationIsHiddenFromDocumentation(): void
+    {
+        // Arrange
+        $schema = [
+            'name' => 'CustomerAddress',
+            'shortName' => 'customer-address',
+            'tags' => ['Customer'],
+            'operations' => [
+                'getCustomerAddressesWithoutReference' => [
+                    'type' => 'GetCollection',
+                    'name' => 'getCustomerAddressesWithoutReference',
+                    'uriTemplate' => '/customers/addresses',
+                    'openapi' => false,
+                ],
+            ],
+        ];
+        $uses = [];
+        $generator = $this->createResourceAttributeGenerator();
+
+        // Act
+        $result = $generator->generate($schema, $uses);
+
+        // Assert
+        $this->assertStringContainsString('openapi: false', $result);
+        $this->assertStringNotContainsString('new Operation(', $result);
+        $this->assertNotContains('ApiPlatform\OpenApi\Model\Operation', $uses);
     }
 
     public function testGivenOperationWithNormalizationContextGenIdFalseWhenGeneratingThenIncludesNormalizationContextParameter(): void
@@ -367,10 +502,13 @@ class ResourceAttributeGeneratorTest extends Unit
 
     protected function createResourceAttributeGenerator(): ResourceAttributeGenerator
     {
-        $openApiOperationBuilder = $this->createMock(OpenApiOperationBuilder::class);
-        $openApiOperationBuilder->method('generateOpenApiOperation')->willReturn('');
+        $mediaTypeFormatterRegistry = $this->createMock(MediaTypeFormatterRegistry::class);
+        $mediaTypeFormatterRegistry->method('getFormattersForMediaTypes')->willReturn([]);
 
-        $this->tester->getContainer()->set(OpenApiOperationBuilder::class, $openApiOperationBuilder);
+        $this->tester->getContainer()->set(
+            OpenApiOperationBuilder::class,
+            new OpenApiOperationBuilder($mediaTypeFormatterRegistry, []),
+        );
 
         return $this->tester->getContainer()->get(ResourceAttributeGenerator::class);
     }

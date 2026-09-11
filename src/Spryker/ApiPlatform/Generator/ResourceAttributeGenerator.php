@@ -48,11 +48,25 @@ namespace Spryker\ApiPlatform\Generator;
  * )]
  * ```
  *
- * Handles OpenAPI operation generation for write operations (Post, Patch, Put) with request body examples.
+ * The `openapi` argument of every operation (tags, summary, parameters, responses, request body
+ * examples for Post, Patch, Put) is delegated to {@see \Spryker\ApiPlatform\Generator\OpenApiOperationBuilder}.
  */
 class ResourceAttributeGenerator
 {
     protected const int OPERATION_PARAM_INDENT_LEVEL = 3;
+
+    /**
+     * @var array<string, string>
+     */
+    protected const array OPEN_API_MODEL_IMPORTS = [
+        'new Operation(' => 'ApiPlatform\OpenApi\Model\Operation',
+        'new Parameter(' => 'ApiPlatform\OpenApi\Model\Parameter',
+        'new Example(' => 'ApiPlatform\OpenApi\Model\Example',
+        'new Response(' => 'ApiPlatform\OpenApi\Model\Response',
+        'new RequestBody(' => 'ApiPlatform\OpenApi\Model\RequestBody',
+        'new MediaType(' => 'ApiPlatform\OpenApi\Model\MediaType',
+        'new ArrayObject(' => 'ArrayObject',
+    ];
 
     public function __construct(protected OpenApiOperationBuilder $openApiOperationBuilder)
     {
@@ -192,7 +206,7 @@ class ResourceAttributeGenerator
             $attributeParts[] = sprintf('openapiContext: %s', $this->formatArrayParameter($schema['openapiContext']));
         }
 
-        $this->addOperationUseStatements($schema, $operations, $uses);
+        $this->addOperationUseStatements($operations, $uses, implode("\n", $operationsParts));
 
         if ($attributeParts === []) {
             return '#[ApiResource]';
@@ -446,31 +460,37 @@ class ResourceAttributeGenerator
             $baseParameters['validationContext'] = ['groups' => $validationGroups];
         }
 
-        $tags = $this->determineTagsForOperation($schema, $operation);
+        if (($operation['openapi'] ?? null) === false) {
+            $baseParameters['openapi'] = false;
 
-        $needsOpenApiOperation = in_array($operationClass, ['Post', 'Patch', 'Put'], true);
-
-        if ($needsOpenApiOperation) {
-            $openApiOperation = $this->openApiOperationBuilder->generateOpenApiOperation(
-                $schema,
-                $operation,
-                $operationClass,
-                $tags,
-                static::OPERATION_PARAM_INDENT_LEVEL,
-            );
-
-            if ($openApiOperation !== '') {
-                $baseParameters['openapi'] = $openApiOperation;
-            }
-        } elseif ($tags !== null && $tags !== []) {
-            $baseParameters['openapi'] = $this->buildOpenApiOperationWithTags($tags, static::OPERATION_PARAM_INDENT_LEVEL);
+            return $this->formatOperationAttribute($operationClass, $baseParameters);
         }
 
-        if ($baseParameters === []) {
+        $openApiOperation = $this->openApiOperationBuilder->generateOpenApiOperation(
+            $schema,
+            $operation,
+            $operationClass,
+            $this->determineTagsForOperation($schema, $operation),
+            static::OPERATION_PARAM_INDENT_LEVEL,
+        );
+
+        if ($openApiOperation !== '') {
+            $baseParameters['openapi'] = $openApiOperation;
+        }
+
+        return $this->formatOperationAttribute($operationClass, $baseParameters);
+    }
+
+    /**
+     * @param array<string, mixed> $parameters
+     */
+    protected function formatOperationAttribute(string $operationClass, array $parameters): string
+    {
+        if ($parameters === []) {
             return sprintf('new %s()', $operationClass);
         }
 
-        $parametersString = $this->formatOperationParameters($baseParameters, static::OPERATION_PARAM_INDENT_LEVEL);
+        $parametersString = $this->formatOperationParameters($parameters, static::OPERATION_PARAM_INDENT_LEVEL);
 
         return sprintf("new %s(\n%s,\n%s)", $operationClass, $parametersString, $this->indent(2));
     }
@@ -495,33 +515,12 @@ class ResourceAttributeGenerator
     }
 
     /**
-     * @param array<string> $tags
-     * @param int $indentLevel The indent level of the openapi key
-     */
-    protected function buildOpenApiOperationWithTags(array $tags, int $indentLevel): string
-    {
-        $formattedTags = array_map(
-            fn (string $tag): string => sprintf("'%s'", str_replace("'", "\\'", $tag)),
-            $tags,
-        );
-
-        $paramIndent = $this->indent($indentLevel + 1);
-        $closeIndent = $this->indent($indentLevel);
-
-        return sprintf("new Operation(\n%stags: [%s],\n%s)", $paramIndent, implode(', ', $formattedTags), $closeIndent);
-    }
-
-    /**
-     * @param array<string, mixed> $schema
      * @param array<string, mixed> $operations
      * @param array<string> $uses
      */
-    protected function addOperationUseStatements(array $schema, array $operations, array &$uses): void
+    protected function addOperationUseStatements(array $operations, array &$uses, string $operationsContent): void
     {
         $needsLinkImport = false;
-        $needsOperationImport = false;
-
-        $hasSchemaLevelTags = isset($schema['tags']) && is_array($schema['tags']) && $schema['tags'] !== [];
 
         $typeImportMap = [
             'Get' => 'ApiPlatform\Metadata\Get',
@@ -549,18 +548,16 @@ class ResourceAttributeGenerator
             if (isset($operation['uriVariables'])) {
                 $needsLinkImport = true;
             }
-
-            if (isset($operation['tags']) || $hasSchemaLevelTags) {
-                $needsOperationImport = true;
-            }
         }
 
         if ($needsLinkImport) {
             $uses[] = 'ApiPlatform\Metadata\Link';
         }
 
-        if ($needsOperationImport) {
-            $uses[] = 'ApiPlatform\OpenApi\Model\Operation';
+        foreach (static::OPEN_API_MODEL_IMPORTS as $instantiation => $fullyQualifiedClassName) {
+            if (str_contains($operationsContent, $instantiation) && !in_array($fullyQualifiedClassName, $uses, true)) {
+                $uses[] = $fullyQualifiedClassName;
+            }
         }
 
         $this->collectOperationServiceUseStatements($operations, $uses);

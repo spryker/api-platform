@@ -135,15 +135,20 @@ abstract class AbstractProvider implements ProviderInterface
 
     protected function getPaginationLimit(int $limit = self::DEFAULT_PER_PAGE): int
     {
-        $resolvedLimit = $this->getPaginationParameter(static::QUERY_PARAMETER_LIMIT) ?? $this->getOperation()->getPaginationItemsPerPage() ?? $limit;
+        $defaultLimit = $this->getOperation()->getPaginationItemsPerPage() ?? $limit;
+        $resolvedLimit = $this->getPaginationParameter(static::QUERY_PARAMETER_LIMIT) ?? $defaultLimit;
         $maximumLimit = $this->getOperation()->getPaginationMaximumItemsPerPage();
+
+        if ($resolvedLimit < 1) {
+            $resolvedLimit = $defaultLimit;
+        }
 
         return $maximumLimit === null ? $resolvedLimit : min($resolvedLimit, $maximumLimit);
     }
 
     protected function getPaginationOffset(int $offset = self::DEFAULT_OFFSET): int
     {
-        return $this->getPaginationParameter(static::QUERY_PARAMETER_OFFSET) ?? $offset;
+        return max($this->getPaginationParameter(static::QUERY_PARAMETER_OFFSET) ?? $offset, static::DEFAULT_OFFSET);
     }
 
     protected function buildPaginationTransfer(int $limit = self::DEFAULT_PER_PAGE, int $offset = self::DEFAULT_OFFSET): PaginationTransfer

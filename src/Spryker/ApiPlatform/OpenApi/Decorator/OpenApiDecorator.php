@@ -43,6 +43,44 @@ class OpenApiDecorator implements OpenApiFactoryInterface
 
     protected const string ACCEPT_LANGUAGE_SCHEMA_TYPE = 'string';
 
+    /**
+     * @uses \ApiPlatform\State\Pagination\PaginationOptions::getPaginationPageParameterName()
+     */
+    protected const string PAGINATION_PAGE_PARAMETER_NAME = 'page';
+
+    /**
+     * @uses \ApiPlatform\State\Pagination\PaginationOptions::getItemsPerPageParameterName()
+     */
+    protected const string PAGINATION_ITEMS_PER_PAGE_PARAMETER_NAME = 'itemsPerPage';
+
+    /**
+     * @var array<string>
+     */
+    protected const array PAGINATION_PARAMETER_NAMES_TO_REPLACE = [
+        self::PAGINATION_PAGE_PARAMETER_NAME,
+        self::PAGINATION_ITEMS_PER_PAGE_PARAMETER_NAME,
+    ];
+
+    protected const string PAGINATION_LIMIT_PARAMETER_NAME = 'page[limit]';
+
+    protected const string PAGINATION_OFFSET_PARAMETER_NAME = 'page[offset]';
+
+    protected const string PAGINATION_PARAMETER_IN = 'query';
+
+    protected const string PAGINATION_LIMIT_PARAMETER_DESCRIPTION = 'Number of items per page. Defaults to the page size of the resource; a value above the maximum page size of the resource is reduced to that maximum.';
+
+    protected const string PAGINATION_OFFSET_PARAMETER_DESCRIPTION = 'Number of items to skip before the first item of the page. Default: 0.';
+
+    protected const string PAGINATION_SCHEMA_TYPE = 'integer';
+
+    protected const int PAGINATION_LIMIT_MINIMUM = 1;
+
+    protected const int PAGINATION_OFFSET_MINIMUM = 0;
+
+    protected const int PAGINATION_LIMIT_EXAMPLE = 10;
+
+    protected const int PAGINATION_OFFSET_EXAMPLE = 0;
+
     protected const string SPARSE_FIELDSETS_PARAMETER_NAME = 'fields[]';
 
     protected const string SPARSE_FIELDSETS_PARAMETER_IN = 'query';
@@ -79,9 +117,84 @@ class OpenApiDecorator implements OpenApiFactoryInterface
         $openApi = $this->transformSchemas($openApi);
         $openApi = $this->fixRequestBodyReferences($openApi);
         $openApi = $this->addAcceptLanguageHeader($openApi);
+        $openApi = $this->replacePaginationParameters($openApi);
         $openApi = $this->addSparseFieldsetsParameter($openApi);
 
         return $openApi;
+    }
+
+    /**
+     * API Platform documents its own `page` / `itemsPerPage` query parameters on paginated collections,
+     * while Spryker providers read the JSON:API window `page[limit]` / `page[offset]`
+     * ({@see \Spryker\ApiPlatform\State\Provider\AbstractProvider::buildPaginationTransfer()}).
+     * The generated parameters are replaced so "Try it out" sends what the providers understand.
+     */
+    protected function replacePaginationParameters(OpenApi $openApi): OpenApi
+    {
+        $paths = $openApi->getPaths();
+
+        foreach ($paths->getPaths() as $path => $pathItem) {
+            $operation = $pathItem->getGet();
+
+            if ($operation === null || !$this->hasParameter($operation->getParameters(), static::PAGINATION_PAGE_PARAMETER_NAME)) {
+                continue;
+            }
+
+            $parameters = array_values(array_filter(
+                $operation->getParameters(),
+                static fn (Parameter $parameter): bool => !in_array($parameter->getName(), static::PAGINATION_PARAMETER_NAMES_TO_REPLACE, true),
+            ));
+
+            if (!$this->hasParameter($parameters, static::PAGINATION_LIMIT_PARAMETER_NAME)) {
+                $parameters[] = $this->createPaginationLimitParameter();
+            }
+
+            if (!$this->hasParameter($parameters, static::PAGINATION_OFFSET_PARAMETER_NAME)) {
+                $parameters[] = $this->createPaginationOffsetParameter();
+            }
+
+            $paths->addPath($path, $pathItem->withGet($operation->withParameters($parameters)));
+        }
+
+        return $openApi;
+    }
+
+    protected function createPaginationLimitParameter(): Parameter
+    {
+        return new Parameter(
+            name: static::PAGINATION_LIMIT_PARAMETER_NAME,
+            in: static::PAGINATION_PARAMETER_IN,
+            description: static::PAGINATION_LIMIT_PARAMETER_DESCRIPTION,
+            required: false,
+            schema: ['type' => static::PAGINATION_SCHEMA_TYPE, 'minimum' => static::PAGINATION_LIMIT_MINIMUM],
+            example: static::PAGINATION_LIMIT_EXAMPLE,
+        );
+    }
+
+    protected function createPaginationOffsetParameter(): Parameter
+    {
+        return new Parameter(
+            name: static::PAGINATION_OFFSET_PARAMETER_NAME,
+            in: static::PAGINATION_PARAMETER_IN,
+            description: static::PAGINATION_OFFSET_PARAMETER_DESCRIPTION,
+            required: false,
+            schema: ['type' => static::PAGINATION_SCHEMA_TYPE, 'minimum' => static::PAGINATION_OFFSET_MINIMUM],
+            example: static::PAGINATION_OFFSET_EXAMPLE,
+        );
+    }
+
+    /**
+     * @param array<\ApiPlatform\OpenApi\Model\Parameter> $parameters
+     */
+    protected function hasParameter(array $parameters, string $name): bool
+    {
+        foreach ($parameters as $parameter) {
+            if ($parameter->getName() === $name) {
+                return true;
+            }
+        }
+
+        return false;
     }
 
     /**
@@ -293,13 +406,7 @@ class OpenApiDecorator implements OpenApiFactoryInterface
      */
     protected function hasSparseFieldsetsParameter(array $parameters): bool
     {
-        foreach ($parameters as $parameter) {
-            if ($parameter->getName() === static::SPARSE_FIELDSETS_PARAMETER_NAME) {
-                return true;
-            }
-        }
-
-        return false;
+        return $this->hasParameter($parameters, static::SPARSE_FIELDSETS_PARAMETER_NAME);
     }
 
     protected function createSparseFieldsetsParameter(): Parameter

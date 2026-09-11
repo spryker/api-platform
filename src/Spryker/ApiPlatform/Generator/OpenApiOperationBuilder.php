@@ -12,46 +12,85 @@ namespace Spryker\ApiPlatform\Generator;
 use Spryker\ApiPlatform\Generator\MediaType\MediaTypeFormatterRegistry;
 
 /**
- * Builds OpenAPI operation definitions with request body examples for write operations.
+ * Generates the `openapi: new Operation(...)` argument of a generated operation attribute from the
+ * operation's `openapiContext` in the resource YAML: `summary`, `parameters`, `responses` and a
+ * `requestBody`. Query parameters declared there are what Swagger UI renders as editable inputs in
+ * "Try it out"; anything only mentioned in the operation description is not.
  *
- * Generates OpenAPI Operation objects with RequestBody and MediaType components for
- * Post, Patch, and Put operations, supporting multiple content types through media type formatters.
- *
- * The builder automatically generates examples for all configured and supported media types
- * by reading the API Platform formats configuration and using registered media type formatters.
- * Unsupported media types are gracefully skipped.
- *
- * Input schema excerpt for operation:
- * ```php
- * [
- *     'shortName' => 'customers',
- *     'properties' => [
- *         'email' => ['type' => 'string', 'openapiContext' => ['example' => 'test@example.com']],
- *         'firstName' => ['type' => 'string', 'openapiContext' => ['example' => 'John']],
- *     ],
- *     'operations' => [
- *         'Post' => [...],
- *     ],
- * ]
+ * Input (`openapiContext` of one operation):
+ * ```yaml
+ * summary: 'List glossary keys'
+ * parameters:
+ *     - name: 'sort'
+ *       in: query
+ *       description: 'Sort field.'
+ *       schema: { type: string, enum: ['key', '-key'] }
+ *       example: '-key'
+ * responses:
+ *     200: { description: 'Glossary keys returned.' }
  * ```
  *
- * Generated output (returned as the Operation part only):
+ * Output:
  * ```php
  * new Operation(
- *     tags: ['customers'],
- *     requestBody: new RequestBody(content: new ArrayObject([
- *         'application/vnd.api+json' => new MediaType(example: [...]),
- *     ])),
+ *     tags: ['glossary-keys'],
+ *     summary: 'List glossary keys',
+ *     parameters: [
+ *         new Parameter(name: 'sort', in: 'query', description: 'Sort field.', schema: ['type' => 'string', 'enum' => ['key', '-key']], example: '-key'),
+ *     ],
+ *     responses: [
+ *         200 => new Response(description: 'Glossary keys returned.'),
+ *     ],
  * )
  * ```
  *
- * Automatically filters out identifier and read-only properties from write operation examples.
- * Supports custom OpenAPI context from operation definition for advanced request body customization.
+ * A request body example is generated for write operations (Post, Patch, Put) from the resource
+ * properties through the media type formatters, unless the YAML provides `requestBody` explicitly.
  */
 class OpenApiOperationBuilder
 {
+    protected const array WRITE_OPERATION_TYPES = ['Post', 'Patch', 'Put'];
+
+    protected const string CONTEXT_KEY_SUMMARY = 'summary';
+
+    protected const string CONTEXT_KEY_PARAMETERS = 'parameters';
+
+    protected const string CONTEXT_KEY_RESPONSES = 'responses';
+
+    protected const string CONTEXT_KEY_REQUEST_BODY = 'requestBody';
+
+    protected const string CONTEXT_KEY_CONTENT = 'content';
+
+    protected const string CONTEXT_KEY_DESCRIPTION = 'description';
+
+    protected const string PARAMETER_KEY_NAME = 'name';
+
+    protected const string PARAMETER_KEY_IN = 'in';
+
+    protected const string PARAMETER_DEFAULT_IN = 'query';
+
+    protected const string PARAMETER_KEY_EXAMPLE = 'example';
+
+    protected const string PARAMETER_KEY_EXAMPLES = 'examples';
+
+    protected const string EXAMPLE_KEY_SUMMARY = 'summary';
+
+    protected const string EXAMPLE_KEY_DESCRIPTION = 'description';
+
+    protected const string EXAMPLE_KEY_VALUE = 'value';
+
     /**
-     * @param array<string, array<string>> $apiPlatformFormats Formats from api_platform.formats parameter
+     * @var array<string>
+     */
+    protected const array PARAMETER_PASSTHROUGH_KEYS = ['description', 'required', 'deprecated', 'schema', 'example', 'style', 'explode'];
+
+    /**
+     * @var array<string>
+     */
+    protected const array EXAMPLE_PASSTHROUGH_KEYS = [self::EXAMPLE_KEY_SUMMARY, self::EXAMPLE_KEY_DESCRIPTION];
+
+    /**
+     * @param array<string, array<string>> $apiPlatformFormats
      */
     public function __construct(
         protected readonly MediaTypeFormatterRegistry $formatterRegistry,
@@ -60,12 +99,9 @@ class OpenApiOperationBuilder
     }
 
     /**
-     * Returns a formatted `new Operation(...)` string, or empty string if no OpenAPI customization needed.
-     *
      * @param array<string, mixed> $parsedSchema
      * @param array<string, mixed> $operation
      * @param array<string>|null $tags
-     * @param int $indentLevel The indent level of the openapi key (content renders at $indentLevel + 1)
      */
     public function generateOpenApiOperation(
         array $parsedSchema,
@@ -74,31 +110,185 @@ class OpenApiOperationBuilder
         ?array $tags = null,
         int $indentLevel = 3,
     ): string {
+        $openapiContext = is_array($operation['openapiContext'] ?? null) ? $operation['openapiContext'] : [];
         $operationParts = [];
 
         if ($tags !== null && $tags !== []) {
             $operationParts[] = $this->formatTagsParameter($tags);
         }
 
-        if (isset($operation['openapiContext']['requestBody'])) {
-            $content = $this->formatOpenapiContextContent($operation['openapiContext']['requestBody']['content']);
-            $operationParts[] = sprintf('requestBody: new RequestBody(content: new ArrayObject(%s))', $content);
-
-            return $this->buildOperationString($operationParts, $indentLevel);
+        if (isset($openapiContext[static::CONTEXT_KEY_SUMMARY]) && is_string($openapiContext[static::CONTEXT_KEY_SUMMARY])) {
+            $operationParts[] = sprintf("summary: '%s'", addslashes($openapiContext[static::CONTEXT_KEY_SUMMARY]));
         }
 
-        $enabledMimeTypes = $this->getEnabledMimeTypes();
+        $parameters = $this->formatParameters($openapiContext[static::CONTEXT_KEY_PARAMETERS] ?? null, $indentLevel);
 
-        $formatters = $this->formatterRegistry->getFormattersForMediaTypes($enabledMimeTypes);
+        if ($parameters !== '') {
+            $operationParts[] = $parameters;
+        }
 
-        if ($formatters === []) {
-            if ($operationParts !== []) {
-                return $this->buildOperationString($operationParts, $indentLevel);
-            }
+        $responses = $this->formatResponses($openapiContext[static::CONTEXT_KEY_RESPONSES] ?? null, $indentLevel);
 
+        if ($responses !== '') {
+            $operationParts[] = $responses;
+        }
+
+        $requestBody = $this->buildRequestBodyPart($parsedSchema, $operationType, $openapiContext);
+
+        if ($requestBody !== '') {
+            $operationParts[] = $requestBody;
+        }
+
+        return $this->buildOperationString($operationParts, $indentLevel);
+    }
+
+    protected function formatParameters(mixed $parameters, int $indentLevel): string
+    {
+        if (!is_array($parameters)) {
             return '';
         }
 
+        $parameterParts = [];
+
+        foreach ($parameters as $parameter) {
+            if (!is_array($parameter) || !is_string($parameter[static::PARAMETER_KEY_NAME] ?? null)) {
+                continue;
+            }
+
+            $parameterParts[] = $this->formatParameter($parameter);
+        }
+
+        return $this->formatNamedList(static::CONTEXT_KEY_PARAMETERS, $parameterParts, $indentLevel);
+    }
+
+    /**
+     * @param array<string, mixed> $parameter
+     */
+    protected function formatParameter(array $parameter): string
+    {
+        $in = is_string($parameter[static::PARAMETER_KEY_IN] ?? null) ? $parameter[static::PARAMETER_KEY_IN] : static::PARAMETER_DEFAULT_IN;
+
+        $arguments = [
+            sprintf("name: '%s'", addslashes($parameter[static::PARAMETER_KEY_NAME])),
+            sprintf("in: '%s'", addslashes($in)),
+        ];
+
+        $examples = $this->formatExamples($parameter[static::PARAMETER_KEY_EXAMPLES] ?? null);
+
+        foreach (static::PARAMETER_PASSTHROUGH_KEYS as $key) {
+            if (!array_key_exists($key, $parameter) || ($examples !== '' && $key === static::PARAMETER_KEY_EXAMPLE)) {
+                continue;
+            }
+
+            $arguments[] = sprintf('%s: %s', $key, $this->formatOpenapiContextValue($parameter[$key]));
+        }
+
+        if ($examples !== '') {
+            $arguments[] = sprintf('%s: %s', static::PARAMETER_KEY_EXAMPLES, $examples);
+        }
+
+        return sprintf('new Parameter(%s)', implode(', ', $arguments));
+    }
+
+    protected function formatExamples(mixed $examples): string
+    {
+        if (!is_array($examples) || $examples === []) {
+            return '';
+        }
+
+        $exampleParts = [];
+
+        foreach ($examples as $exampleKey => $example) {
+            if (!is_array($example)) {
+                continue;
+            }
+
+            $exampleParts[] = sprintf("'%s' => %s", addslashes((string)$exampleKey), $this->formatExample($example));
+        }
+
+        if ($exampleParts === []) {
+            return '';
+        }
+
+        return sprintf('new ArrayObject([%s])', implode(', ', $exampleParts));
+    }
+
+    /**
+     * @param array<string, mixed> $example
+     */
+    protected function formatExample(array $example): string
+    {
+        $arguments = [];
+
+        foreach (static::EXAMPLE_PASSTHROUGH_KEYS as $key) {
+            if (!is_string($example[$key] ?? null)) {
+                continue;
+            }
+
+            $arguments[] = sprintf("%s: '%s'", $key, addslashes($example[$key]));
+        }
+
+        if (array_key_exists(static::EXAMPLE_KEY_VALUE, $example)) {
+            $arguments[] = sprintf('%s: %s', static::EXAMPLE_KEY_VALUE, $this->formatOpenapiContextValue($example[static::EXAMPLE_KEY_VALUE]));
+        }
+
+        return sprintf('new Example(%s)', implode(', ', $arguments));
+    }
+
+    protected function formatResponses(mixed $responses, int $indentLevel): string
+    {
+        if (!is_array($responses)) {
+            return '';
+        }
+
+        $responseParts = [];
+
+        foreach ($responses as $status => $response) {
+            $description = is_array($response) ? ($response[static::CONTEXT_KEY_DESCRIPTION] ?? null) : $response;
+
+            if (!is_string($description)) {
+                continue;
+            }
+
+            $statusKey = is_int($status) ? (string)$status : sprintf("'%s'", addslashes((string)$status));
+            $responseParts[] = sprintf("%s => new Response(description: '%s')", $statusKey, addslashes($description));
+        }
+
+        return $this->formatNamedList(static::CONTEXT_KEY_RESPONSES, $responseParts, $indentLevel);
+    }
+
+    /**
+     * @param array<string> $items
+     */
+    protected function formatNamedList(string $name, array $items, int $indentLevel): string
+    {
+        if ($items === []) {
+            return '';
+        }
+
+        $itemIndent = $this->indent($indentLevel + 2);
+        $closeIndent = $this->indent($indentLevel + 1);
+
+        return sprintf("%s: [\n%s%s,\n%s]", $name, $itemIndent, implode(",\n" . $itemIndent, $items), $closeIndent);
+    }
+
+    /**
+     * @param array<string, mixed> $parsedSchema
+     * @param array<string, mixed> $openapiContext
+     */
+    protected function buildRequestBodyPart(array $parsedSchema, string $operationType, array $openapiContext): string
+    {
+        $explicitContent = $openapiContext[static::CONTEXT_KEY_REQUEST_BODY][static::CONTEXT_KEY_CONTENT] ?? null;
+
+        if (is_array($explicitContent)) {
+            return sprintf('requestBody: new RequestBody(content: new ArrayObject(%s))', $this->formatOpenapiContextContent($explicitContent));
+        }
+
+        if (!in_array($operationType, static::WRITE_OPERATION_TYPES, true)) {
+            return '';
+        }
+
+        $formatters = $this->formatterRegistry->getFormattersForMediaTypes($this->getEnabledMimeTypes());
         $contentParts = [];
 
         foreach ($formatters as $mediaType => $formatter) {
@@ -108,35 +298,18 @@ class OpenApiOperationBuilder
                 continue;
             }
 
-            $exampleString = $formatter->formatExampleAsCode($example);
-            $contentParts[] = sprintf(
-                "'%s' => new MediaType(example: %s)",
-                $mediaType,
-                $exampleString,
-            );
+            $contentParts[] = sprintf("'%s' => new MediaType(example: %s)", $mediaType, $formatter->formatExampleAsCode($example));
         }
 
         if ($contentParts === []) {
-            if ($operationParts !== []) {
-                return $this->buildOperationString($operationParts, $indentLevel);
-            }
-
             return '';
         }
 
-        $operationParts[] = sprintf(
-            'requestBody: new RequestBody(content: new ArrayObject([%s]))',
-            implode(', ', $contentParts),
-        );
-
-        return $this->buildOperationString($operationParts, $indentLevel);
+        return sprintf('requestBody: new RequestBody(content: new ArrayObject([%s]))', implode(', ', $contentParts));
     }
 
     /**
-     * Builds a multi-line `new Operation(...)` string from pre-formatted parameter parts.
-     *
-     * @param array<string> $parts Pre-formatted `key: value` strings
-     * @param int $indentLevel The indent level of the Operation opening/closing
+     * @param array<string> $parts
      */
     protected function buildOperationString(array $parts, int $indentLevel): string
     {
@@ -165,15 +338,13 @@ class OpenApiOperationBuilder
     }
 
     /**
-     * Extracts all mime types from API Platform formats configuration.
-     *
      * @return array<string>
      */
     protected function getEnabledMimeTypes(): array
     {
         $mimeTypes = [];
 
-        foreach ($this->apiPlatformFormats as $format => $formatMimeTypes) {
+        foreach ($this->apiPlatformFormats as $formatMimeTypes) {
             if (isset($formatMimeTypes[0])) {
                 $mimeTypes[] = $formatMimeTypes[0];
             }
@@ -190,23 +361,7 @@ class OpenApiOperationBuilder
         $parts = [];
 
         foreach ($content as $mediaType => $mediaTypeData) {
-            $formattedMediaTypeData = $this->formatOpenapiContext($mediaTypeData);
-            $parts[] = sprintf("'%s' => %s", $mediaType, $formattedMediaTypeData);
-        }
-
-        return '[' . implode(', ', $parts) . ']';
-    }
-
-    /**
-     * @param array<string, mixed> $context
-     */
-    protected function formatOpenapiContext(array $context): string
-    {
-        $parts = [];
-
-        foreach ($context as $key => $value) {
-            $formattedValue = $this->formatOpenapiContextValue($value);
-            $parts[] = sprintf("'%s' => %s", $key, $formattedValue);
+            $parts[] = sprintf("'%s' => %s", $mediaType, $this->formatOpenapiContextArray((array)$mediaTypeData));
         }
 
         return '[' . implode(', ', $parts) . ']';
@@ -242,25 +397,19 @@ class OpenApiOperationBuilder
             return '[]';
         }
 
-        $isAssociative = array_keys($array) !== range(0, count($array) - 1);
+        if (array_is_list($array)) {
+            $items = array_map(fn (mixed $item): string => $this->formatOpenapiContextValue($item), $array);
 
-        if ($isAssociative) {
-            $parts = [];
-
-            foreach ($array as $key => $value) {
-                $formattedValue = $this->formatOpenapiContextValue($value);
-                $parts[] = sprintf("'%s' => %s", $key, $formattedValue);
-            }
-
-            return '[' . implode(', ', $parts) . ']';
+            return '[' . implode(', ', $items) . ']';
         }
 
-        $items = array_map(
-            fn (mixed $item): string => $this->formatOpenapiContextValue($item),
-            $array,
-        );
+        $parts = [];
 
-        return '[' . implode(', ', $items) . ']';
+        foreach ($array as $key => $value) {
+            $parts[] = sprintf("'%s' => %s", $key, $this->formatOpenapiContextValue($value));
+        }
+
+        return '[' . implode(', ', $parts) . ']';
     }
 
     protected function indent(int $level): string
