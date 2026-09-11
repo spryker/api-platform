@@ -45,6 +45,48 @@ trait JsonApiResponseAssertionsTrait
 
     protected const string JSON_API_KEY_DETAIL = 'detail';
 
+    protected const string JSON_API_KEY_META = 'meta';
+
+    /**
+     * @uses \Spryker\ApiPlatform\ResponseTransform\PaginationLinksTransform
+     */
+    protected const string META_PAGINATION = 'pagination';
+
+    protected const string META_TOTAL_ITEMS = 'totalItems';
+
+    /**
+     * @uses \Spryker\ApiPlatform\State\Provider\AbstractProvider::getPagination()
+     */
+    protected const string PAGINATION_KEY_NUM_FOUND = 'numFound';
+
+    protected const string PAGINATION_KEY_CURRENT_PAGE = 'currentPage';
+
+    protected const string PAGINATION_KEY_MAX_PAGE = 'maxPage';
+
+    protected const string PAGINATION_KEY_CURRENT_ITEMS_PER_PAGE = 'currentItemsPerPage';
+
+    /**
+     * @uses \Spryker\ApiPlatform\State\Provider\AbstractProvider::buildPaginationTransfer()
+     */
+    protected const string QUERY_PAGE = 'page';
+
+    protected const string QUERY_LIMIT = 'limit';
+
+    protected const string QUERY_OFFSET = 'offset';
+
+    /**
+     * @uses \Spryker\ApiPlatform\EventSubscriber\GlueApiExceptionSubscriber::ERROR_CODE_VALIDATION
+     */
+    protected const string RESPONSE_CODE_VALIDATION = '901';
+
+    protected const string LINK_FIRST = 'first';
+
+    protected const string LINK_LAST = 'last';
+
+    protected const string LINK_PREV = 'prev';
+
+    protected const string LINK_NEXT = 'next';
+
     /**
      * @return array<string, mixed>
      */
@@ -214,6 +256,40 @@ trait JsonApiResponseAssertionsTrait
 
         $this->assertSame($expectedStatus, $response->getStatusCode(), $body);
         $this->assertContains($expectedCode, $this->getErrorCodes($response), $body);
+    }
+
+    /**
+     * @uses \Spryker\ApiPlatform\ResponseTransform\PaginationLinksTransform::applyTo()
+     *
+     * @return array<string, mixed>
+     */
+    protected function getMetaPagination(Response $response): array
+    {
+        $meta = (array)($this->decodeJsonApi($response)[static::JSON_API_KEY_META] ?? []);
+
+        $this->assertIsArray($meta[static::META_PAGINATION] ?? null, 'A backend collection must carry top-level meta.pagination.');
+        $this->assertArrayNotHasKey(static::META_TOTAL_ITEMS, $meta, 'The page-count-only totalItems must not be emitted next to meta.pagination.');
+
+        return (array)$meta[static::META_PAGINATION];
+    }
+
+    /**
+     * @return array<string, string>
+     */
+    protected function getLinks(Response $response): array
+    {
+        return (array)($this->decodeJsonApi($response)[static::JSON_API_KEY_LINKS] ?? []);
+    }
+
+    protected function assertNoPaginationInsideMembers(Response $response): void
+    {
+        foreach ($this->getJsonApiMembers($response, static::JSON_API_KEY_DATA) as $member) {
+            $this->assertArrayNotHasKey(
+                static::META_PAGINATION,
+                (array)($member[static::JSON_API_KEY_ATTRIBUTES] ?? []),
+                'Collection members must not carry a pagination attribute.',
+            );
+        }
     }
 
     /**
