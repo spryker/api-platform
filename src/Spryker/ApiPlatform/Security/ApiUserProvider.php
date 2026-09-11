@@ -26,6 +26,17 @@ class ApiUserProvider implements UserProviderInterface
 {
     protected const string ROLE_FORMAT = 'ROLE_%s';
 
+    /**
+     * @uses \Spryker\Zed\OauthUserConnector\OauthUserConnectorConfig::SCOPE_USER
+     *
+     * @var list<string>
+     */
+    protected const array SCOPES_WITHOUT_ROLE = ['user'];
+
+    protected const string SCOPE_WORD_SEPARATOR = '-';
+
+    protected const string ROLE_WORD_SEPARATOR = '_';
+
     protected const string ERROR_USER_IDENTIFIER_COULD_NOT_BE_DECODED = 'User identifier could not be decoded';
 
     protected const string ERROR_UNSUPPORTED_USER_CLASS = 'Instances of "%s" are not supported';
@@ -72,9 +83,20 @@ class ApiUserProvider implements UserProviderInterface
         $roles = [];
 
         foreach ($scopes as $scope) {
-            $roles[] = sprintf(static::ROLE_FORMAT, strtoupper($scope));
+            if (in_array($scope, static::SCOPES_WITHOUT_ROLE, true)) {
+                continue;
+            }
+
+            $roles[] = $this->createRoleFromScope($scope);
         }
 
         return $roles;
+    }
+
+    protected function createRoleFromScope(string $scope): string
+    {
+        $normalizedScope = str_replace(static::SCOPE_WORD_SEPARATOR, static::ROLE_WORD_SEPARATOR, $scope);
+
+        return sprintf(static::ROLE_FORMAT, strtoupper($normalizedScope));
     }
 }

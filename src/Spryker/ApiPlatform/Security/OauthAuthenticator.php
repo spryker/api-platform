@@ -84,6 +84,8 @@ class OauthAuthenticator extends AbstractAuthenticator
 
     protected const string PATH_REFRESH_TOKENS = '/refresh-tokens';
 
+    protected const string PATH_TOKEN = '/token';
+
     public function supports(Request $request): ?bool
     {
         $authorizationHeader = $request->headers->get(static::AUTHORIZATION_HEADER);
@@ -92,10 +94,9 @@ class OauthAuthenticator extends AbstractAuthenticator
             return false;
         }
 
-        // Token endpoints handle their own credential validation — skip Bearer token auth
-        $path = $request->getPathInfo();
+        $path = rtrim($request->getPathInfo(), '/');
 
-        if ($path === static::PATH_ACCESS_TOKENS || $path === static::PATH_REFRESH_TOKENS) {
+        if (in_array($path, [static::PATH_ACCESS_TOKENS, static::PATH_REFRESH_TOKENS, static::PATH_TOKEN], true)) {
             return false;
         }
 

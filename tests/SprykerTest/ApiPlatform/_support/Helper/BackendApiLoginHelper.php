@@ -47,7 +47,7 @@ use SprykerTest\Shared\User\Helper\UserDataHelper;
  * 2. The Symfony firewall's {@see \Spryker\ApiPlatform\Security\OauthAuthenticator}, which
  *    introspects through the injectable {@see OauthClientInterface} and turns OAuth **scopes** into
  *    roles via {@see \Spryker\ApiPlatform\Security\ApiUserProvider::mapScopesToRoles()}
- *    (`ROLE_<SCOPE>`), which is what satisfies `is_granted('ROLE_USER')`.
+ *    (`ROLE_<SCOPE>`), which is what satisfies `is_granted('ROLE_BACK_OFFICE_USER')`.
  * 3. The legacy Glue OAuth validator, which resolves its client through the Spryker locator rather
  *    than the Symfony container — see {@see bindLegacyGlueOauthClient()}.
  *
@@ -63,6 +63,16 @@ class BackendApiLoginHelper extends Module
     use LocatorHelperTrait;
 
     protected const string SCOPE_USER = 'user';
+
+    /**
+     * @uses \Spryker\Zed\OauthUserConnector\OauthUserConnectorConfig::SCOPE_BACK_OFFICE_USER
+     */
+    protected const string SCOPE_BACK_OFFICE_USER = 'back-office-user';
+
+    /**
+     * @uses \Spryker\Zed\OauthMerchantUser\OauthMerchantUserConfig::SCOPE_MERCHANT_USER
+     */
+    protected const string SCOPE_MERCHANT_USER = 'merchant-user';
 
     protected const string HEADER_AUTHORIZATION = 'Authorization';
 
@@ -112,7 +122,17 @@ class BackendApiLoginHelper extends Module
 
     public function actingAsUser(?UserTransfer $userTransfer = null): void
     {
-        $this->actingWithScopes([static::SCOPE_USER], $userTransfer);
+        $this->actingWithScopes([static::SCOPE_USER, static::SCOPE_BACK_OFFICE_USER], $userTransfer);
+    }
+
+    /**
+     * The merchant behind the token is resolved in Zed from the current user, not from a claim, so
+     * the acting user needs a `spy_merchant_user` row for the request to reach anything
+     * merchant-scoped. The merchant does not have to be approved.
+     */
+    public function actingAsMerchantUser(?UserTransfer $userTransfer = null): void
+    {
+        $this->actingWithScopes([static::SCOPE_USER, static::SCOPE_MERCHANT_USER], $userTransfer);
     }
 
     public function actingAsUserWithoutAclAccess(?UserTransfer $userTransfer = null): void
