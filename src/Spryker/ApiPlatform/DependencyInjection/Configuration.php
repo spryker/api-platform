@@ -38,6 +38,7 @@ class Configuration implements ConfigurationInterface
                         'src/Pyz',
                     ])
                     ->scalarPrototype()->end()
+                /** @phpstan-ignore method.nonObject */
                 ->end()
                 ->scalarNode('cache_dir')
                     ->info('Cache directory for generated resources')

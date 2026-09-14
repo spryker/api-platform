@@ -40,12 +40,11 @@ class CXmlNormalizer implements NormalizerInterface, DenormalizerInterface, Seri
     }
 
     /**
-     * @param mixed $object
      * @param array<string, mixed> $context
      *
-     * @return mixed
+     * @return \ArrayObject<array-key, mixed>|array<array-key, mixed>|string|float|int|bool|null
      */
-    public function normalize($object, ?string $format = null, array $context = [])
+    public function normalize(mixed $object, ?string $format = null, array $context = []): array|string|int|float|bool|\ArrayObject|null
     {
         return $this->decoratedItemNormalizer->normalize($object, $format, $context);
     }
@@ -101,7 +100,7 @@ class CXmlNormalizer implements NormalizerInterface, DenormalizerInterface, Seri
      * The decorated normalizer reports its object support as non-cacheable, which keeps the `supports*()` methods
      * above in play — including the cXML pass-through.
      *
-     * @return array<class-string|'object'|'*', bool|null>
+     * @return array<class-string|'object'|'*'|string, bool|null>
      */
     public function getSupportedTypes(?string $format): array
     {

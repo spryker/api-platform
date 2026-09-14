@@ -1101,6 +1101,7 @@ class GlueApiExceptionSubscriber implements EventSubscriberInterface
     {
         $constraint = $this->getTypeConstraintInstance($resourceClass, $fieldName, $groups);
 
+        // @phpstan-ignore isset.property (kept for BC/defensiveness even though $message is currently non-nullable upstream)
         if ($constraint === null || !isset($constraint->type, $constraint->message)) {
             return null;
         }

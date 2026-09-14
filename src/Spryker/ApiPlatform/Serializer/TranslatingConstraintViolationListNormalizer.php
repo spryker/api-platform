@@ -111,11 +111,12 @@ class TranslatingConstraintViolationListNormalizer implements NormalizerInterfac
 
     public function supportsNormalization(mixed $data, ?string $format = null, array $context = []): bool
     {
-        return $this->decorated->supportsNormalization($data, $format);
+        // @phpstan-ignore arguments.count (symfony/serializer 6.4 keeps $context undeclared on the interface; 7.4 declares it)
+        return $this->decorated->supportsNormalization($data, $format, $context);
     }
 
     /**
-     * @return array<string, bool>
+     * @return array<string, bool|null>
      */
     public function getSupportedTypes(?string $format): array
     {

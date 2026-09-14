@@ -54,8 +54,13 @@ class Customer implements UserInterface
     {
     }
 
+    /**
+     * @return non-empty-string
+     */
     public function getUserIdentifier(): string
     {
+        assert($this->customerReference !== '');
+
         return $this->customerReference;
     }
 }

@@ -141,6 +141,16 @@ class ApiResourceGeneratorHelper
         $kernel->setApiType($apiType);
 
         $kernel->addBundleConfigurations([
+            // SecurityBundle fatals on boot ("is enabled but is not configured") unless it gets at
+            // least one non-empty config entry - resource generation never handles a real request, so
+            // security is disabled outright rather than given a real firewall/provider setup.
+            'security' => [
+                'firewalls' => [
+                    'main' => [
+                        'security' => false,
+                    ],
+                ],
+            ],
             'api_platform' => [
                 'doctrine' => ['enabled' => false],
                 'doctrine_mongodb_odm' => ['enabled' => false],

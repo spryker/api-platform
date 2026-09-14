@@ -57,7 +57,8 @@ class ValidationConstraintReader
                 continue;
             }
 
-            if ($groups !== [] && array_intersect($constraint->groups, $groups) === []) {
+            // @phpstan-ignore nullCoalesce.property (Constraint::$groups is nullable on symfony/validator 7.x; on 6.4 PHPStan narrows it to non-null via Constraint::__get(), making the ?? look redundant)
+            if ($groups !== [] && array_intersect($constraint->groups ?? [], $groups) === []) {
                 continue;
             }
 

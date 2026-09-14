@@ -60,9 +60,13 @@ class WriteOnlyOperationDenormalizer implements NormalizerInterface, Denormalize
         return $this->decorated->denormalize($data, $type, $format, $context);
     }
 
-    public function supportsDenormalization(mixed $data, string $type, ?string $format = null): bool
+    /**
+     * @param array<string, mixed> $context
+     */
+    public function supportsDenormalization(mixed $data, string $type, ?string $format = null, array $context = []): bool
     {
-        return $this->decorated->supportsDenormalization($data, $type, $format);
+        // @phpstan-ignore arguments.count (symfony/serializer 6.4 keeps $context undeclared on the interface; 7.4 declares it)
+        return $this->decorated->supportsDenormalization($data, $type, $format, $context);
     }
 
     /**
@@ -70,14 +74,18 @@ class WriteOnlyOperationDenormalizer implements NormalizerInterface, Denormalize
      *
      * @return \ArrayObject<array-key, mixed>|array<array-key, mixed>|string|float|int|bool|null
      */
-    public function normalize(mixed $object, ?string $format = null, array $context = []): mixed
+    public function normalize(mixed $object, ?string $format = null, array $context = []): array|string|int|float|bool|\ArrayObject|null
     {
         return $this->decorated->normalize($object, $format, $context);
     }
 
-    public function supportsNormalization(mixed $data, ?string $format = null): bool
+    /**
+     * @param array<string, mixed> $context
+     */
+    public function supportsNormalization(mixed $data, ?string $format = null, array $context = []): bool
     {
-        return $this->decorated->supportsNormalization($data, $format);
+        // @phpstan-ignore arguments.count (symfony/serializer 6.4 keeps $context undeclared on the interface; 7.4 declares it)
+        return $this->decorated->supportsNormalization($data, $format, $context);
     }
 
     /**

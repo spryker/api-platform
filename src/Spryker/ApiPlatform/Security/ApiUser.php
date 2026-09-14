@@ -57,8 +57,13 @@ class ApiUser implements UserInterface
     {
     }
 
+    /**
+     * @return non-empty-string
+     */
     public function getUserIdentifier(): string
     {
+        assert($this->userIdentifier !== '');
+
         return $this->userIdentifier;
     }
 
