@@ -73,6 +73,18 @@ class GlueApiExceptionSubscriber implements EventSubscriberInterface
 
     protected const string ERROR_DETAIL_BAD_REQUEST = 'Post data missing or invalid.';
 
+    protected const string REQUEST_ATTRIBUTE_API_PLATFORM_REQUEST = 'api-platform-request';
+
+    protected const string REQUEST_ATTRIBUTE_API_RESOURCE_CLASS = '_api_resource_class';
+
+    protected const string ERROR_META_KEY_EXCEPTION = 'exception';
+
+    protected const string ERROR_META_KEY_FILE = 'file';
+
+    protected const string ERROR_META_KEY_LINE = 'line';
+
+    protected const string ERROR_META_KEY_TRACE = 'trace';
+
     protected const string TYPE_INTEGER_ERROR_MESSAGE = 'This value should be of type integer.';
 
     /**
@@ -288,57 +300,99 @@ class GlueApiExceptionSubscriber implements EventSubscriberInterface
     }
 
     /**
-     * Last-resort guard against leaking exception details on API Platform requests.
+     * Last-resort guard for throwables that no other subscriber turned into a response.
      *
      * Runs after the application exception subscribers (priority 256 above,
      * OAuthExceptionSubscriber at 10) but before API Platform's own exception
-     * listener (-96) and Symfony's ErrorListener (-128), both of which can embed
-     * the message, class name, file path, and stack trace in the response.
+     * listener (-96). API Platform's listener only renders requests that carry its
+     * routing attributes, and Symfony's ErrorListener is not registered, so a
+     * throwable raised before the router resolved an operation (kernel.request
+     * subscribers, authenticators, the router itself) would otherwise leave the
+     * kernel unhandled and `ApiApplicationProxy` would answer with the Glue 404.
      *
-     * In production ($debug = false) any uncaught non-HTTP throwable on a resolved
-     * API Platform request is replaced with a generic 500 so traces never reach the
-     * client. In development ($debug = true) the guard steps aside and lets the
-     * throwable propagate to API Platform's debug error renderer, so the developer
-     * sees the full message, file and stack trace right away.
+     * Every request routed to the API Platform kernel (`api-platform-request`) is
+     * covered. In production ($debug = false) the throwable is replaced with a
+     * generic 500 so traces never reach the client. In development ($debug = true)
+     * a resolved operation is left to API Platform's debug error renderer, and a
+     * request without one gets a JSON:API 500 that carries the exception details.
      *
      * HTTP exceptions are intentionally skipped: direct ones are already handled
-     * at priority 256, and the OAuthExceptionSubscriber-converted one keeps its
-     * status code through API Platform's renderer.
+     * at priority 256, the OAuthExceptionSubscriber-converted one keeps its status
+     * code through API Platform's renderer, and a not-found on a fallback request
+     * must propagate so the proxy keeps the original Glue response.
      */
     public function onKernelExceptionLastResort(ExceptionEvent $event): void
     {
-        if ($this->debug) {
-            return;
-        }
-
         if ($event->getResponse() !== null) {
             return;
         }
 
-        if (!$event->getRequest()->attributes->has('_api_resource_class')) {
+        $request = $event->getRequest();
+
+        if (!$this->isApiPlatformRequest($request)) {
             return;
         }
 
-        if ($event->getThrowable() instanceof HttpExceptionInterface) {
+        $throwable = $event->getThrowable();
+
+        if ($throwable instanceof HttpExceptionInterface) {
             return;
         }
 
-        // The throwable is about to be sanitised into a generic 500 with no body, so it would
-        // otherwise vanish without a trace (API Platform's error pipeline does not route it to
-        // the application logger). Log it here so operators are not blind to the real cause.
-        $this->logUncaughtThrowable($event->getThrowable(), $event->getRequest());
+        $this->logUncaughtThrowable($throwable, $request);
 
-        $event->setResponse($this->createInternalServerErrorResponse());
+        if (!$this->debug) {
+            $event->setResponse($this->createInternalServerErrorResponse());
+
+            return;
+        }
+
+        if ($request->attributes->has(static::REQUEST_ATTRIBUTE_API_RESOURCE_CLASS)) {
+            return;
+        }
+
+        $event->setResponse($this->createDebugInternalServerErrorResponse($throwable));
+    }
+
+    protected function isApiPlatformRequest(Request $request): bool
+    {
+        return $request->attributes->has(static::REQUEST_ATTRIBUTE_API_RESOURCE_CLASS)
+            || $request->attributes->get(static::REQUEST_ATTRIBUTE_API_PLATFORM_REQUEST) === true;
+    }
+
+    protected function createDebugInternalServerErrorResponse(Throwable $throwable): JsonResponse
+    {
+        return $this->createJsonApiResponse(
+            [
+                'errors' => [
+                    [
+                        'status' => Response::HTTP_INTERNAL_SERVER_ERROR,
+                        'title' => $throwable::class,
+                        'detail' => $throwable->getMessage(),
+                        'meta' => [
+                            static::ERROR_META_KEY_EXCEPTION => $throwable::class,
+                            static::ERROR_META_KEY_FILE => $throwable->getFile(),
+                            static::ERROR_META_KEY_LINE => $throwable->getLine(),
+                            static::ERROR_META_KEY_TRACE => explode(PHP_EOL, $throwable->getTraceAsString()),
+                        ],
+                    ],
+                ],
+            ],
+            Response::HTTP_INTERNAL_SERVER_ERROR,
+        );
     }
 
     protected function logUncaughtThrowable(Throwable $throwable, Request $request): void
     {
         $this->logger->error(
             sprintf(
-                'Uncaught exception on API Platform request "%s %s": %s',
+                'Uncaught %s on API Platform request "%s %s": %s in %s:%d',
+                $throwable::class,
                 $request->getMethod(),
                 $request->getPathInfo(),
                 $throwable->getMessage(),
+                $throwable->getFile(),
+                $throwable->getLine(),
             ),
             ['exception' => $throwable],
         );
