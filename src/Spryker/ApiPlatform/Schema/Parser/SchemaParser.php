@@ -274,6 +274,10 @@ class SchemaParser implements SchemaParserInterface
                 $normalizedOperation['uriVariables'] = $operation['uriVariables'];
             }
 
+            if (isset($operation['requirements']) && is_array($operation['requirements'])) {
+                $normalizedOperation['requirements'] = $operation['requirements'];
+            }
+
             if (array_key_exists('openapi', $operation) && is_bool($operation['openapi'])) {
                 $normalizedOperation['openapi'] = $operation['openapi'];
             }

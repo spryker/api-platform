@@ -368,13 +368,18 @@ class GlueApiExceptionSubscriber implements EventSubscriberInterface
             if (!isset($errorItem['message'])) {
                 $errorItem['message'] = (string)$errorItem['detail'];
             }
+
+            if (array_key_exists('code', $errorItem) && $errorItem['code'] === null) {
+                unset($errorItem['code']);
+            }
         }
 
         if ($errors === []) {
             $error = [];
+            $errorCode = $exception->getErrorCode();
 
-            if ($exception->getErrorCode() !== '') {
-                $error['code'] = $exception->getErrorCode();
+            if ($errorCode !== null && $errorCode !== '') {
+                $error['code'] = $errorCode;
             }
 
             $error['status'] = $exception->getStatusCode();

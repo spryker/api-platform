@@ -242,6 +242,10 @@ class ResourceAttributeGenerator
             $parameters['uriVariables'] = $this->buildUriVariablesParameter($operation['uriVariables'], $indentLevel);
         }
 
+        if (isset($operation['requirements']) && is_array($operation['requirements']) && $operation['requirements'] !== []) {
+            $parameters['requirements'] = $operation['requirements'];
+        }
+
         if (isset($operation['security']) && is_string($operation['security'])) {
             $parameters['security'] = $operation['security'];
         }

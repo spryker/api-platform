@@ -61,6 +61,50 @@ class GlueApiExceptionSubscriberOnKernelExceptionTest extends Unit
         $this->assertSame('Shopping list not found.', $data['errors'][0]['detail']);
     }
 
+    public function testGivenGlueApiExceptionWithoutErrorCodeWhenOnKernelExceptionThenReturnsJsonApiErrorWithoutCode(): void
+    {
+        // Arrange
+        $subscriber = $this->createSubscriber();
+        $exception = new GlueApiException(statusCode: 400, message: 'Sorting by "name" is not supported.');
+        $event = $this->createExceptionEvent($exception, new Request());
+
+        // Act
+        $subscriber->onKernelException($event);
+
+        // Assert
+        $response = $event->getResponse();
+        $this->assertNotNull($response);
+        $this->assertSame(400, $response->getStatusCode());
+
+        $data = $this->decodeResponse($response);
+        $this->assertArrayNotHasKey('code', $data['errors'][0]);
+        $this->assertSame(400, $data['errors'][0]['status']);
+        $this->assertSame('Sorting by "name" is not supported.', $data['errors'][0]['detail']);
+    }
+
+    public function testGivenGlueApiExceptionWithPreBuiltErrorsWithoutCodeWhenOnKernelExceptionThenNoCodeIsRendered(): void
+    {
+        // Arrange
+        $subscriber = $this->createSubscriber();
+        $exception = (new GlueApiException(statusCode: 422, message: 'first'))->setErrors([
+            ['status' => 422, 'detail' => 'first'],
+            ['code' => null, 'status' => 422, 'detail' => 'second'],
+        ]);
+        $event = $this->createExceptionEvent($exception, new Request());
+
+        // Act
+        $subscriber->onKernelException($event);
+
+        // Assert
+        $response = $event->getResponse();
+        $this->assertNotNull($response);
+        $data = $this->decodeResponse($response);
+        $this->assertCount(2, $data['errors']);
+        $this->assertArrayNotHasKey('code', $data['errors'][0]);
+        $this->assertArrayNotHasKey('code', $data['errors'][1]);
+        $this->assertSame('second', $data['errors'][1]['detail']);
+    }
+
     public function testGivenGlueApiExceptionWithPreBuiltErrorsArrayWhenOnKernelExceptionThenReturnsThoseErrorsVerbatim(): void
     {
         // Arrange
