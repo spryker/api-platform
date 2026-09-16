@@ -56,12 +56,12 @@
     },
     "autoload": {
         "psr-4": {
-            "Spryker\\": "src/Spryker/"
+            "Spryker\\": "src/Spryker/",
+            "SprykerTest\\ApiPlatform\\": "tests/SprykerTest/ApiPlatform/_support/"
         }
     },
     "autoload-dev": {
         "psr-4": {
-            "SprykerTest\\ApiPlatform\\Helper\\": "tests/SprykerTest/ApiPlatform/_support/Helper/",
             "SprykerTest\\": "tests/SprykerTest/"
         }
     },
