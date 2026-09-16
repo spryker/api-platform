@@ -525,6 +525,7 @@ class ResourceAttributeGenerator
     protected function addOperationUseStatements(array $operations, array &$uses, string $operationsContent): void
     {
         $needsLinkImport = false;
+        $needsRequestBodyImport = false;
 
         $typeImportMap = [
             'Get' => 'ApiPlatform\Metadata\Get',
@@ -552,6 +553,10 @@ class ResourceAttributeGenerator
             if (isset($operation['uriVariables'])) {
                 $needsLinkImport = true;
             }
+
+            if (isset($operation['openapiContext']['requestBody'])) {
+                $needsRequestBodyImport = true;
+            }
         }
 
         if ($needsLinkImport) {
@@ -562,6 +567,11 @@ class ResourceAttributeGenerator
             if (str_contains($operationsContent, $instantiation) && !in_array($fullyQualifiedClassName, $uses, true)) {
                 $uses[] = $fullyQualifiedClassName;
             }
+        }
+
+        if ($needsRequestBodyImport) {
+            $uses[] = 'ApiPlatform\OpenApi\Model\RequestBody';
+            $uses[] = 'ArrayObject';
         }
 
         $this->collectOperationServiceUseStatements($operations, $uses);

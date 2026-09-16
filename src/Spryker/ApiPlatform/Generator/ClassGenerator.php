@@ -56,6 +56,8 @@ class ClassGenerator
 {
     protected const string GENERATED_NAMESPACE_PREFIX = 'Generated\Api';
 
+    protected const string CONSTRAINT_COLLECTION_ATTRIBUTE_PREFIX = 'Assert\\Collection(';
+
     /**
      * @var array<string>
      */
@@ -223,9 +225,9 @@ class ClassGenerator
             $uses[] = sprintf('%s\\%s\\%s', static::GENERATED_NAMESPACE_PREFIX, $apiType, $canonicalShortName);
         }
 
-        $uses = array_values(array_unique($uses));
-
         $resourceAttribute = $this->resourceAttributeGenerator->generate($schema, $uses);
+
+        $uses = array_values(array_unique($uses));
 
         $templateData = [
             'className' => $className,
@@ -546,7 +548,10 @@ class ClassGenerator
         // the parent property only cascades via Assert\Valid.
         $denormalizesToObject = $this->isGeneratedNestedObjectProperty($property) || $this->isKnownCanonicalProperty($property);
         if ($validationAttributes !== [] && $denormalizesToObject && $this->containsCollectionConstraint($validationAttributes)) {
-            $validationAttributes = $this->buildValidCascadeAttribute($validationSchema, $operations, $propertyName, $resourceName);
+            $validationAttributes = array_merge(
+                $this->rejectCollectionConstraints($validationAttributes),
+                $this->buildValidCascadeAttribute($validationSchema, $operations, $propertyName, $resourceName),
+            );
         }
 
         if ($validationAttributes !== []) {
@@ -557,12 +562,35 @@ class ClassGenerator
     }
 
     /**
+     * Only the `Collection` is unusable on an object-typed property — a constraint declared beside it
+     * (an `Expression` reading a sibling property, say) still applies to the object and is kept.
+     *
+     * @param array<string> $validationAttributes
+     *
+     * @return array<string>
+     */
+    protected function rejectCollectionConstraints(array $validationAttributes): array
+    {
+        $remainingAttributes = [];
+
+        foreach ($validationAttributes as $validationAttribute) {
+            if (str_contains($validationAttribute, static::CONSTRAINT_COLLECTION_ATTRIBUTE_PREFIX)) {
+                continue;
+            }
+
+            $remainingAttributes[] = $validationAttribute;
+        }
+
+        return $remainingAttributes;
+    }
+
+    /**
      * @param array<string> $validationAttributes
      */
     protected function containsCollectionConstraint(array $validationAttributes): bool
     {
         foreach ($validationAttributes as $attribute) {
-            if (str_contains($attribute, 'Assert\\Collection(')) {
+            if (str_contains($attribute, static::CONSTRAINT_COLLECTION_ATTRIBUTE_PREFIX)) {
                 return true;
             }
         }
