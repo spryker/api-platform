@@ -15,6 +15,7 @@ use ApiPlatform\State\ProcessorInterface;
 use Psr\Log\LoggerInterface;
 use ReflectionClass;
 use Spryker\ApiPlatform\Relationship\ApiPlatformRelationshipResolverInterface;
+use Spryker\ApiPlatform\Request\RequestAttribute;
 use Symfony\Component\HttpFoundation\Request;
 use Symfony\Component\Security\Core\Exception\AccessDeniedException;
 use Symfony\Component\Security\Core\Exception\AuthenticationException;
@@ -30,8 +31,6 @@ use Throwable;
  */
 class RelationshipProcessor implements ProcessorInterface
 {
-    protected const string REQUEST_ATTRIBUTE_RESOLVED_RELATIONSHIPS = '_spryker_resolved_relationships';
-
     /**
      * @param \ApiPlatform\State\ProcessorInterface<mixed, mixed> $decorated
      */
@@ -99,9 +98,9 @@ class RelationshipProcessor implements ProcessorInterface
         );
 
         if ($relationships) {
-            $existing = $request->attributes->get(static::REQUEST_ATTRIBUTE_RESOLVED_RELATIONSHIPS, []);
+            $existing = $request->attributes->get(RequestAttribute::RESOLVED_RELATIONSHIPS, []);
             $request->attributes->set(
-                static::REQUEST_ATTRIBUTE_RESOLVED_RELATIONSHIPS,
+                RequestAttribute::RESOLVED_RELATIONSHIPS,
                 array_merge($existing, $relationships),
             );
         }
@@ -112,8 +111,8 @@ class RelationshipProcessor implements ProcessorInterface
 
         if ($perItemData) {
             $perItemByPath = $this->mapPerItemDataToPaths($relationships, $perItemData);
-            $existing = $request->attributes->get('_spryker_per_item_relationships', []);
-            $request->attributes->set('_spryker_per_item_relationships', array_merge($existing, $perItemByPath));
+            $existing = $request->attributes->get(RequestAttribute::PER_ITEM_RELATIONSHIPS, []);
+            $request->attributes->set(RequestAttribute::PER_ITEM_RELATIONSHIPS, array_merge($existing, $perItemByPath));
         }
 
         return $result;
@@ -138,7 +137,7 @@ class RelationshipProcessor implements ProcessorInterface
         Operation $operation,
         array $context,
     ): array {
-        $preResolved = $request->attributes->get(static::REQUEST_ATTRIBUTE_RESOLVED_RELATIONSHIPS, []);
+        $preResolved = $request->attributes->get(RequestAttribute::RESOLVED_RELATIONSHIPS, []);
         $relationships = [];
 
         foreach ($preResolved as $preResolvedResources) {

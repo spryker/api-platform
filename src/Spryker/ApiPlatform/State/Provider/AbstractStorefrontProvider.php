@@ -12,10 +12,11 @@ namespace Spryker\ApiPlatform\State\Provider;
 use BadMethodCallException;
 use Generated\Shared\Transfer\CustomerTransfer;
 use Generated\Shared\Transfer\FilterTransfer;
+use Spryker\ApiPlatform\Request\RequestAttribute;
 
 abstract class AbstractStorefrontProvider extends AbstractProvider
 {
-    public const string ATTRIBUTE_CUSTOMER_TRANSFER = 'CustomerTransfer';
+    public const string ATTRIBUTE_CUSTOMER_TRANSFER = RequestAttribute::CUSTOMER_TRANSFER;
 
     protected const string SEARCH_PARAMETER_PAGE = 'page';
 

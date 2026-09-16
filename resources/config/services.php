@@ -20,6 +20,7 @@ use Spryker\ApiPlatform\Command\ApiGenerateCommand;
 use Spryker\ApiPlatform\Configuration\ApiPlatformConfig;
 use Spryker\ApiPlatform\EventSubscriber\AcceptHeaderFallbackSubscriber;
 use Spryker\ApiPlatform\EventSubscriber\AcceptLanguageLocaleSubscriber;
+use Spryker\ApiPlatform\EventSubscriber\BackendAcceptLanguageLocaleSubscriber;
 use Spryker\ApiPlatform\EventSubscriber\ContentTypeHeaderFallbackSubscriber;
 use Spryker\ApiPlatform\EventSubscriber\ETagResponseSubscriber;
 use Spryker\ApiPlatform\EventSubscriber\GlueApiExceptionSubscriber;
@@ -101,8 +102,12 @@ use Spryker\ApiPlatform\Serializer\Encoder\CXmlEncoder;
 use Spryker\ApiPlatform\Serializer\Normalizer\CXmlNormalizer;
 use Spryker\ApiPlatform\Serializer\TranslatingConstraintViolationListNormalizer;
 use Spryker\ApiPlatform\State\TranslatingErrorProvider;
+use Spryker\ApiPlatform\Translation\ApiCsvFileLoader;
+use Spryker\ApiPlatform\Validation\Constraint\StrictBooleanValidator;
 use Spryker\ApiPlatform\Validation\NestedObjectValidationErrorAugmenter;
 use Spryker\ApiPlatform\Validation\ValidationConstraintReader;
+use Spryker\Zed\Locale\Business\LocaleFacade;
+use Spryker\Zed\Locale\Business\LocaleFacadeInterface;
 use Symfony\Component\DependencyInjection\ContainerInterface;
 use Symfony\Component\ExpressionLanguage\ExpressionLanguage;
 use Symfony\Component\Filesystem\Filesystem;
@@ -322,11 +327,17 @@ return static function (ContainerConfigurator $container): void {
     // Pure transformer that augments present-but-empty nested value-object validation errors.
     $services->set(NestedObjectValidationErrorAugmenter::class);
 
+    $services->set(StrictBooleanValidator::class);
+
     // In production ($debug = false) the last-resort guard sanitises uncaught throwables
     // to a generic 500; in debug it steps aside so traces reach the error renderer.
     $services->set(GlueApiExceptionSubscriber::class)
         ->arg('$debug', param('spryker_api_platform.debug'))
-        ->arg('$logger', service('logger'));
+        ->arg('$logger', service('logger'))
+        ->arg(
+            '$isMethodNotAllowedStatusEnabled',
+            param('spryker_api_platform.is_method_not_allowed_status_enabled'),
+        );
 
     // Convert OAuthServerException to HttpException with correct status code
     $services->set(OAuthExceptionSubscriber::class);
@@ -386,13 +397,24 @@ return static function (ContainerConfigurator $container): void {
     // Locale resolution from Accept-Language header
     $services->set(AcceptLanguageLocaleSubscriber::class);
 
+    // Locale resolution from Accept-Language header (backend: negotiated against the configured
+    // locales, since a Backend API request has no store context). The facade below is only ever
+    // instantiated for it — ApiTypeServiceFilterPass removes this subscriber from a storefront
+    // container, and an unreferenced definition is dropped when the container is compiled.
+    $services->set(BackendAcceptLanguageLocaleSubscriber::class);
+
+    // Reads a module's `data/translation/Api/<locale>.csv`; ApiTranslationResourcePass points the
+    // translator at those files for the `validators` domain.
+    $services->set(ApiCsvFileLoader::class)
+        ->tag('translation.loader', ['alias' => ApiCsvFileLoader::FORMAT]);
+    $services->set(LocaleFacadeInterface::class, LocaleFacade::class);
+
     // Translate error messages using Spryker glossary
     $services->set(TranslatingErrorProvider::class)
         ->autoconfigure(false)
         ->decorate('api_platform.state.error_provider')
         ->arg('$decorated', service('.inner'));
 
-    // Translate validation constraint violation messages using Spryker glossary
     $services->set(TranslatingConstraintViolationListNormalizer::class)
         ->autoconfigure(false)
         ->decorate('api_platform.jsonapi.normalizer.constraint_violation_list', null, 0, ContainerInterface::IGNORE_ON_INVALID_REFERENCE)

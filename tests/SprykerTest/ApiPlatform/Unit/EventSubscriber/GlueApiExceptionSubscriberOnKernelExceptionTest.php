@@ -25,7 +25,7 @@ use Symfony\Component\HttpKernel\Exception\BadRequestHttpException;
 use Symfony\Component\HttpKernel\Exception\MethodNotAllowedHttpException;
 use Symfony\Component\HttpKernel\HttpKernelInterface;
 use Symfony\Component\Security\Core\Exception\AccessDeniedException;
-use Symfony\Contracts\Translation\TranslatorInterface;
+use Symfony\Component\Translation\IdentityTranslator;
 
 /**
  * Auto-generated group annotations
@@ -39,6 +39,12 @@ use Symfony\Contracts\Translation\TranslatorInterface;
  */
 class GlueApiExceptionSubscriberOnKernelExceptionTest extends Unit
 {
+    /**
+     * Sample of the wording Symfony's router fills the exception with, which the subscriber
+     * replaces with the status text.
+     */
+    protected const string ROUTER_MESSAGE = 'No route found for "DELETE http://glue-backend.example/fixtures/1"';
+
     protected ApiUnitTester $tester;
 
     public function testGivenGlueApiExceptionWhenOnKernelExceptionThenReturnsJsonApiErrorWithStatusAndCode(): void
@@ -174,14 +180,21 @@ class GlueApiExceptionSubscriberOnKernelExceptionTest extends Unit
         $this->assertSame('quantity => This value should be of type numeric.', $data['errors'][0]['detail']);
     }
 
-    public function testGivenMethodNotAllowedHttpExceptionWithoutApiResourceClassWhenOnKernelExceptionThenReturns404(): void
-    {
+    /**
+     * The router rejected the method before API Platform resolved the resource, so
+     * _api_resource_class is absent. The path itself exists, which is what separates this from an
+     * unknown path — that answers 404 either way.
+     *
+     * @dataProvider provideFlagStates
+     */
+    public function testGivenMethodNotAllowedHttpExceptionThenAnswersWithTheStatusTheFlagSelects(
+        bool $isMethodNotAllowedStatusEnabled,
+        int $expectedStatusCode
+    ): void {
         // Arrange
-        $subscriber = $this->createSubscriber();
+        $subscriber = $this->createSubscriber($isMethodNotAllowedStatusEnabled);
         $exception = new MethodNotAllowedHttpException(['GET']);
-        $request = new Request();
-        // No _api_resource_class attribute set
-        $event = $this->createExceptionEvent($exception, $request);
+        $event = $this->createExceptionEvent($exception, new Request());
 
         // Act
         $subscriber->onKernelException($event);
@@ -189,7 +202,94 @@ class GlueApiExceptionSubscriberOnKernelExceptionTest extends Unit
         // Assert
         $response = $event->getResponse();
         $this->assertNotNull($response);
-        $this->assertSame(Response::HTTP_NOT_FOUND, $response->getStatusCode());
+        $this->assertSame($expectedStatusCode, $response->getStatusCode());
+    }
+
+    /**
+     * @return array<string, array{0: bool, 1: int}>
+     */
+    public function provideFlagStates(): array
+    {
+        return [
+            'enabled answers the RFC 9110 status' => [true, Response::HTTP_METHOD_NOT_ALLOWED],
+            'disabled answers the status the old Glue REST API returned' => [false, Response::HTTP_NOT_FOUND],
+        ];
+    }
+
+    public function testGivenTheStatusIsDisabledThenSendsNoAllowHeader(): void
+    {
+        // Arrange
+        $subscriber = $this->createSubscriber(false);
+        $event = $this->createExceptionEvent(new MethodNotAllowedHttpException(['GET']), new Request());
+
+        // Act
+        $subscriber->onKernelException($event);
+
+        // Assert
+        $response = $event->getResponse();
+        $this->assertNotNull($response);
+        $this->assertNull(
+            $response->headers->get('Allow'),
+            'A 404 does not name allowed methods; the header belongs to a 405.',
+        );
+    }
+
+    public function testGivenMethodNotAllowedHttpExceptionThenReturns405WithAllowHeader(): void
+    {
+        // Arrange
+        $subscriber = $this->createSubscriber();
+        $exception = new MethodNotAllowedHttpException(['GET', 'PATCH']);
+        $event = $this->createExceptionEvent($exception, new Request());
+
+        // Act
+        $subscriber->onKernelException($event);
+
+        // Assert
+        $response = $event->getResponse();
+        $this->assertNotNull($response);
+        $this->assertSame(Response::HTTP_METHOD_NOT_ALLOWED, $response->getStatusCode());
+        $this->assertSame(
+            'GET, PATCH',
+            $response->headers->get('Allow'),
+            'RFC 9110 requires a 405 to name the methods that are allowed.',
+        );
+    }
+
+    public function testGivenMethodNotAllowedHttpExceptionThenHidesTheRouterMessage(): void
+    {
+        // Arrange
+        $subscriber = $this->createSubscriber();
+        $exception = new MethodNotAllowedHttpException(
+            ['GET'],
+            static::ROUTER_MESSAGE,
+        );
+        $event = $this->createExceptionEvent($exception, new Request());
+
+        // Act
+        $subscriber->onKernelException($event);
+
+        // Assert
+        $response = $event->getResponse();
+        $this->assertNotNull($response);
+        $data = $this->decodeResponse($response);
+        $this->assertSame('Method Not Allowed', $data['errors'][0]['detail']);
+    }
+
+    public function testGivenMethodNotAllowedHttpExceptionWithApiResourceClassThenKeepsThe405(): void
+    {
+        // Arrange
+        $subscriber = $this->createSubscriber();
+        $request = new Request();
+        $request->attributes->set('_api_resource_class', 'SomeResourceClass');
+        $event = $this->createExceptionEvent(new MethodNotAllowedHttpException(['GET']), $request);
+
+        // Act
+        $subscriber->onKernelException($event);
+
+        // Assert
+        $response = $event->getResponse();
+        $this->assertNotNull($response);
+        $this->assertSame(Response::HTTP_METHOD_NOT_ALLOWED, $response->getStatusCode());
     }
 
     public function testGivenAccessDeniedHttpExceptionWithApiResourceClassWhenOnKernelExceptionThenReturns403JsonApiResponse(): void
@@ -235,16 +335,18 @@ class GlueApiExceptionSubscriberOnKernelExceptionTest extends Unit
         $this->assertSame('Missing access token.', $data['errors'][0]['detail']);
     }
 
-    protected function createSubscriber(): GlueApiExceptionSubscriber
-    {
+    protected function createSubscriber(
+        bool $isMethodNotAllowedStatusEnabled = true
+    ): GlueApiExceptionSubscriber {
         $constraintReader = new ValidationConstraintReader();
 
         return new GlueApiExceptionSubscriber(
-            $this->createMock(TranslatorInterface::class),
+            new IdentityTranslator(),
             $this->createMock(ResourceMetadataCollectionFactoryInterface::class),
             $constraintReader,
-            new NestedObjectValidationErrorAugmenter($constraintReader),
+            new NestedObjectValidationErrorAugmenter($constraintReader, new IdentityTranslator()),
             true,
+            isMethodNotAllowedStatusEnabled: $isMethodNotAllowedStatusEnabled,
         );
     }
 

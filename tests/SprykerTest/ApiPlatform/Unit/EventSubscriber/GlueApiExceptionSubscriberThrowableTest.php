@@ -26,7 +26,7 @@ use Symfony\Component\HttpKernel\Event\ExceptionEvent;
 use Symfony\Component\HttpKernel\Exception\NotFoundHttpException;
 use Symfony\Component\HttpKernel\Exception\UnauthorizedHttpException;
 use Symfony\Component\HttpKernel\HttpKernelInterface;
-use Symfony\Contracts\Translation\TranslatorInterface;
+use Symfony\Component\Translation\IdentityTranslator;
 use Throwable;
 
 /**
@@ -260,10 +260,10 @@ class GlueApiExceptionSubscriberThrowableTest extends Unit
         $constraintReader = new ValidationConstraintReader();
 
         return new GlueApiExceptionSubscriber(
-            $this->createMock(TranslatorInterface::class),
+            new IdentityTranslator(),
             $this->createMock(ResourceMetadataCollectionFactoryInterface::class),
             $constraintReader,
-            new NestedObjectValidationErrorAugmenter($constraintReader),
+            new NestedObjectValidationErrorAugmenter($constraintReader, new IdentityTranslator()),
             $debug,
             $logger ?? new NullLogger(),
         );

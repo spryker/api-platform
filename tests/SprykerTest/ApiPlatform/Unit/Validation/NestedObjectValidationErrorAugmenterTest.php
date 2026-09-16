@@ -14,6 +14,7 @@ use Spryker\ApiPlatform\Validation\NestedObjectValidationErrorAugmenter;
 use Spryker\ApiPlatform\Validation\ValidationConstraintReader;
 use SprykerTest\ApiPlatform\ApiUnitTester;
 use Symfony\Component\HttpFoundation\Response;
+use Symfony\Component\Translation\IdentityTranslator;
 
 /**
  * Auto-generated group annotations
@@ -166,6 +167,6 @@ class NestedObjectValidationErrorAugmenterTest extends Unit
 
     protected function createAugmenter(): NestedObjectValidationErrorAugmenter
     {
-        return new NestedObjectValidationErrorAugmenter(new ValidationConstraintReader());
+        return new NestedObjectValidationErrorAugmenter(new ValidationConstraintReader(), new IdentityTranslator());
     }
 }

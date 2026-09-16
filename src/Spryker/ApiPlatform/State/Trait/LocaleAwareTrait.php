@@ -11,6 +11,7 @@ namespace Spryker\ApiPlatform\State\Trait;
 
 use Generated\Shared\Transfer\LocaleTransfer;
 use Spryker\ApiPlatform\Exception\ApiPlatformContextException;
+use Spryker\ApiPlatform\Request\RequestAttribute;
 use Symfony\Component\HttpFoundation\Request;
 
 /**
@@ -28,8 +29,6 @@ use Symfony\Component\HttpFoundation\Request;
  */
 trait LocaleAwareTrait
 {
-    protected const string ATTRIBUTE_LOCALE_TRANSFER = 'LocaleTransfer';
-
     abstract protected function hasRequest(): bool;
 
     abstract protected function getRequest(): Request;
@@ -37,7 +36,7 @@ trait LocaleAwareTrait
     protected function hasLocale(): bool
     {
         return $this->hasRequest()
-            && $this->getRequest()->attributes->get(static::ATTRIBUTE_LOCALE_TRANSFER) !== null;
+            && $this->getRequest()->attributes->get(RequestAttribute::LOCALE_TRANSFER) !== null;
     }
 
     /**
@@ -54,7 +53,7 @@ trait LocaleAwareTrait
             ));
         }
 
-        return $this->getRequest()->attributes->get(static::ATTRIBUTE_LOCALE_TRANSFER);
+        return $this->getRequest()->attributes->get(RequestAttribute::LOCALE_TRANSFER);
     }
 
     /**

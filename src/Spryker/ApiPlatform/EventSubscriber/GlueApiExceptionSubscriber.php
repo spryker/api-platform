@@ -18,6 +18,7 @@ use ReflectionClass;
 use ReflectionNamedType;
 use ReflectionProperty;
 use Spryker\ApiPlatform\Exception\GlueApiException;
+use Spryker\ApiPlatform\Request\RequestAttribute;
 use Spryker\ApiPlatform\Validation\NestedObjectValidationErrorAugmenter;
 use Spryker\ApiPlatform\Validation\ValidationConstraintReader;
 use Symfony\Component\EventDispatcher\EventSubscriberInterface;
@@ -49,6 +50,8 @@ use Throwable;
  */
 class GlueApiExceptionSubscriber implements EventSubscriberInterface
 {
+    protected const string HEADER_ALLOW = 'Allow';
+
     protected const string CONTENT_TYPE_JSON_API = 'application/vnd.api+json';
 
     protected const string VALIDATORS_DOMAIN = 'validators';
@@ -72,10 +75,6 @@ class GlueApiExceptionSubscriber implements EventSubscriberInterface
     protected const string ERROR_DETAIL_CHECKOUT_AUTH_REQUIRED = 'One of Authorization or X-Anonymous-Customer-Unique-Id headers is required.';
 
     protected const string ERROR_DETAIL_BAD_REQUEST = 'Post data missing or invalid.';
-
-    protected const string REQUEST_ATTRIBUTE_API_PLATFORM_REQUEST = 'api-platform-request';
-
-    protected const string REQUEST_ATTRIBUTE_API_RESOURCE_CLASS = '_api_resource_class';
 
     protected const string ERROR_META_KEY_EXCEPTION = 'exception';
 
@@ -123,6 +122,22 @@ class GlueApiExceptionSubscriber implements EventSubscriberInterface
      */
     protected const array LINK_NAMES = ['self', 'related', 'first', 'last', 'prev', 'next'];
 
+    protected const string ERROR_CODE_VALIDATION = '901';
+
+    protected const string MESSAGE_TEMPLATE_FIELD_MISSING = 'This field is missing.';
+
+    protected const string MESSAGE_TEMPLATE_SHOULD_BE_TRUE = 'This value should be true.';
+
+    protected const string MESSAGE_TEMPLATE_TYPE = 'This value should be of type {{ type }}.';
+
+    protected const string MESSAGE_TEMPLATE_GREATER_THAN = 'This value should be greater than {{ compared_value }}.';
+
+    protected const string TYPE_NAME_INTEGER = 'integer';
+
+    protected const string TYPE_NAME_NUMERIC = 'numeric';
+
+    protected const string COMPARED_VALUE_ZERO = '0';
+
     public function __construct(
         protected TranslatorInterface $translator,
         protected ResourceMetadataCollectionFactoryInterface $resourceMetadataCollectionFactory,
@@ -130,6 +145,7 @@ class GlueApiExceptionSubscriber implements EventSubscriberInterface
         protected NestedObjectValidationErrorAugmenter $nestedObjectAugmenter,
         protected bool $debug,
         protected LoggerInterface $logger = new NullLogger(),
+        protected bool $isMethodNotAllowedStatusEnabled = true,
     ) {
     }
 
@@ -140,7 +156,7 @@ class GlueApiExceptionSubscriber implements EventSubscriberInterface
     {
         return [
             KernelEvents::REQUEST => [
-                ['onKernelRequestForceEnglishValidation', 9],
+                ['onKernelRequestSetValidationLocale', 9],
                 ['onKernelRequest', 0],
             ],
             KernelEvents::EXCEPTION => [
@@ -163,7 +179,7 @@ class GlueApiExceptionSubscriber implements EventSubscriberInterface
             return;
         }
 
-        if (!$request->attributes->has('_api_resource_class')) {
+        if (!$request->attributes->has(RequestAttribute::API_RESOURCE_CLASS)) {
             return;
         }
 
@@ -180,7 +196,7 @@ class GlueApiExceptionSubscriber implements EventSubscriberInterface
                         [
                             'code' => (string)Response::HTTP_BAD_REQUEST,
                             'status' => Response::HTTP_BAD_REQUEST,
-                            'detail' => static::ERROR_DETAIL_BAD_REQUEST,
+                            'detail' => $this->translateValidationMessage(static::ERROR_DETAIL_BAD_REQUEST),
                         ],
                     ],
                 ],
@@ -191,11 +207,11 @@ class GlueApiExceptionSubscriber implements EventSubscriberInterface
 
     protected function isDeserializationDisabled(Request $request): bool
     {
-        $operation = $request->attributes->get('_api_operation');
+        $operation = $request->attributes->get(RequestAttribute::API_OPERATION);
 
         if ($operation === null) {
-            $resourceClass = $request->attributes->get('_api_resource_class');
-            $operationName = $request->attributes->get('_api_operation_name');
+            $resourceClass = $request->attributes->get(RequestAttribute::API_RESOURCE_CLASS);
+            $operationName = $request->attributes->get(RequestAttribute::API_OPERATION_NAME);
 
             if ($resourceClass === null) {
                 return false;
@@ -231,7 +247,7 @@ class GlueApiExceptionSubscriber implements EventSubscriberInterface
 
         // Convert API Platform deserialization/validation 400 errors to 422
         // for backward compatibility with the old REST API behavior.
-        if ($exception instanceof BadRequestHttpException && $event->getRequest()->attributes->has('_api_resource_class')) {
+        if ($exception instanceof BadRequestHttpException && $event->getRequest()->attributes->has(RequestAttribute::API_RESOURCE_CLASS)) {
             $event->setResponse($this->createValidationErrorResponse($exception));
 
             return;
@@ -241,7 +257,7 @@ class GlueApiExceptionSubscriber implements EventSubscriberInterface
         // tries to assign a non-numeric string to a typed `?int`/`?float` property. Without
         // this branch the kernel renders a 500. Legacy Glue returned 422 / code 901 with
         // "<property> => This value should be of type numeric." — restore that contract.
-        if ($event->getRequest()->attributes->has('_api_resource_class')) {
+        if ($event->getRequest()->attributes->has(RequestAttribute::API_RESOURCE_CLASS)) {
             // Walk the exception chain: a failed nested value-object denormalization surfaces as a
             // TypeError whose previous PropertyAccess exception carries the matchable message.
             $propertyTypeError = null;
@@ -271,12 +287,8 @@ class GlueApiExceptionSubscriber implements EventSubscriberInterface
             }
         }
 
-        // Convert routing-level 405 to 404 for backward compatibility with the old Glue REST API,
-        // which returned 404 for unsupported HTTP methods. This only applies when _api_resource_class
-        // is not set (i.e. Symfony Router rejected the method before API Platform resolved the resource).
-        // 405 errors thrown explicitly from providers/processors (with _api_resource_class set) are kept as-is.
-        if ($exception instanceof MethodNotAllowedHttpException && !$event->getRequest()->attributes->has('_api_resource_class')) {
-            $event->setResponse($this->createHttpExceptionResponse(new NotFoundHttpException(), $event->getRequest()));
+        if ($exception instanceof MethodNotAllowedHttpException && !$event->getRequest()->attributes->has(RequestAttribute::API_RESOURCE_CLASS)) {
+            $event->setResponse($this->createMethodNotAllowedResponse($exception, $event->getRequest()));
 
             return;
         }
@@ -290,8 +302,8 @@ class GlueApiExceptionSubscriber implements EventSubscriberInterface
         // kernel::handle() throws and ApiApplicationProxy's Throwable catch preserves the original Glue
         // error response (e.g. DynamicEntityBackendApi returns code 007 in application/json format).
         if ($exception instanceof HttpExceptionInterface) {
-            $isNonApiPlatformFallback = $event->getRequest()->attributes->get('api-platform-request') === true
-                && !$event->getRequest()->attributes->has('_api_resource_class');
+            $isNonApiPlatformFallback = $event->getRequest()->attributes->get(RequestAttribute::API_PLATFORM_REQUEST) === true
+                && !$event->getRequest()->attributes->has(RequestAttribute::API_RESOURCE_CLASS);
 
             if (!$isNonApiPlatformFallback) {
                 $event->setResponse($this->createHttpExceptionResponse($exception, $event->getRequest()));
@@ -347,7 +359,7 @@ class GlueApiExceptionSubscriber implements EventSubscriberInterface
             return;
         }
 
-        if ($request->attributes->has(static::REQUEST_ATTRIBUTE_API_RESOURCE_CLASS)) {
+        if ($request->attributes->has(RequestAttribute::API_RESOURCE_CLASS)) {
             return;
         }
 
@@ -356,8 +368,8 @@ class GlueApiExceptionSubscriber implements EventSubscriberInterface
 
     protected function isApiPlatformRequest(Request $request): bool
     {
-        return $request->attributes->has(static::REQUEST_ATTRIBUTE_API_RESOURCE_CLASS)
-            || $request->attributes->get(static::REQUEST_ATTRIBUTE_API_PLATFORM_REQUEST) === true;
+        return $request->attributes->has(RequestAttribute::API_RESOURCE_CLASS)
+            || $request->attributes->get(RequestAttribute::API_PLATFORM_REQUEST) === true;
     }
 
     protected function createDebugInternalServerErrorResponse(Throwable $throwable): JsonResponse
@@ -467,14 +479,14 @@ class GlueApiExceptionSubscriber implements EventSubscriberInterface
         // API Platform converts empty strings to null for typed properties (e.g. ?int), which causes Type and
         // comparison constraints to pass. The old REST API validated raw strings, so all errors were returned.
         // Enrich generic 404 responses from API Platform with domain-specific error messages.
-        if ($response->getStatusCode() === Response::HTTP_NOT_FOUND && $request->attributes->has('_api_resource_class')) {
+        if ($response->getStatusCode() === Response::HTTP_NOT_FOUND && $request->attributes->has(RequestAttribute::API_RESOURCE_CLASS)) {
             $this->enrichNotFoundResponse($response, $request);
         }
 
-        if ($response->getStatusCode() === Response::HTTP_UNPROCESSABLE_ENTITY && $request->attributes->has('_api_resource_class')) {
+        if ($response->getStatusCode() === Response::HTTP_UNPROCESSABLE_ENTITY && $request->attributes->has(RequestAttribute::API_RESOURCE_CLASS)) {
             $this->normalizeValidationErrorFormat($response, $request);
 
-            $resourceClass = (string)$request->attributes->get('_api_resource_class', '');
+            $resourceClass = (string)$request->attributes->get(RequestAttribute::API_RESOURCE_CLASS, '');
 
             if ($resourceClass !== '') {
                 $this->augmentValidationErrorsForEmptyStringValues($response, $request, $resourceClass);
@@ -487,15 +499,15 @@ class GlueApiExceptionSubscriber implements EventSubscriberInterface
         // synthesize "This field is missing." for present-but-empty nested objects.
         // Runs outside the 422 guard because a present-but-empty required object (whose leaf
         // constraints allow null) otherwise yields no errors and a 200 — this pass forces 422.
-        if ($request->attributes->has('_api_resource_class') && $request->getMethod() === 'POST') {
-            $resourceClass = (string)$request->attributes->get('_api_resource_class', '');
+        if ($request->attributes->has(RequestAttribute::API_RESOURCE_CLASS) && $request->getMethod() === 'POST') {
+            $resourceClass = (string)$request->attributes->get(RequestAttribute::API_RESOURCE_CLASS, '');
 
             if ($resourceClass !== '') {
                 $this->augmentValidationErrorsForNestedObjects($event, $request, $resourceClass);
             }
         }
 
-        if ($response->getStatusCode() !== Response::HTTP_BAD_REQUEST || !$request->attributes->has('_api_resource_class')) {
+        if ($response->getStatusCode() !== Response::HTTP_BAD_REQUEST || !$request->attributes->has(RequestAttribute::API_RESOURCE_CLASS)) {
             return;
         }
 
@@ -553,7 +565,7 @@ class GlueApiExceptionSubscriber implements EventSubscriberInterface
      */
     protected function fixRelativeLinks(Response $response, Request $request): void
     {
-        if (!$request->attributes->has('_api_resource_class')) {
+        if (!$request->attributes->has(RequestAttribute::API_RESOURCE_CLASS)) {
             return;
         }
 
@@ -648,6 +660,34 @@ class GlueApiExceptionSubscriber implements EventSubscriberInterface
         }
     }
 
+    protected function createMethodNotAllowedResponse(
+        MethodNotAllowedHttpException $exception,
+        Request $request
+    ): JsonResponse {
+        if (!$this->isMethodNotAllowedStatusEnabled) {
+            return $this->createHttpExceptionResponse(new NotFoundHttpException(), $request);
+        }
+
+        return $this->createHttpExceptionResponse(
+            new MethodNotAllowedHttpException($this->extractAllowedMethods($exception)),
+            $request,
+        );
+    }
+
+    /**
+     * @return array<string>
+     */
+    protected function extractAllowedMethods(MethodNotAllowedHttpException $exception): array
+    {
+        $allowHeader = $exception->getHeaders()[static::HEADER_ALLOW] ?? '';
+
+        if (!is_string($allowHeader) || $allowHeader === '') {
+            return [];
+        }
+
+        return array_map('trim', explode(',', $allowHeader));
+    }
+
     protected function createHttpExceptionResponse(HttpExceptionInterface $exception, Request $request): JsonResponse
     {
         $statusCode = $exception->getStatusCode();
@@ -664,7 +704,7 @@ class GlueApiExceptionSubscriber implements EventSubscriberInterface
         // For 404 responses, check if the resource class has a domain-specific
         // "not found" error code and message defined as class constants.
         if ($statusCode === Response::HTTP_NOT_FOUND) {
-            $resourceClass = (string)$request->attributes->get('_api_resource_class', '');
+            $resourceClass = (string)$request->attributes->get(RequestAttribute::API_RESOURCE_CLASS, '');
             $notFoundError = $this->resolveProviderNotFoundError($resourceClass);
 
             if ($notFoundError !== null) {
@@ -672,13 +712,10 @@ class GlueApiExceptionSubscriber implements EventSubscriberInterface
             }
         }
 
-        return $this->createJsonApiResponse(['errors' => [$error]], $statusCode);
+        return $this->createJsonApiResponse(['errors' => [$error]], $statusCode, $exception->getHeaders());
     }
 
     /**
-     * Resolves domain-specific "not found" error from the resource's provider class.
-     * Checks for ERROR_CODE_*_NOT_FOUND and ERROR_MESSAGE_*_NOT_FOUND constants.
-     *
      * @return array{code: string, status: int, detail: string, message: string}|null
      */
     protected function resolveProviderNotFoundError(string $resourceClass): ?array
@@ -732,9 +769,13 @@ class GlueApiExceptionSubscriber implements EventSubscriberInterface
         return null;
     }
 
-    protected function createJsonApiResponse(array $data, int $statusCode): JsonResponse
+    /**
+     * @param array<string, mixed> $data
+     * @param array<string, string> $headers
+     */
+    protected function createJsonApiResponse(array $data, int $statusCode, array $headers = []): JsonResponse
     {
-        $response = new JsonResponse(null, $statusCode);
+        $response = new JsonResponse(null, $statusCode, $headers);
         $response->setEncodingOptions(JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES);
         $response->setData($data);
         $response->headers->set('Content-Type', static::CONTENT_TYPE_JSON_API);
@@ -743,42 +784,36 @@ class GlueApiExceptionSubscriber implements EventSubscriberInterface
     }
 
     /**
-     * @var array<string>
+     * Puts the translator into the locale the request was resolved to, for the whole validation pass.
      *
-     * Fallback synthetic errors for empty-string values sent to numeric properties
-     * when no Type/comparison constraints are declared on the property.
+     * A constraint violation is interpolated into its final text by the validator itself, at the
+     * moment it is created, using whatever locale the translator carries then — so this is the only
+     * point at which the language of a validation message can still be chosen. Every renderer
+     * downstream receives `$violation->getMessage()` already in that language.
+     *
+     * English remains the answer when nothing resolved a locale for the request, which is what
+     * callers sending no `Accept-Language` have always received.
+     *
+     * Scoped to API Platform routes: legacy Glue endpoints resolve their own locale after validation
+     * runs and must keep doing so.
      */
-    protected const array NUMERIC_EMPTY_STRING_ERRORS_FALLBACK = [
-        'This value should be of type numeric.',
-        'This value should be greater than 0.',
-    ];
-
-    protected const string ERROR_CODE_VALIDATION = '901';
-
-    protected const string FIELD_MISSING_MESSAGE = 'This field is missing.';
-
-    protected const string BOOL_SHOULD_BE_TRUE_MESSAGE = 'This value should be true.';
-
-    /**
-     * Forces the translator locale to English for validation messages on API Platform routes.
-     * The old REST API returned English because validation ran before locale was set.
-     * Only applies to API Platform routes to avoid affecting legacy Glue endpoints.
-     */
-    public function onKernelRequestForceEnglishValidation(RequestEvent $event): void
+    public function onKernelRequestSetValidationLocale(RequestEvent $event): void
     {
         if (!$event->isMainRequest()) {
             return;
         }
 
-        // Only force English for API Platform routes — legacy Glue already returns English
-        // because the old GlueApplication sets locale AFTER validation.
-        if (!$event->getRequest()->attributes->has('_api_resource_class')) {
+        if (!$event->getRequest()->attributes->has(RequestAttribute::API_RESOURCE_CLASS)) {
             return;
         }
 
-        if ($this->translator instanceof LocaleAwareInterface) {
-            $this->translator->setLocale(static::ENGLISH_LOCALE);
+        if (!$this->translator instanceof LocaleAwareInterface) {
+            return;
         }
+
+        $this->translator->setLocale(
+            $event->getRequest()->attributes->get(RequestAttribute::LOCALE) ?? static::ENGLISH_LOCALE,
+        );
     }
 
     protected function enrichNotFoundResponse(Response $response, Request $request): void
@@ -791,7 +826,7 @@ class GlueApiExceptionSubscriber implements EventSubscriberInterface
             return;
         }
 
-        $resourceClass = (string)$request->attributes->get('_api_resource_class', '');
+        $resourceClass = (string)$request->attributes->get(RequestAttribute::API_RESOURCE_CLASS, '');
         $notFoundError = $this->resolveProviderNotFoundError($resourceClass);
 
         if ($notFoundError === null) {
@@ -855,7 +890,7 @@ class GlueApiExceptionSubscriber implements EventSubscriberInterface
                 && !str_contains($fieldName, '.')
                 && !in_array($fieldName, $submittedFields, true)
             ) {
-                $message = 'This field is missing.';
+                $message = $this->translateValidationMessage(static::MESSAGE_TEMPLATE_FIELD_MISSING);
             }
 
             $formattedDetail = $fieldName !== null
@@ -955,7 +990,7 @@ class GlueApiExceptionSubscriber implements EventSubscriberInterface
             $messages = $this->buildSyntheticErrorsForEmptyNumericProperty($resourceClass, $fieldName, $groups);
 
             if ($messages === []) {
-                $messages = static::NUMERIC_EMPTY_STRING_ERRORS_FALLBACK;
+                $messages = $this->buildFallbackNumericMessages();
             }
 
             foreach ($messages as $errorMessage) {
@@ -1021,8 +1056,8 @@ class GlueApiExceptionSubscriber implements EventSubscriberInterface
                 continue;
             }
 
-            $typeNumericDetail = sprintf('%s => %s', $fieldName, static::NUMERIC_EMPTY_STRING_ERRORS_FALLBACK[0]);
-            $typeIntegerDetail = sprintf('%s => %s', $fieldName, static::TYPE_INTEGER_ERROR_MESSAGE);
+            $typeNumericDetail = sprintf('%s => %s', $fieldName, $this->buildFallbackNumericMessages()[0]);
+            $typeIntegerDetail = sprintf('%s => %s', $fieldName, $this->translateTypeMessage(static::TYPE_NAME_INTEGER));
 
             $existingDetails = array_column($data['errors'], 'detail');
             $hasTypeNumeric = in_array($typeNumericDetail, $existingDetails, true);
@@ -1244,7 +1279,7 @@ class GlueApiExceptionSubscriber implements EventSubscriberInterface
      */
     protected function getActiveValidationGroups(Request $request): array
     {
-        $operation = $request->attributes->get('_api_operation');
+        $operation = $request->attributes->get(RequestAttribute::API_OPERATION);
 
         if (!$operation instanceof Operation) {
             return [];
@@ -1308,23 +1343,50 @@ class GlueApiExceptionSubscriber implements EventSubscriberInterface
         if ($constraint instanceof Type) {
             $types = is_array($constraint->type) ? implode('|', $constraint->type) : (string)$constraint->type;
 
-            return strtr($constraint->message, ['{{ type }}' => $types]);
+            return $this->translateValidationMessage($constraint->message, ['{{ type }}' => $types]);
         }
 
         if ($constraint instanceof AbstractComparison) {
-            return strtr($constraint->message, [
+            return $this->translateValidationMessage($constraint->message, [
                 '{{ compared_value }}' => $this->formatConstraintValue($constraint->value),
             ]);
         }
 
         if ($constraint instanceof Range) {
-            return strtr($constraint->notInRangeMessage, [
+            return $this->translateValidationMessage($constraint->notInRangeMessage, [
                 '{{ min }}' => $this->formatConstraintValue($constraint->min),
                 '{{ max }}' => $this->formatConstraintValue($constraint->max),
             ]);
         }
 
         return null;
+    }
+
+    /**
+     * @param array<string, string> $parameters
+     */
+    protected function translateValidationMessage(string $messageTemplate, array $parameters = []): string
+    {
+        return $this->translator->trans($messageTemplate, $parameters, static::VALIDATORS_DOMAIN);
+    }
+
+    /**
+     * @return array<string>
+     */
+    protected function buildFallbackNumericMessages(): array
+    {
+        return [
+            $this->translateTypeMessage(static::TYPE_NAME_NUMERIC),
+            $this->translateValidationMessage(
+                static::MESSAGE_TEMPLATE_GREATER_THAN,
+                ['{{ compared_value }}' => static::COMPARED_VALUE_ZERO],
+            ),
+        ];
+    }
+
+    protected function translateTypeMessage(string $typeName): string
+    {
+        return $this->translateValidationMessage(static::MESSAGE_TEMPLATE_TYPE, ['{{ type }}' => $typeName]);
     }
 
     protected function formatConstraintValue(mixed $value): string
@@ -1413,7 +1475,7 @@ class GlueApiExceptionSubscriber implements EventSubscriberInterface
             $fieldName = $property->getName();
 
             if (!array_key_exists($fieldName, $attributes)) {
-                $detail = sprintf('%s => %s', $fieldName, static::FIELD_MISSING_MESSAGE);
+                $detail = sprintf('%s => %s', $fieldName, $this->translateValidationMessage(static::MESSAGE_TEMPLATE_FIELD_MISSING));
 
                 if (!isset($existingDetails[$detail])) {
                     $data['errors'][] = ['detail' => $detail, 'code' => static::ERROR_CODE_VALIDATION, 'status' => Response::HTTP_UNPROCESSABLE_ENTITY];
@@ -1425,7 +1487,7 @@ class GlueApiExceptionSubscriber implements EventSubscriberInterface
             }
 
             if ($attributes[$fieldName] === '' || $attributes[$fieldName] === null) {
-                $detail = sprintf('%s => %s', $fieldName, static::BOOL_SHOULD_BE_TRUE_MESSAGE);
+                $detail = sprintf('%s => %s', $fieldName, $this->translateValidationMessage(static::MESSAGE_TEMPLATE_SHOULD_BE_TRUE));
 
                 if (!isset($existingDetails[$detail])) {
                     $data['errors'][] = ['detail' => $detail, 'code' => static::ERROR_CODE_VALIDATION, 'status' => Response::HTTP_UNPROCESSABLE_ENTITY];
@@ -1512,7 +1574,7 @@ class GlueApiExceptionSubscriber implements EventSubscriberInterface
             default => $expectedType,
         };
 
-        return sprintf('%s => This value should be of type %s.', $propertyPath, $reportedType);
+        return sprintf('%s => %s', $propertyPath, $this->translateTypeMessage($reportedType));
     }
 
     /**
@@ -1532,7 +1594,7 @@ class GlueApiExceptionSubscriber implements EventSubscriberInterface
 
         $propertyName = $matches[1];
 
-        return sprintf('%s => This value should be of type numeric.', $propertyName);
+        return sprintf('%s => %s', $propertyName, $this->translateTypeMessage(static::TYPE_NAME_NUMERIC));
     }
 
     protected function createAccessDeniedResponse(ExceptionEvent $event): JsonResponse
@@ -1542,7 +1604,7 @@ class GlueApiExceptionSubscriber implements EventSubscriberInterface
         $hasValidBearerToken = str_starts_with($authorizationValue, 'Bearer ') && strlen($authorizationValue) > 7;
         $hasAnonymousCustomerHeader = $request->headers->has(static::ANONYMOUS_CUSTOMER_HEADER);
 
-        $resourceClass = (string)$request->attributes->get('_api_resource_class', '');
+        $resourceClass = (string)$request->attributes->get(RequestAttribute::API_RESOURCE_CLASS, '');
         $extraProperties = $this->resolveResourceExtraProperties($resourceClass);
 
         // Resources that accept either bearer or anonymous customer auth (e.g. checkout)
@@ -1552,7 +1614,7 @@ class GlueApiExceptionSubscriber implements EventSubscriberInterface
         // precedence so customer-access protection keeps behaving the way Glue REST did before the
         // API Platform migration. The flag is set in
         // {@see \Spryker\Glue\CustomerAccessRestApi\Api\Storefront\Security\CustomerAccessVoter}.
-        $isCustomerAccessDenied = (bool)$request->attributes->get('_customer_access_denied', false);
+        $isCustomerAccessDenied = (bool)$request->attributes->get(RequestAttribute::CUSTOMER_ACCESS_DENIED, false);
 
         if (!$hasValidBearerToken && !$hasAnonymousCustomerHeader && ($extraProperties['securityAnonymousAuthRequired'] ?? false) && !$isCustomerAccessDenied) {
             return $this->createJsonApiResponse(
@@ -1561,7 +1623,7 @@ class GlueApiExceptionSubscriber implements EventSubscriberInterface
                         [
                             'code' => static::ERROR_CODE_CHECKOUT_AUTH_REQUIRED,
                             'status' => Response::HTTP_BAD_REQUEST,
-                            'detail' => static::ERROR_DETAIL_CHECKOUT_AUTH_REQUIRED,
+                            'detail' => $this->translateValidationMessage(static::ERROR_DETAIL_CHECKOUT_AUTH_REQUIRED),
                         ],
                     ],
                 ],
@@ -1604,7 +1666,7 @@ class GlueApiExceptionSubscriber implements EventSubscriberInterface
                             [
                                 'code' => static::ERROR_CODE_MISSING_ACCESS_TOKEN,
                                 'status' => Response::HTTP_FORBIDDEN,
-                                'detail' => static::ERROR_DETAIL_MISSING_ACCESS_TOKEN,
+                                'detail' => $this->translateValidationMessage(static::ERROR_DETAIL_MISSING_ACCESS_TOKEN),
                             ],
                         ],
                     ],
@@ -1627,8 +1689,8 @@ class GlueApiExceptionSubscriber implements EventSubscriberInterface
                     [
                         'code' => static::ERROR_CODE_UNAUTHORIZED_REQUEST,
                         'status' => Response::HTTP_FORBIDDEN,
-                        'detail' => static::ERROR_DETAIL_UNAUTHORIZED_REQUEST,
-                        'message' => static::ERROR_DETAIL_UNAUTHORIZED_REQUEST,
+                        'detail' => $this->translateValidationMessage(static::ERROR_DETAIL_UNAUTHORIZED_REQUEST),
+                        'message' => $this->translateValidationMessage(static::ERROR_DETAIL_UNAUTHORIZED_REQUEST),
                     ],
                 ],
             ],
@@ -1646,6 +1708,7 @@ class GlueApiExceptionSubscriber implements EventSubscriberInterface
      *
      * @param array{code: string, detail: string, message: string}|array $resourceSecurityError
      * @param array<string, mixed> $extraProperties
+     * @param array<string, mixed> $resourceSecurityError
      */
     protected function createAuthorizationDeniedResponse(
         Request $request,

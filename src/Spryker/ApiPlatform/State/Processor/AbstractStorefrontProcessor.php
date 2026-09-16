@@ -10,10 +10,11 @@ declare(strict_types=1);
 namespace Spryker\ApiPlatform\State\Processor;
 
 use Generated\Shared\Transfer\CustomerTransfer;
+use Spryker\ApiPlatform\Request\RequestAttribute;
 
 abstract class AbstractStorefrontProcessor extends AbstractProcessor
 {
-    public const string ATTRIBUTE_CUSTOMER_TRANSFER = 'CustomerTransfer';
+    public const string ATTRIBUTE_CUSTOMER_TRANSFER = RequestAttribute::CUSTOMER_TRANSFER;
 
     protected function hasCustomer(): bool
     {

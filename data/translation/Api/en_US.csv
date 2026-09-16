@@ -1,0 +1,7 @@
+"This value should be a boolean, or the string ""true"" or ""false"".","This value should be a boolean, or the string ""true"" or ""false""."
+"Resource id is not specified.","Resource id is not specified."
+"Invalid type.","Invalid type."
+"Post data is invalid.","Post data is invalid."
+"Post data missing or invalid.","Post data missing or invalid."
+"Missing access token.","Missing access token."
+"Unauthorized request.","Unauthorized request."

@@ -17,6 +17,7 @@ use ReflectionClass;
 use ReflectionProperty;
 use Spryker\ApiPlatform\Metadata\CodeBucketResolverTrait;
 use Spryker\ApiPlatform\Metadata\ResourceClassIndexProviderInterface;
+use Spryker\ApiPlatform\Request\RequestAttribute;
 use Symfony\Component\HttpFoundation\Request;
 use Symfony\Component\Serializer\Attribute\SerializedName;
 use Symfony\Component\Serializer\Normalizer\NormalizerInterface;
@@ -32,7 +33,7 @@ class JsonApiResolvedRelationshipTransform
 {
     use CodeBucketResolverTrait;
 
-    public const string REQUEST_ATTRIBUTE_RESOLVED_RELATIONSHIPS = '_spryker_resolved_relationships';
+    public const string REQUEST_ATTRIBUTE_RESOLVED_RELATIONSHIPS = RequestAttribute::RESOLVED_RELATIONSHIPS;
 
     /**
      * Per-class reflection metadata cache (perf). Reflection results are static per class,
@@ -144,7 +145,7 @@ class JsonApiResolvedRelationshipTransform
             return false;
         }
 
-        $perItemRelationships = $request->attributes->get('_spryker_per_item_relationships', []);
+        $perItemRelationships = $request->attributes->get(RequestAttribute::PER_ITEM_RELATIONSHIPS, []);
 
         $modified = false;
         $included = [];

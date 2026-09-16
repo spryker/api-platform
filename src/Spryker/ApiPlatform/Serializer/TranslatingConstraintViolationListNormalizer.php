@@ -9,17 +9,28 @@ declare(strict_types=1);
 
 namespace Spryker\ApiPlatform\Serializer;
 
-use Spryker\Client\GlossaryStorage\GlossaryStorageClientInterface;
+use Spryker\ApiPlatform\Request\RequestAttribute;
 use Symfony\Component\HttpFoundation\RequestStack;
 use Symfony\Component\Serializer\Normalizer\NormalizerInterface;
-use Symfony\Component\Validator\ConstraintViolationInterface;
 use Symfony\Component\Validator\ConstraintViolationListInterface;
 use Symfony\Contracts\Translation\TranslatorInterface;
 
 /**
- * Decorates the constraint violation normalizer to translate glossary-keyed
- * error messages into the request locale before returning them to the client.
- * Also adds Glue-compatible `code` and `status` fields to each error entry.
+ * Decorates the constraint violation normalizer to translate constraint messages into the request
+ * locale before returning them to the client, and to add Glue-compatible `code` and `status` fields
+ * to each error entry.
+ *
+ * Translation goes through the Symfony translator's `validators` domain, which is where the
+ * framework ships the constraint messages in every locale it supports — so
+ * `Accept-Language: de` answers "Dieser Wert sollte nicht leer sein." with no catalogue of our own to
+ * maintain. The locale comes from the request attribute the locale subscribers resolve from
+ * `Accept-Language`; a region-qualified locale falls back to its language catalogue (`de_DE` -> `de`)
+ * inside the translator.
+ *
+ * The messages are translated from their TEMPLATE (`This value should not be blank.`), never from
+ * the already-interpolated text, because the template is the catalogue key. Parameters are handed to
+ * the translator rather than interpolated first, so that `%count%`-driven plural forms select the
+ * right alternative in the target language.
  */
 class TranslatingConstraintViolationListNormalizer implements NormalizerInterface
 {
@@ -31,19 +42,16 @@ class TranslatingConstraintViolationListNormalizer implements NormalizerInterfac
 
     protected const int STATUS_UNPROCESSABLE_ENTITY = 422;
 
-    protected const string NOT_BLANK_TEMPLATE = 'This value should not be blank.';
-
+    /**
+     * Symfony's own `validators.<locale>.xlf` catalogues carry this one too, so a missing field
+     * reports in the caller's language like every constraint message around it.
+     */
     protected const string FIELD_MISSING_MESSAGE = 'This field is missing.';
 
     protected const string VALIDATORS_DOMAIN = 'validators';
 
-    protected const string ENGLISH_LOCALE = 'en';
-
-    protected const string PLURAL_COUNT_KEY = '%count%';
-
     public function __construct(
         protected NormalizerInterface $decorated,
-        protected GlossaryStorageClientInterface $glossaryStorageClient,
         protected RequestStack $requestStack,
         protected TranslatorInterface $translator,
     ) {
@@ -79,6 +87,8 @@ class TranslatingConstraintViolationListNormalizer implements NormalizerInterfac
 
     /**
      * @param array<string, mixed> $error
+     *
+     * @return array<string, mixed>
      */
     protected function enrichError(array $error): array
     {
@@ -97,6 +107,9 @@ class TranslatingConstraintViolationListNormalizer implements NormalizerInterfac
         return $error;
     }
 
+    /**
+     * @param array<string, mixed> $error
+     */
     protected function extractFieldName(array $error): ?string
     {
         if (!isset($error['source']['pointer'])) {
@@ -109,6 +122,9 @@ class TranslatingConstraintViolationListNormalizer implements NormalizerInterfac
         return end($segments) ?: null;
     }
 
+    /**
+     * @param array<string, mixed> $context
+     */
     public function supportsNormalization(mixed $data, ?string $format = null, array $context = []): bool
     {
         // @phpstan-ignore arguments.count (symfony/serializer 6.4 keeps $context undeclared on the interface; 7.4 declares it)
@@ -139,14 +155,20 @@ class TranslatingConstraintViolationListNormalizer implements NormalizerInterfac
 
         $submittedFields = $this->resolveSubmittedFields();
 
+        $locale = $this->resolveLocale();
+
         foreach ($object as $index => $violation) {
             if ($violation->getInvalidValue() === null && !in_array($violation->getPropertyPath(), $submittedFields, true)) {
-                $messages[$index] = static::FIELD_MISSING_MESSAGE;
+                $messages[$index] = $this->translate(static::FIELD_MISSING_MESSAGE, [], $locale);
 
                 continue;
             }
 
-            $messages[$index] = $this->translateViolation($violation);
+            $messages[$index] = $this->translate(
+                $violation->getMessageTemplate(),
+                $violation->getParameters(),
+                $locale,
+            );
         }
 
         return $messages;
@@ -176,24 +198,16 @@ class TranslatingConstraintViolationListNormalizer implements NormalizerInterfac
         return array_keys($body['data']['attributes']);
     }
 
-    /**
-     * Interpolates the violation message template with parameters directly,
-     * bypassing the Symfony translator to preserve the original constraint message.
-     * Using the translator would route through the `validators` domain which
-     * rewrites some messages (e.g. "This is not a valid UUID." → "This value is not a valid UUID.").
-     */
-    protected function translateViolation(ConstraintViolationInterface $violation): string
+    protected function resolveLocale(): ?string
     {
-        $template = $violation->getMessageTemplate();
-        $parameters = $violation->getParameters();
-        $plural = $violation->getPlural();
+        return $this->requestStack->getCurrentRequest()?->attributes->get(RequestAttribute::LOCALE);
+    }
 
-        // Resolve plural form for constraints with singular|plural alternatives (e.g. Length)
-        if ($plural !== null && str_contains($template, '|')) {
-            $alternatives = explode('|', $template);
-            $template = ((int)$plural === 1) ? $alternatives[0] : ($alternatives[1] ?? $alternatives[0]);
-        }
-
-        return strtr($template, $parameters);
+    /**
+     * @param array<string, mixed> $parameters
+     */
+    protected function translate(string $messageTemplate, array $parameters, ?string $locale): string
+    {
+        return $this->translator->trans($messageTemplate, $parameters, static::VALIDATORS_DOMAIN, $locale);
     }
 }

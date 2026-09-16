@@ -19,6 +19,7 @@ use Symfony\Component\HttpKernel\HttpKernelInterface;
 use Symfony\Component\Routing\Exception\ResourceNotFoundException;
 use Symfony\Component\Routing\RequestContext;
 use Symfony\Component\Routing\RouterInterface;
+use Symfony\Component\Translation\IdentityTranslator;
 
 /**
  * Auto-generated group annotations
@@ -66,6 +67,7 @@ class JsonApiRequestValidatorSubscriberTest extends Unit
         return new JsonApiRequestValidatorSubscriber(
             $router,
             $this->createMock(ResourceMetadataCollectionFactoryInterface::class),
+            new IdentityTranslator(),
         );
     }
 

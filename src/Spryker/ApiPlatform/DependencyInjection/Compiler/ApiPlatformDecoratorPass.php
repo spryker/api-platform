@@ -13,6 +13,8 @@ use Spryker\ApiPlatform\Metadata\CodeBucketResourceClassResolver;
 use Spryker\ApiPlatform\Metadata\CodeBucketResourceNameCollectionFactory;
 use Spryker\ApiPlatform\OpenApi\Decorator\OpenApiDecorator;
 use Spryker\ApiPlatform\State\OptionalFieldFilteringValidateProvider;
+use Spryker\ApiPlatform\State\StrictBooleanCanonicalizingDeserializeProvider;
+use Spryker\ApiPlatform\Validation\ValidationConstraintReader;
 use Symfony\Component\DependencyInjection\Argument\TaggedIteratorArgument;
 use Symfony\Component\DependencyInjection\Compiler\CompilerPassInterface;
 use Symfony\Component\DependencyInjection\ContainerBuilder;
@@ -30,6 +32,8 @@ use Symfony\Component\DependencyInjection\Reference;
  * - CodeBucketResourceClassResolver: Adds CodeBucket support to resource class resolution
  * - CodeBucketResourceNameCollectionFactory: Adds CodeBucket support to resource name collection
  * - OpenApiDecorator: Applies format-specific transformations to OpenAPI documentation
+ * - OptionalFieldFilteringValidateProvider: Drops violations for Optional fields absent from the body
+ * - StrictBooleanCanonicalizingDeserializeProvider: Re-applies the boolean a client spelled as a string
  */
 class ApiPlatformDecoratorPass implements CompilerPassInterface
 {
@@ -40,6 +44,8 @@ class ApiPlatformDecoratorPass implements CompilerPassInterface
     protected const string SERVICE_ID_OPENAPI_FACTORY = 'api_platform.openapi.factory';
 
     protected const string SERVICE_ID_VALIDATE_STATE_PROVIDER = 'api_platform.state_provider.validate';
+
+    protected const string SERVICE_ID_DESERIALIZE_STATE_PROVIDER = 'api_platform.state_provider.deserialize';
 
     protected const string TAG_FORMAT_TRANSFORMER = 'spryker_api_platform.format_transformer';
 
@@ -77,6 +83,18 @@ class ApiPlatformDecoratorPass implements CompilerPassInterface
             $container->register(OptionalFieldFilteringValidateProvider::class, OptionalFieldFilteringValidateProvider::class)
                 ->setDecoratedService(static::SERVICE_ID_VALIDATE_STATE_PROVIDER)
                 ->setArguments([new Reference(static::REFERENCE_INNER)]);
+        }
+
+        if ($container->has(static::SERVICE_ID_DESERIALIZE_STATE_PROVIDER)) {
+            $container->register(
+                StrictBooleanCanonicalizingDeserializeProvider::class,
+                StrictBooleanCanonicalizingDeserializeProvider::class,
+            )
+                ->setDecoratedService(static::SERVICE_ID_DESERIALIZE_STATE_PROVIDER)
+                ->setArguments([
+                    new Reference(static::REFERENCE_INNER),
+                    new Reference(ValidationConstraintReader::class),
+                ]);
         }
     }
 }

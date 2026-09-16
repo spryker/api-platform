@@ -14,6 +14,7 @@ use ReflectionException;
 use ReflectionNamedType;
 use ReflectionProperty;
 use Spryker\ApiPlatform\Exception\GlueApiException;
+use Spryker\ApiPlatform\Request\RequestAttribute;
 use Symfony\Component\EventDispatcher\EventSubscriberInterface;
 use Symfony\Component\HttpFoundation\Request;
 use Symfony\Component\HttpFoundation\Response;
@@ -22,6 +23,7 @@ use Symfony\Component\HttpKernel\KernelEvents;
 use Symfony\Component\Routing\Exception\MethodNotAllowedException;
 use Symfony\Component\Routing\Exception\ResourceNotFoundException;
 use Symfony\Component\Routing\RouterInterface;
+use Symfony\Contracts\Translation\TranslatorInterface;
 use Throwable;
 
 /**
@@ -32,6 +34,8 @@ class JsonApiRequestValidatorSubscriber implements EventSubscriberInterface
 {
     protected const string EMPTY_SEGMENT_PLACEHOLDER = '__empty__';
 
+    protected const string VALIDATORS_DOMAIN = 'validators';
+
     protected const string ERROR_DETAIL_INVALID_TYPE = 'Invalid type.';
 
     protected const string ERROR_DETAIL_POST_DATA_INVALID = 'Post data is invalid.';
@@ -41,7 +45,26 @@ class JsonApiRequestValidatorSubscriber implements EventSubscriberInterface
     public function __construct(
         protected RouterInterface $router,
         protected ResourceMetadataCollectionFactoryInterface $resourceMetadataCollectionFactory,
+        protected TranslatorInterface $translator,
     ) {
+    }
+
+    /**
+     * These are protocol errors — a malformed document, a missing resource id — raised on
+     * `kernel.request`, before any constraint runs. They share the `validators` domain with the
+     * constraint messages so a client reads one language across the whole error response.
+     *
+     * The locale is taken from the request rather than the translator, because this subscriber runs
+     * ahead of the one that puts the translator into the request's locale.
+     */
+    protected function translate(Request $request, string $message): string
+    {
+        return $this->translator->trans(
+            $message,
+            [],
+            static::VALIDATORS_DOMAIN,
+            $request->attributes->get(RequestAttribute::LOCALE),
+        );
     }
 
     /**
@@ -80,7 +103,7 @@ class JsonApiRequestValidatorSubscriber implements EventSubscriberInterface
                 throw new GlueApiException(
                     Response::HTTP_BAD_REQUEST,
                     '',
-                    static::ERROR_DETAIL_RESOURCE_ID_NOT_SPECIFIED,
+                    $this->translate($request, static::ERROR_DETAIL_RESOURCE_ID_NOT_SPECIFIED),
                 );
             }
         }
@@ -107,7 +130,7 @@ class JsonApiRequestValidatorSubscriber implements EventSubscriberInterface
                 throw new GlueApiException(
                     Response::HTTP_BAD_REQUEST,
                     '',
-                    static::ERROR_DETAIL_RESOURCE_ID_NOT_SPECIFIED,
+                    $this->translate($request, static::ERROR_DETAIL_RESOURCE_ID_NOT_SPECIFIED),
                 );
             }
 
@@ -147,7 +170,7 @@ class JsonApiRequestValidatorSubscriber implements EventSubscriberInterface
         $request = $event->getRequest();
 
         // Only validate on API Platform routes
-        if ($request->attributes->get('_api_operation') === null && $request->attributes->get('_api_resource_class') === null) {
+        if ($request->attributes->get(RequestAttribute::API_OPERATION) === null && $request->attributes->get(RequestAttribute::API_RESOURCE_CLASS) === null) {
             return;
         }
 
@@ -170,7 +193,7 @@ class JsonApiRequestValidatorSubscriber implements EventSubscriberInterface
             throw new GlueApiException(
                 Response::HTTP_BAD_REQUEST,
                 '',
-                static::ERROR_DETAIL_POST_DATA_INVALID,
+                $this->translate($request, static::ERROR_DETAIL_POST_DATA_INVALID),
             );
         }
 
@@ -183,7 +206,7 @@ class JsonApiRequestValidatorSubscriber implements EventSubscriberInterface
             throw new GlueApiException(
                 Response::HTTP_BAD_REQUEST,
                 '',
-                static::ERROR_DETAIL_POST_DATA_INVALID,
+                $this->translate($request, static::ERROR_DETAIL_POST_DATA_INVALID),
             );
         }
 
@@ -193,7 +216,7 @@ class JsonApiRequestValidatorSubscriber implements EventSubscriberInterface
             throw new GlueApiException(
                 Response::HTTP_BAD_REQUEST,
                 '',
-                static::ERROR_DETAIL_INVALID_TYPE,
+                $this->translate($request, static::ERROR_DETAIL_INVALID_TYPE),
             );
         }
 
@@ -225,7 +248,7 @@ class JsonApiRequestValidatorSubscriber implements EventSubscriberInterface
      */
     protected function sanitizeRequestBody(Request $request, array $body): void
     {
-        $resourceClass = $request->attributes->get('_api_resource_class');
+        $resourceClass = $request->attributes->get(RequestAttribute::API_RESOURCE_CLASS);
 
         if ($resourceClass === null || !class_exists($resourceClass) || !isset($body['data']['attributes'])) {
             return;
@@ -293,7 +316,7 @@ class JsonApiRequestValidatorSubscriber implements EventSubscriberInterface
             return false;
         }
 
-        if (!isset($match['_api_resource_class'])) {
+        if (!isset($match[RequestAttribute::API_RESOURCE_CLASS])) {
             return false;
         }
 
@@ -308,13 +331,13 @@ class JsonApiRequestValidatorSubscriber implements EventSubscriberInterface
 
         // Resolve and set the API Platform operation so the provider/processor
         // receives the correct operation type (e.g., GetCollection vs Get).
-        $resourceClass = $match['_api_resource_class'];
-        $operationName = $match['_api_operation_name'] ?? null;
+        $resourceClass = $match[RequestAttribute::API_RESOURCE_CLASS];
+        $operationName = $match[RequestAttribute::API_OPERATION_NAME] ?? null;
 
         if ($operationName !== null) {
             try {
                 $metadata = $this->resourceMetadataCollectionFactory->create($resourceClass);
-                $request->attributes->set('_api_operation', $metadata->getOperation($operationName));
+                $request->attributes->set(RequestAttribute::API_OPERATION, $metadata->getOperation($operationName));
             } catch (Throwable) {
             }
         }
@@ -348,7 +371,7 @@ class JsonApiRequestValidatorSubscriber implements EventSubscriberInterface
             return false;
         }
 
-        if (!isset($match['_api_resource_class'])) {
+        if (!isset($match[RequestAttribute::API_RESOURCE_CLASS])) {
             return false;
         }
 
@@ -474,7 +497,7 @@ class JsonApiRequestValidatorSubscriber implements EventSubscriberInterface
      */
     protected function resolveAcceptedTypes(Request $request): array
     {
-        $operation = $request->attributes->get('_api_operation');
+        $operation = $request->attributes->get(RequestAttribute::API_OPERATION);
 
         if (is_object($operation) && method_exists($operation, 'getShortName')) {
             $shortName = $operation->getShortName();
@@ -485,8 +508,8 @@ class JsonApiRequestValidatorSubscriber implements EventSubscriberInterface
         }
 
         // Fallback: resolve shortName from the resource metadata collection
-        $resourceClass = $request->attributes->get('_api_resource_class');
-        $operationName = $request->attributes->get('_api_operation_name');
+        $resourceClass = $request->attributes->get(RequestAttribute::API_RESOURCE_CLASS);
+        $operationName = $request->attributes->get(RequestAttribute::API_OPERATION_NAME);
 
         if ($resourceClass === null) {
             return [];
@@ -533,7 +556,7 @@ class JsonApiRequestValidatorSubscriber implements EventSubscriberInterface
             return false;
         }
 
-        if (!isset($match['_api_resource_class'])) {
+        if (!isset($match[RequestAttribute::API_RESOURCE_CLASS])) {
             return false;
         }
 
@@ -587,7 +610,7 @@ class JsonApiRequestValidatorSubscriber implements EventSubscriberInterface
 
             $this->router->getContext()->setMethod($originalMethod);
 
-            return isset($match['_api_resource_class']);
+            return isset($match[RequestAttribute::API_RESOURCE_CLASS]);
         }
 
         $this->router->getContext()->setMethod($originalMethod);
@@ -679,7 +702,7 @@ class JsonApiRequestValidatorSubscriber implements EventSubscriberInterface
                 return false;
             }
 
-            if (!isset($match['_api_resource_class'])) {
+            if (!isset($match[RequestAttribute::API_RESOURCE_CLASS])) {
                 // Route matched a legacy Glue endpoint, not API Platform.
                 // Restore the empty segment so GlueRouter parses it correctly.
                 $this->restoreEmptyPathSegment($request, $segments, $i);

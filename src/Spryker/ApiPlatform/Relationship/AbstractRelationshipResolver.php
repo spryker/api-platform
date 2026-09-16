@@ -12,16 +12,11 @@ namespace Spryker\ApiPlatform\Relationship;
 use Generated\Shared\Transfer\CustomerTransfer;
 use Generated\Shared\Transfer\LocaleTransfer;
 use Generated\Shared\Transfer\StoreTransfer;
+use Spryker\ApiPlatform\Request\RequestAttribute;
 use Symfony\Component\HttpFoundation\Request;
 
 abstract class AbstractRelationshipResolver implements RelationshipResolverInterface
 {
-    protected const string ATTRIBUTE_LOCALE_TRANSFER = 'LocaleTransfer';
-
-    protected const string ATTRIBUTE_STORE_TRANSFER = 'StoreTransfer';
-
-    protected const string ATTRIBUTE_CUSTOMER_TRANSFER = 'CustomerTransfer';
-
     /**
      * @var array<object>
      */
@@ -74,33 +69,33 @@ abstract class AbstractRelationshipResolver implements RelationshipResolverInter
     protected function hasLocale(): bool
     {
         return $this->hasRequest()
-            && $this->getRequest()->attributes->get(static::ATTRIBUTE_LOCALE_TRANSFER) !== null;
+            && $this->getRequest()->attributes->get(RequestAttribute::LOCALE_TRANSFER) !== null;
     }
 
     protected function getLocale(): LocaleTransfer
     {
-        return $this->getRequest()->attributes->get(static::ATTRIBUTE_LOCALE_TRANSFER);
+        return $this->getRequest()->attributes->get(RequestAttribute::LOCALE_TRANSFER);
     }
 
     protected function hasStore(): bool
     {
         return $this->hasRequest()
-            && $this->getRequest()->attributes->get(static::ATTRIBUTE_STORE_TRANSFER) !== null;
+            && $this->getRequest()->attributes->get(RequestAttribute::STORE_TRANSFER) !== null;
     }
 
     protected function getStore(): StoreTransfer
     {
-        return $this->getRequest()->attributes->get(static::ATTRIBUTE_STORE_TRANSFER);
+        return $this->getRequest()->attributes->get(RequestAttribute::STORE_TRANSFER);
     }
 
     protected function hasCustomer(): bool
     {
-        return $this->getRequest()->attributes->get(static::ATTRIBUTE_CUSTOMER_TRANSFER) !== null;
+        return $this->getRequest()->attributes->get(RequestAttribute::CUSTOMER_TRANSFER) !== null;
     }
 
     protected function getCustomer(): CustomerTransfer
     {
-        return $this->getRequest()->attributes->get(static::ATTRIBUTE_CUSTOMER_TRANSFER);
+        return $this->getRequest()->attributes->get(RequestAttribute::CUSTOMER_TRANSFER);
     }
 
     protected function getCustomerReference(): string

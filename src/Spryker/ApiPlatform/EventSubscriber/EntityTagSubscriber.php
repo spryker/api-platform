@@ -13,6 +13,7 @@ use ApiPlatform\Metadata\Operation;
 use ApiPlatform\Metadata\Resource\Factory\ResourceMetadataCollectionFactoryInterface;
 use JsonException;
 use Spryker\ApiPlatform\Exception\GlueApiException;
+use Spryker\ApiPlatform\Request\RequestAttribute;
 use Spryker\Client\EntityTag\EntityTagClientInterface;
 use Symfony\Component\EventDispatcher\EventSubscriberInterface;
 use Symfony\Component\HttpFoundation\Request;
@@ -41,14 +42,6 @@ class EntityTagSubscriber implements EventSubscriberInterface
      * Matches {@see ETagResponseSubscriber::REQUEST_ATTRIBUTE_ETAG} so the response header is emitted automatically.
      */
     protected const string REQUEST_ATTRIBUTE_ETAG = '_etag';
-
-    protected const string REQUEST_ATTRIBUTE_API_OPERATION = '_api_operation';
-
-    protected const string REQUEST_ATTRIBUTE_API_OPERATION_NAME = '_api_operation_name';
-
-    protected const string REQUEST_ATTRIBUTE_API_RESOURCE_CLASS = '_api_resource_class';
-
-    protected const string REQUEST_ATTRIBUTE_API_URI_VARIABLES = '_api_uri_variables';
 
     protected const string REQUEST_ATTRIBUTE_ROUTE_PARAMS = '_route_params';
 
@@ -212,7 +205,7 @@ class EntityTagSubscriber implements EventSubscriberInterface
 
     protected function getOperation(Request $request): ?Operation
     {
-        $operation = $request->attributes->get(static::REQUEST_ATTRIBUTE_API_OPERATION);
+        $operation = $request->attributes->get(RequestAttribute::API_OPERATION);
 
         if ($operation instanceof Operation) {
             return $operation;
@@ -221,8 +214,8 @@ class EntityTagSubscriber implements EventSubscriberInterface
         // `_api_operation` may not be populated yet on the early `kernel.request` priority
         // we run at — fall back to resolving it from the metadata factory using the route
         // attributes set by Symfony Router (`_api_resource_class` + `_api_operation_name`).
-        $resourceClass = $request->attributes->get(static::REQUEST_ATTRIBUTE_API_RESOURCE_CLASS);
-        $operationName = $request->attributes->get(static::REQUEST_ATTRIBUTE_API_OPERATION_NAME);
+        $resourceClass = $request->attributes->get(RequestAttribute::API_RESOURCE_CLASS);
+        $operationName = $request->attributes->get(RequestAttribute::API_OPERATION_NAME);
 
         if (!is_string($resourceClass) || !is_string($operationName)) {
             return null;
@@ -240,7 +233,7 @@ class EntityTagSubscriber implements EventSubscriberInterface
         // `_api_uri_variables` is set by an API Platform listener that runs later in the kernel.request
         // pipeline — it is unavailable at our priority. Fall back to `_route_params`, which Symfony Router
         // populates at priority 32 (before us) with the same key/value pairs from the matched route.
-        foreach ([static::REQUEST_ATTRIBUTE_API_URI_VARIABLES, static::REQUEST_ATTRIBUTE_ROUTE_PARAMS] as $attribute) {
+        foreach ([RequestAttribute::API_URI_VARIABLES, static::REQUEST_ATTRIBUTE_ROUTE_PARAMS] as $attribute) {
             $variables = $request->attributes->get($attribute);
 
             if (!is_array($variables) || $variables === []) {

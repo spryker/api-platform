@@ -11,6 +11,7 @@ namespace Spryker\ApiPlatform;
 
 use Spryker\ApiPlatform\DependencyInjection\Compiler\ApiClassAutoDiscoveryPass;
 use Spryker\ApiPlatform\DependencyInjection\Compiler\ApiPlatformDecoratorPass;
+use Spryker\ApiPlatform\DependencyInjection\Compiler\ApiTranslationResourcePass;
 use Spryker\ApiPlatform\DependencyInjection\Compiler\ApiTypeServiceFilterPass;
 use Spryker\ApiPlatform\DependencyInjection\Compiler\JsonEncoderConfigurationPass;
 use Spryker\ApiPlatform\DependencyInjection\Compiler\RelationshipConfigurationPass;
@@ -91,6 +92,12 @@ class SprykerApiPlatformBundle extends Bundle
             new ApiTypeServiceFilterPass(),
             PassConfig::TYPE_BEFORE_OPTIMIZATION,
             30,
+        );
+
+        $container->addCompilerPass(
+            new ApiTranslationResourcePass(),
+            PassConfig::TYPE_BEFORE_OPTIMIZATION,
+            20,
         );
     }
 

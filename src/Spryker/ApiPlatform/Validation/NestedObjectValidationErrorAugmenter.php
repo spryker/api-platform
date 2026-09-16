@@ -15,6 +15,7 @@ use Symfony\Component\HttpFoundation\Response;
 use Symfony\Component\Validator\Constraints\Email;
 use Symfony\Component\Validator\Constraints\NotBlank;
 use Symfony\Component\Validator\Constraints\NotNull;
+use Symfony\Contracts\Translation\TranslatorInterface;
 
 /**
  * Augments validation for present-but-empty nested value objects (generated `objectName`
@@ -43,9 +44,13 @@ class NestedObjectValidationErrorAugmenter
 {
     protected const string ERROR_CODE_VALIDATION = '901';
 
-    protected const string FIELD_MISSING_MESSAGE = 'This field is missing.';
+    protected const string MESSAGE_TEMPLATE_FIELD_MISSING = 'This field is missing.';
 
-    protected const string TYPE_BOOLEAN_ERROR_MESSAGE = 'This value should be of type boolean.';
+    protected const string MESSAGE_TEMPLATE_TYPE = 'This value should be of type {{ type }}.';
+
+    protected const string TYPE_NAME_BOOLEAN = 'boolean';
+
+    protected const string VALIDATORS_DOMAIN = 'validators';
 
     /**
      * ApiType-agnostic on purpose: the same prefix
@@ -61,8 +66,10 @@ class NestedObjectValidationErrorAugmenter
      */
     protected const string REGEX_NESTED_LEAF_DETAIL_PREFIX_TEMPLATE = '/^%s\.%s => /';
 
-    public function __construct(protected ValidationConstraintReader $constraintReader)
-    {
+    public function __construct(
+        protected ValidationConstraintReader $constraintReader,
+        protected TranslatorInterface $translator,
+    ) {
     }
 
     /**
@@ -163,7 +170,7 @@ class NestedObjectValidationErrorAugmenter
                 continue;
             }
 
-            $detail = sprintf('%s.%s => %s', $propertyName, $leaf, static::TYPE_BOOLEAN_ERROR_MESSAGE);
+            $detail = sprintf('%s.%s => %s', $propertyName, $leaf, $this->translateValidationMessage(static::MESSAGE_TEMPLATE_TYPE, ['{{ type }}' => static::TYPE_NAME_BOOLEAN]));
 
             if (isset($existingDetails[$detail])) {
                 continue;
@@ -240,7 +247,7 @@ class NestedObjectValidationErrorAugmenter
                 continue;
             }
 
-            $missingDetail = sprintf('%s.%s => %s', $propertyName, $leaf, static::FIELD_MISSING_MESSAGE);
+            $missingDetail = sprintf('%s.%s => %s', $propertyName, $leaf, $this->translateValidationMessage(static::MESSAGE_TEMPLATE_FIELD_MISSING));
 
             if (isset($existingDetails[$missingDetail])) {
                 continue;
@@ -351,5 +358,19 @@ class NestedObjectValidationErrorAugmenter
         }
 
         return $leaves;
+    }
+
+    /**
+     * Synthesized here rather than produced by the validator, so nothing has translated them yet —
+     * these are constraint message TEMPLATES, and the `validators` domain is where Symfony ships
+     * them in every locale. The translator already carries the request locale
+     * ({@see \Spryker\ApiPlatform\EventSubscriber\GlueApiExceptionSubscriber::onKernelRequestSetValidationLocale()}),
+     * which is also what keeps a synthesized message comparable with the real violations beside it.
+     *
+     * @param array<string, string> $parameters
+     */
+    protected function translateValidationMessage(string $messageTemplate, array $parameters = []): string
+    {
+        return $this->translator->trans($messageTemplate, $parameters, static::VALIDATORS_DOMAIN);
     }
 }

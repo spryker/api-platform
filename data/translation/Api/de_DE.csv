@@ -1,0 +1,7 @@
+"This value should be a boolean, or the string ""true"" or ""false"".","Dieser Wert muss ein boolescher Wert sein oder die Zeichenkette ""true"" oder ""false""."
+"Resource id is not specified.","Die Ressourcen-ID ist nicht angegeben."
+"Invalid type.","Ungültiger Typ."
+"Post data is invalid.","Die gesendeten Daten sind ungültig."
+"Post data missing or invalid.","Die gesendeten Daten fehlen oder sind ungültig."
+"Missing access token.","Zugriffstoken fehlt."
+"Unauthorized request.","Nicht autorisierte Anfrage."

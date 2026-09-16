@@ -183,9 +183,15 @@ abstract class AbstractProvider implements ProviderInterface
     protected function calculatePagination(int $offset, int $limit, int $nbResults): array
     {
         $maxPage = $limit > 0 ? (int)ceil($nbResults / $limit) : static::DEFAULT_PAGE;
-        $currentPage = $limit > 0
-            ? (int)floor($offset / $limit) + static::DEFAULT_PAGE
-            : static::DEFAULT_PAGE;
+
+        $requestedPage = static::DEFAULT_PAGE;
+
+        if ($limit > 0) {
+            $requestedPage = (int)floor($offset / $limit) + static::DEFAULT_PAGE;
+        }
+
+        $lastPage = max($maxPage, static::DEFAULT_PAGE);
+        $currentPage = min($requestedPage, $lastPage);
 
         return [
             static::PAGINATION_KEY_NUM_FOUND => $nbResults,

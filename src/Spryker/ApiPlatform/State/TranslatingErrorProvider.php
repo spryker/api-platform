@@ -12,6 +12,7 @@ namespace Spryker\ApiPlatform\State;
 use ApiPlatform\Metadata\Operation;
 use ApiPlatform\State\ApiResource\Error;
 use ApiPlatform\State\ProviderInterface;
+use Spryker\ApiPlatform\Request\RequestAttribute;
 use Spryker\Client\GlossaryStorage\GlossaryStorageClientInterface;
 use Symfony\Component\HttpFoundation\RequestStack;
 
@@ -24,8 +25,6 @@ use Symfony\Component\HttpFoundation\RequestStack;
  */
 class TranslatingErrorProvider implements ProviderInterface
 {
-    protected const string LOCALE_ATTRIBUTE = '_locale';
-
     protected const string MESSAGE_SEPARATOR = '; ';
 
     /**
@@ -82,7 +81,7 @@ class TranslatingErrorProvider implements ProviderInterface
             return null;
         }
 
-        return $request->attributes->get(static::LOCALE_ATTRIBUTE);
+        return $request->attributes->get(RequestAttribute::LOCALE);
     }
 
     protected function translateMessage(string $message, string $locale): string

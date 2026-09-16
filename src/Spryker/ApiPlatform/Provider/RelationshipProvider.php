@@ -14,6 +14,7 @@ use ApiPlatform\Metadata\Operation;
 use ApiPlatform\State\ProviderInterface;
 use Psr\Container\ContainerInterface;
 use Spryker\ApiPlatform\Relationship\ApiPlatformRelationshipResolverInterface;
+use Spryker\ApiPlatform\Request\RequestAttribute;
 use Symfony\Component\HttpFoundation\Request;
 use Throwable;
 
@@ -22,8 +23,6 @@ use Throwable;
  */
 class RelationshipProvider implements ProviderInterface
 {
-    protected const string REQUEST_ATTRIBUTE_RESOLVED_RELATIONSHIPS = '_spryker_resolved_relationships';
-
     /**
      * @param \ApiPlatform\State\ProviderInterface<object> $decorated
      */
@@ -50,7 +49,7 @@ class RelationshipProvider implements ProviderInterface
 
         $request = $context['request'] ?? null;
 
-        $requestedIncludes = $request instanceof Request ? $request->attributes->get('_api_included', []) : [];
+        $requestedIncludes = $request instanceof Request ? $request->attributes->get(RequestAttribute::API_INCLUDED, []) : [];
 
         if (!$requestedIncludes) {
             $requestedIncludes = $this->relationshipResolver->parseIncludeParameter($context);
@@ -74,9 +73,9 @@ class RelationshipProvider implements ProviderInterface
         // relationship linkage and included resources appear correctly in the
         // JSON:API response regardless of the property's readable flag.
         if ($relationships) {
-            $existing = $request?->attributes->get(static::REQUEST_ATTRIBUTE_RESOLVED_RELATIONSHIPS, []) ?? [];
+            $existing = $request?->attributes->get(RequestAttribute::RESOLVED_RELATIONSHIPS, []) ?? [];
             $request?->attributes->set(
-                static::REQUEST_ATTRIBUTE_RESOLVED_RELATIONSHIPS,
+                RequestAttribute::RESOLVED_RELATIONSHIPS,
                 array_merge($existing, $relationships),
             );
         }
@@ -86,9 +85,9 @@ class RelationshipProvider implements ProviderInterface
 
         if ($perItemData) {
             $perItemByPath = $this->mapPerItemDataToPaths($relationships, $perItemData);
-            $existing = $request?->attributes->get('_spryker_per_item_relationships', []) ?? [];
+            $existing = $request?->attributes->get(RequestAttribute::PER_ITEM_RELATIONSHIPS, []) ?? [];
             $request?->attributes->set(
-                '_spryker_per_item_relationships',
+                RequestAttribute::PER_ITEM_RELATIONSHIPS,
                 array_merge($existing, $perItemByPath),
             );
         }

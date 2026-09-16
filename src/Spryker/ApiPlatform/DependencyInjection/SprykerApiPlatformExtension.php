@@ -70,6 +70,10 @@ class SprykerApiPlatformExtension extends Extension implements PrependExtensionI
         $container->setParameter('spryker_api_platform.api_types', $config['api_types']);
         $container->setParameter('spryker_api_platform.excluded_path_fragments', $config['excluded_path_fragments']);
         $container->setParameter('spryker_api_platform.debug', $config['debug']);
+        $container->setParameter(
+            'spryker_api_platform.is_method_not_allowed_status_enabled',
+            $config['is_method_not_allowed_status_enabled'],
+        );
 
         // Registers the #[ApiType] attribute for autoconfiguration. Any service class annotated with
         // #[ApiType(['...'])] will automatically receive a `spryker_api_platform.api_type` tag

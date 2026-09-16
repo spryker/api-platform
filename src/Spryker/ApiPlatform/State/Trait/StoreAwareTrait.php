@@ -11,6 +11,7 @@ namespace Spryker\ApiPlatform\State\Trait;
 
 use Generated\Shared\Transfer\StoreTransfer;
 use Spryker\ApiPlatform\Exception\ApiPlatformContextException;
+use Spryker\ApiPlatform\Request\RequestAttribute;
 use Symfony\Component\HttpFoundation\Request;
 
 /**
@@ -29,8 +30,6 @@ use Symfony\Component\HttpFoundation\Request;
  */
 trait StoreAwareTrait
 {
-    protected const string ATTRIBUTE_STORE_TRANSFER = 'StoreTransfer';
-
     abstract protected function hasRequest(): bool;
 
     abstract protected function getRequest(): Request;
@@ -38,7 +37,7 @@ trait StoreAwareTrait
     protected function hasStore(): bool
     {
         return $this->hasRequest()
-            && $this->getRequest()->attributes->get(static::ATTRIBUTE_STORE_TRANSFER) !== null;
+            && $this->getRequest()->attributes->get(RequestAttribute::STORE_TRANSFER) !== null;
     }
 
     /**
@@ -55,7 +54,7 @@ trait StoreAwareTrait
             ));
         }
 
-        return $this->getRequest()->attributes->get(static::ATTRIBUTE_STORE_TRANSFER);
+        return $this->getRequest()->attributes->get(RequestAttribute::STORE_TRANSFER);
     }
 
     /**

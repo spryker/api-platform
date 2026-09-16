@@ -9,6 +9,7 @@ declare(strict_types=1);
 
 namespace Spryker\ApiPlatform\ResponseTransform;
 
+use Spryker\ApiPlatform\Request\RequestAttribute;
 use Symfony\Component\HttpFoundation\Request;
 
 /**
@@ -20,7 +21,7 @@ use Symfony\Component\HttpFoundation\Request;
  */
 class PaginationLinksTransform
 {
-    public const string REQUEST_ATTRIBUTE_PAGINATION = '_spryker_api_platform_pagination';
+    public const string REQUEST_ATTRIBUTE_PAGINATION = RequestAttribute::PAGINATION;
 
     protected const string CONTENT_TYPE_JSON_API = 'application/vnd.api+json';
 

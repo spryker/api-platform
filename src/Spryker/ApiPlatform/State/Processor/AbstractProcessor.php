@@ -15,6 +15,7 @@ use ApiPlatform\Metadata\Patch;
 use ApiPlatform\Metadata\Post;
 use ApiPlatform\State\ProcessorInterface;
 use BadMethodCallException;
+use Spryker\ApiPlatform\Request\RequestAttribute;
 use Spryker\ApiPlatform\State\Trait\LocaleAwareTrait;
 use Spryker\ApiPlatform\State\Trait\StoreAwareTrait;
 use Spryker\ApiPlatform\State\Trait\UriVariableAwareTrait;
@@ -28,8 +29,6 @@ abstract class AbstractProcessor implements ProcessorInterface
     use LocaleAwareTrait;
     use StoreAwareTrait;
     use UriVariableAwareTrait;
-
-    protected const string ATTRIBUTE_RESOLVED_RELATIONSHIPS = '_spryker_resolved_relationships';
 
     protected Operation $operation;
 
@@ -129,8 +128,8 @@ abstract class AbstractProcessor implements ProcessorInterface
             return;
         }
 
-        $existing = $request->attributes->get(static::ATTRIBUTE_RESOLVED_RELATIONSHIPS, []);
+        $existing = $request->attributes->get(RequestAttribute::RESOLVED_RELATIONSHIPS, []);
         $existing[$relationshipName] = $resources;
-        $request->attributes->set(static::ATTRIBUTE_RESOLVED_RELATIONSHIPS, $existing);
+        $request->attributes->set(RequestAttribute::RESOLVED_RELATIONSHIPS, $existing);
     }
 }

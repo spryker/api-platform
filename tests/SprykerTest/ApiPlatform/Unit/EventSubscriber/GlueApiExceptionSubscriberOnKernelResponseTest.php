@@ -20,9 +20,9 @@ use Symfony\Component\HttpFoundation\Request;
 use Symfony\Component\HttpFoundation\Response;
 use Symfony\Component\HttpKernel\Event\ResponseEvent;
 use Symfony\Component\HttpKernel\HttpKernelInterface;
+use Symfony\Component\Translation\IdentityTranslator;
 use Symfony\Component\Validator\Constraints\GreaterThan;
 use Symfony\Component\Validator\Constraints\Type;
-use Symfony\Contracts\Translation\TranslatorInterface;
 
 /**
  * Auto-generated group annotations
@@ -303,10 +303,10 @@ class GlueApiExceptionSubscriberOnKernelResponseTest extends Unit
         $constraintReader = new ValidationConstraintReader();
 
         return new GlueApiExceptionSubscriber(
-            $this->createMock(TranslatorInterface::class),
+            new IdentityTranslator(),
             $this->createMock(ResourceMetadataCollectionFactoryInterface::class),
             $constraintReader,
-            new NestedObjectValidationErrorAugmenter($constraintReader),
+            new NestedObjectValidationErrorAugmenter($constraintReader, new IdentityTranslator()),
             true,
         );
     }
