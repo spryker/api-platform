@@ -27,6 +27,7 @@ use Spryker\ApiPlatform\EventSubscriber\GlueApiExceptionSubscriber;
 use Spryker\ApiPlatform\EventSubscriber\JsonApiContentTypeCleanupSubscriber;
 use Spryker\ApiPlatform\EventSubscriber\JsonApiRequestValidatorSubscriber;
 use Spryker\ApiPlatform\EventSubscriber\JsonApiResponseBodySubscriber;
+use Spryker\ApiPlatform\EventSubscriber\MessengerInMemoryTraySubscriber;
 use Spryker\ApiPlatform\EventSubscriber\OAuthExceptionSubscriber;
 use Spryker\ApiPlatform\EventSubscriber\PathNormalizationRequestSubscriber;
 use Spryker\ApiPlatform\Generator\CanonicalObjectRegistry;
@@ -344,6 +345,8 @@ return static function (ContainerConfigurator $container): void {
 
     // Collapse consecutive slashes in the request path before routing for legacy test-helper BC
     $services->set(PathNormalizationRequestSubscriber::class);
+
+    $services->set(MessengerInMemoryTraySubscriber::class);
 
     // Restore legacy Glue behavior of accepting requests without an Accept header
     // by setting `Accept: application/vnd.api+json` before content negotiation runs.

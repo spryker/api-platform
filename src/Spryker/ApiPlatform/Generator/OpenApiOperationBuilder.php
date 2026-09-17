@@ -281,7 +281,10 @@ class OpenApiOperationBuilder
         $explicitContent = $openapiContext[static::CONTEXT_KEY_REQUEST_BODY][static::CONTEXT_KEY_CONTENT] ?? null;
 
         if (is_array($explicitContent)) {
-            return sprintf('requestBody: new RequestBody(content: new ArrayObject(%s))', $this->formatOpenapiContextContent($explicitContent));
+            return sprintf(
+                'requestBody: new RequestBody(content: new ArrayObject(%s), required: true)',
+                $this->formatOpenapiContextContent($explicitContent),
+            );
         }
 
         if (!in_array($operationType, static::WRITE_OPERATION_TYPES, true)) {
@@ -305,7 +308,7 @@ class OpenApiOperationBuilder
             return '';
         }
 
-        return sprintf('requestBody: new RequestBody(content: new ArrayObject([%s]))', implode(', ', $contentParts));
+        return sprintf('requestBody: new RequestBody(content: new ArrayObject([%s]), required: true)', implode(', ', $contentParts));
     }
 
     /**

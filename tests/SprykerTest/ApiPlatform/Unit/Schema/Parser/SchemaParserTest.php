@@ -814,6 +814,64 @@ class SchemaParserTest extends Unit
         $this->assertFalse($result['operations']['Post']['normalizationContext']['gen_id']);
     }
 
+    public function testGivenOperationWithDenormalizationContextWhenParsingThenExtractsDenormalizationContext(): void
+    {
+        // Arrange
+        $rawSchema = [
+            'resource' => [
+                'name' => 'Customers',
+                'operations' => [
+                    [
+                        'type' => 'Patch',
+                        'denormalizationContext' => [
+                            'groups' => ['customers:write'],
+                            'disable_json_schema_serializer_groups' => false,
+                        ],
+                    ],
+                ],
+            ],
+        ];
+        $parser = $this->createSchemaParser();
+
+        // Act
+        $result = $parser->parse($rawSchema, new SplFileInfo(__FILE__));
+
+        // Assert
+        $this->assertSame(
+            ['customers:write'],
+            $result['operations']['Patch']['denormalizationContext']['groups'],
+        );
+        $this->assertFalse(
+            $result['operations']['Patch']['denormalizationContext']['disable_json_schema_serializer_groups'],
+        );
+    }
+
+    public function testGivenPropertyWithGroupsWhenParsingThenExtractsGroups(): void
+    {
+        // Arrange
+        $rawSchema = [
+            'resource' => [
+                'name' => 'Customers',
+                'properties' => [
+                    'sendRegistrationToken' => [
+                        'type' => 'bool',
+                        'groups' => ['customers:write:create'],
+                    ],
+                ],
+            ],
+        ];
+        $parser = $this->createSchemaParser();
+
+        // Act
+        $result = $parser->parse($rawSchema, new SplFileInfo(__FILE__));
+
+        // Assert
+        $this->assertSame(
+            ['customers:write:create'],
+            $result['properties']['sendRegistrationToken']['groups'],
+        );
+    }
+
     public function testGivenOperationWithoutOutputWhenParsingThenDoesNotIncludeOutput(): void
     {
         // Arrange

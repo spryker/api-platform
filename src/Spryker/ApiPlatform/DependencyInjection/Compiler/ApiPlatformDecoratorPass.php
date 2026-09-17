@@ -9,6 +9,7 @@ declare(strict_types=1);
 
 namespace Spryker\ApiPlatform\DependencyInjection\Compiler;
 
+use Spryker\ApiPlatform\JsonSchema\JsonApiInputSchemaFactory;
 use Spryker\ApiPlatform\Metadata\CodeBucketResourceClassResolver;
 use Spryker\ApiPlatform\Metadata\CodeBucketResourceNameCollectionFactory;
 use Spryker\ApiPlatform\OpenApi\Decorator\OpenApiDecorator;
@@ -45,6 +46,8 @@ class ApiPlatformDecoratorPass implements CompilerPassInterface
 
     protected const string SERVICE_ID_VALIDATE_STATE_PROVIDER = 'api_platform.state_provider.validate';
 
+    protected const string SERVICE_ID_SCHEMA_FACTORY = 'api_platform.json_schema.backward_compatible_schema_factory';
+
     protected const string SERVICE_ID_DESERIALIZE_STATE_PROVIDER = 'api_platform.state_provider.deserialize';
 
     protected const string TAG_FORMAT_TRANSFORMER = 'spryker_api_platform.format_transformer';
@@ -77,6 +80,12 @@ class ApiPlatformDecoratorPass implements CompilerPassInterface
                     new Reference(static::REFERENCE_INNER),
                     new TaggedIteratorArgument(static::TAG_FORMAT_TRANSFORMER),
                 ]);
+        }
+
+        if ($container->has(static::SERVICE_ID_SCHEMA_FACTORY)) {
+            $container->register(JsonApiInputSchemaFactory::class, JsonApiInputSchemaFactory::class)
+                ->setDecoratedService(static::SERVICE_ID_SCHEMA_FACTORY)
+                ->setArguments([new Reference(static::REFERENCE_INNER)]);
         }
 
         if ($container->has(static::SERVICE_ID_VALIDATE_STATE_PROVIDER)) {

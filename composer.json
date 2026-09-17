@@ -28,6 +28,7 @@
         "spryker/kernel": "^3.48.0",
         "spryker/locale": "^4.0.0",
         "spryker/log": "^3.0.0",
+        "spryker/messenger": "^3.0.0",
         "spryker/oauth": "^2.0.0",
         "spryker/store": "^1.0.0",
         "spryker/transfer": "^3.27.0",

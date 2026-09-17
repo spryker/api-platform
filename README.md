@@ -138,6 +138,68 @@ One shared class per canonical object is emitted to `Generated\Api\<ApiType>\<Ob
 
 ---
 
+## JSON:API request bodies
+
+API Platform does not produce a usable request-body schema for a JSON:API write operation.
+`ApiPlatform\Hydra\JsonSchema\SchemaFactory::buildSchema()` rewrites the format to `json` for **every**
+input schema, so the JSON:API factory below it is never asked for one; the generic factory then sees
+`json` + `PATCH` and describes the body as a JSON merge patch — flat, no `data` envelope, named
+`*.jsonMergePatch`. A POST body gets the flat resource schema. Sending either as documented answers
+`400 Post data is invalid.`, because both media types of the `jsonapi` format
+(`application/vnd.api+json` **and** `application/json`) are read by the JSON:API denormalizer.
+
+`JsonApiInputSchemaFactory` decorates `api_platform.json_schema.backward_compatible_schema_factory` —
+above Hydra, where the real format is still known — and wraps the flat schema into the JSON:API
+document:
+
+- `<resource>.jsonapi-post` — `data.type` + `attributes`; no identifier, the server assigns it.
+- `<resource>.jsonapi-patch` / `-put` — `data.type` + `data.id`, both required, as JSON:API demands of
+  an update.
+- the flat schema's `required` list becomes `data.attributes.required`, so Swagger marks the same
+  fields the validator enforces.
+- properties the flat schema marks `readOnly` are left out: OpenAPI defines those as response-only, so
+  listing them in a request body describes fields the endpoint will not accept. A property that is both
+  read-only and required is dropped from `required` too.
+- a resource with nothing writable — an action endpoint addressed by its URI, such as
+  `POST /quote-requests/{reference}/quote-request-cancel` — documents the bare envelope, with no
+  `attributes` member at all.
+
+Because the schema is built per operation, a write-only resource (no `.jsonapi` read schema) is covered
+by the same path, and no definition is left orphaned.
+
+## Per-operation write scope (serialization groups)
+
+`#[ApiProperty(writable: ...)]` is one flag for the whole resource, so a property that only one write
+operation accepts would otherwise be documented on the others. Serialization groups scope it per
+operation, and the serializer enforces what the document promises:
+
+```yaml
+operations:
+    - type: Post
+      denormalizationContext:
+          groups: ['customers:write', 'customers:write:create']
+          disable_json_schema_serializer_groups: false
+    - type: Patch
+      denormalizationContext:
+          groups: ['customers:write']
+          disable_json_schema_serializer_groups: false
+
+properties:
+    email:
+        type: string
+        groups: ['customers:write']
+    sendRegistrationToken:
+        type: boolean
+        groups: ['customers:write:create']   # accepted on create only
+```
+
+`disable_json_schema_serializer_groups: false` is what makes the groups shape the generated schema as
+well as the runtime; left at its default the documented body lists every property.
+
+A property outside an operation's groups is **dropped silently** by the serializer — there is no error.
+That makes the group list load-bearing: every writable property needs one, and a property missing its
+group stops being writable without any signal. Cover the writable surface with a functional test.
+
 ## Schema and API class discovery
 
 Schema files and Glue API classes are discovered by `ApiDirectoryLocator` at **conventional, fixed-depth locations** inside the configured `source_directories` — the filesystem is not scanned recursively.

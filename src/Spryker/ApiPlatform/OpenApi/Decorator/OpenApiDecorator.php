@@ -92,18 +92,30 @@ class OpenApiDecorator implements OpenApiFactoryInterface
     protected const string SPARSE_FIELDSETS_ITEMS_TYPE = 'string';
 
     /**
+     * Keyed for the per-media-type reference fix; a transformer serving several media types appears
+     * under each of them.
+     *
      * @var array<string, \Spryker\ApiPlatform\OpenApi\FormatTransformer\FormatTransformerInterface>
      */
     protected array $transformersByMimeType = [];
+
+    /**
+     * Each transformer once, for the schema pass, which is not idempotent.
+     *
+     * @var array<int, \Spryker\ApiPlatform\OpenApi\FormatTransformer\FormatTransformerInterface>
+     */
+    protected array $transformers = [];
 
     /**
      * @param iterable<\Spryker\ApiPlatform\OpenApi\FormatTransformer\FormatTransformerInterface> $formatTransformers
      */
     public function __construct(
         protected readonly OpenApiFactoryInterface $decorated,
-        iterable $formatTransformers = [],
+        iterable $formatTransformers,
     ) {
         foreach ($formatTransformers as $transformer) {
+            $this->transformers[] = $transformer;
+
             foreach ($transformer->getMimeTypes() as $mimeType) {
                 $this->transformersByMimeType[$mimeType] = $transformer;
             }
@@ -209,7 +221,7 @@ class OpenApiDecorator implements OpenApiFactoryInterface
             return $openApi;
         }
 
-        foreach ($this->transformersByMimeType as $transformer) {
+        foreach ($this->transformers as $transformer) {
             $schemas = $transformer->transformSchemas($schemas);
         }
 

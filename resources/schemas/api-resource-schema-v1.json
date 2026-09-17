@@ -49,6 +49,33 @@
                                     "is_granted('ROLE_USER')",
                                     "is_granted('ROLE_ADMIN') or object.owner == user"
                                 ]
+                            },
+                            "denormalizationContext": {
+                                "type": "object",
+                                "description": "Serializer context for reading the request body. Its 'groups' decide which properties this operation accepts, and with 'disable_json_schema_serializer_groups: false' the same groups shape the documented request body.",
+                                "properties": {
+                                    "groups": {
+                                        "type": "array",
+                                        "description": "Serialization groups this operation accepts. A property is accepted only when its own 'groups' name one of these.",
+                                        "minItems": 1,
+                                        "uniqueItems": true,
+                                        "items": {
+                                            "type": "string"
+                                        }
+                                    },
+                                    "disable_json_schema_serializer_groups": {
+                                        "type": "boolean",
+                                        "description": "Set false so the groups also shape the generated JSON Schema. Left at the default, the documented body lists every property regardless of group.",
+                                        "default": true
+                                    }
+                                },
+                                "additionalProperties": true,
+                                "examples": [
+                                    {
+                                        "groups": ["customers:write"],
+                                        "disable_json_schema_serializer_groups": false
+                                    }
+                                ]
                             }
                         },
                         "additionalProperties": true
@@ -113,6 +140,16 @@
                                     "description": "Whether the property can be written (updated) via API",
                                     "default": true,
                                     "examples": [true, false]
+                                },
+                                "groups": {
+                                    "type": "array",
+                                    "description": "Serialization groups the property belongs to. An operation accepts the property only when its denormalizationContext names one of these groups, which both shapes the request-body schema and is enforced by the serializer. Omit it when the property is writable on every write operation.",
+                                    "minItems": 1,
+                                    "uniqueItems": true,
+                                    "items": {
+                                        "type": "string"
+                                    },
+                                    "examples": [["customers:write"], ["customers:write", "customers:create"]]
                                 },
                                 "readable": {
                                     "type": "boolean",

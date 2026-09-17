@@ -106,7 +106,32 @@ class PropertyAttributeGenerator
             $attributes[] = $this->formatApiPropertyAttribute($apiPropertyParts);
         }
 
+        $groupsAttribute = $this->formatGroupsAttribute($property);
+
+        if ($groupsAttribute !== '') {
+            $attributes[] = $groupsAttribute;
+        }
+
         return implode("\n    ", $attributes);
+    }
+
+    /**
+     * @param array<string, mixed> $property
+     */
+    protected function formatGroupsAttribute(array $property): string
+    {
+        $groups = $property['groups'] ?? null;
+
+        if (!is_array($groups) || $groups === []) {
+            return '';
+        }
+
+        $formattedGroups = array_map(
+            static fn (mixed $group): string => sprintf("'%s'", addslashes((string)$group)),
+            array_values($groups),
+        );
+
+        return sprintf('#[Groups([%s])]', implode(', ', $formattedGroups));
     }
 
     /**

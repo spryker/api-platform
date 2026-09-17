@@ -330,6 +330,10 @@ class SchemaParser implements SchemaParserInterface
                 $normalizedOperation['normalizationContext'] = $operation['normalizationContext'];
             }
 
+            if (isset($operation['denormalizationContext']) && is_array($operation['denormalizationContext'])) {
+                $normalizedOperation['denormalizationContext'] = $operation['denormalizationContext'];
+            }
+
             if (array_key_exists('read', $operation)) {
                 $normalizedOperation['read'] = (bool)$operation['read'];
             }
@@ -427,6 +431,10 @@ class SchemaParser implements SchemaParserInterface
 
             if (isset($property['writable'])) {
                 $normalized[$propertyName]['writable'] = $property['writable'];
+            }
+
+            if (isset($property['groups']) && is_array($property['groups'])) {
+                $normalized[$propertyName]['groups'] = $property['groups'];
             }
 
             if (isset($property['readable'])) {

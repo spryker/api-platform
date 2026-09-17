@@ -126,7 +126,7 @@ class OpenApiDecoratorTest extends Unit
         $openApiFactoryMock = $this->createMock(OpenApiFactoryInterface::class);
         $openApiFactoryMock->method('__invoke')->willReturn(new OpenApi(new Info('Spryker Backend API', '0.0.0'), [], $paths));
 
-        return new OpenApiDecorator($openApiFactoryMock);
+        return new OpenApiDecorator($openApiFactoryMock, []);
     }
 
     /**

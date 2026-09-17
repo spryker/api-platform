@@ -294,6 +294,10 @@ class ResourceAttributeGenerator
             $parameters['normalizationContext'] = $operation['normalizationContext'];
         }
 
+        if (isset($operation['denormalizationContext']) && is_array($operation['denormalizationContext'])) {
+            $parameters['denormalizationContext'] = $operation['denormalizationContext'];
+        }
+
         if (isset($operation['status']) && is_int($operation['status'])) {
             $parameters['status'] = $operation['status'];
         }

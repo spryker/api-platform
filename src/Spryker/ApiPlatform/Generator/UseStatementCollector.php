@@ -52,6 +52,7 @@ class UseStatementCollector
         $hasValidation = false;
         $hasSerializedName = false;
         $hasSerializedPath = false;
+        $hasGroups = false;
 
         foreach ($properties as $property) {
             if (!$hasSerializedPath && isset($property['serializedPath']) && $property['serializedPath'] !== '') {
@@ -76,6 +77,11 @@ class UseStatementCollector
             if (!$hasValidation && str_contains($property['attributes'], '#[Assert\\')) {
                 $uses[] = 'Symfony\Component\Validator\Constraints as Assert';
                 $hasValidation = true;
+            }
+
+            if (!$hasGroups && str_contains($property['attributes'], '#[Groups(')) {
+                $uses[] = 'Symfony\Component\Serializer\Attribute\Groups';
+                $hasGroups = true;
             }
         }
 

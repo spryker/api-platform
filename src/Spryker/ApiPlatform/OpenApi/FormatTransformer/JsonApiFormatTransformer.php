@@ -12,19 +12,28 @@ namespace Spryker\ApiPlatform\OpenApi\FormatTransformer;
 use ArrayObject;
 
 /**
- * Transformer for JSON:API format that handles:
- * 1. Adding example values to type and id fields
- * 2. Creating -post schema variants without id field for POST operations
- * 3. Fixing schema references based on HTTP method (only for base resource schemas)
+ * Fills in the `type` example of the JSON:API response schemas, so a reader can recognise the
+ * resource in a payload.
+ *
+ * Request bodies used to be rebuilt here, out of the finished document. They are now produced by
+ * {@see \Spryker\ApiPlatform\JsonSchema\JsonApiInputSchemaFactory}, where the operation, the format
+ * and the serialization groups are all still known — a document made of `$ref` strings cannot tell a
+ * request body from any other schema.
  */
 class JsonApiFormatTransformer implements FormatTransformerInterface
 {
     protected const string FORMAT_SUFFIX = 'jsonapi';
 
-    protected const string POST_SCHEMA_SUFFIX = '-post';
-
+    /**
+     * Both media types are registered under the `jsonapi` format (`api_platform.formats`), so a
+     * request sent as `application/json` is deserialized by the JSON:API denormalizer. There is no
+     * plain-JSON format in this application.
+     *
+     * @var array<string>
+     */
     protected const array MIME_TYPES = [
         'application/vnd.api+json',
+        'application/json',
     ];
 
     public function getFormatSuffix(): string
@@ -38,87 +47,40 @@ class JsonApiFormatTransformer implements FormatTransformerInterface
     }
 
     /**
-     * Transforms JSON:API schemas by:
-     * 1. Adding example values to type and id fields
-     * 2. Creating -post variants without id field for POST operations
-     *
      * @param \ArrayObject<string, array<string, mixed>> $schemas
      *
      * @return \ArrayObject<string, array<string, mixed>>
      */
     public function transformSchemas(ArrayObject $schemas): ArrayObject
     {
-        /** @var \ArrayObject<string, array<string, mixed>> $newSchemas */
-        $newSchemas = new ArrayObject();
-
         foreach ($schemas as $schemaName => $schemaDefinition) {
-            // Case when the resource is configured to not have an ID such as a /token request
-            // Need to be caught here to prevent UI rendering exceptions.
             $schemaName = str_replace('_noid', '', $schemaName);
 
             if (!$this->isJsonApiSchema($schemaName)) {
                 continue;
             }
 
-            $resourceShortName = $this->extractResourceShortName($schemaName);
-            $transformedSchema = $this->addExampleValues($schemaDefinition, $resourceShortName);
-            $schemas[$schemaName] = $transformedSchema;
-
-            $postSchemaName = $schemaName . static::POST_SCHEMA_SUFFIX;
-            $postSchema = $this->createPostSchema($transformedSchema);
-            $newSchemas[$postSchemaName] = $postSchema;
-        }
-
-        foreach ($newSchemas as $schemaName => $schemaDefinition) {
-            $schemas[$schemaName] = $schemaDefinition;
+            $schemas[$schemaName] = $this->addExampleValues($schemaDefinition, $this->extractResourceShortName($schemaName));
         }
 
         return $schemas;
     }
 
+    /**
+     * The request body already references the schema built for its operation, so there is nothing to
+     * correct.
+     */
     public function fixRequestBodyReference(string $ref, string $method): string
     {
-        if (!str_contains($ref, sprintf('.%s', static::FORMAT_SUFFIX))) {
-            if (!$this->isBaseResourceReference($ref)) {
-                return $ref;
-            }
-
-            $ref = $this->appendFormatSuffix($ref);
-        }
-
-        if ($method === 'post') {
-            $ref = $this->appendPostSuffix($ref);
-        }
-
         return $ref;
     }
 
-    /**
-     * Checks if a schema reference is for a base resource (not operation-specific).
-     *
-     * Base resource schemas don't have dots in the name, or only have dots for format suffixes.
-     * Operation-specific schemas like "customers.jsonMergePatch" should not be transformed.
-     */
-    protected function isBaseResourceReference(string $ref): bool
-    {
-        $parts = explode('/', $ref);
-        $schemaName = end($parts);
-
-        return !str_contains($schemaName, '.') ||
-               str_contains($schemaName, sprintf('.%s', static::FORMAT_SUFFIX));
-    }
-
-    /**
-     * Checks if schema is a JSON:API schema.
-     */
     protected function isJsonApiSchema(string $schemaName): bool
     {
         return str_ends_with($schemaName, sprintf('.%s', static::FORMAT_SUFFIX));
     }
 
     /**
-     * Extracts resource short name from schema name.
-     *
      * Example: "customers.jsonapi" -> "customers"
      */
     protected function extractResourceShortName(string $schemaName): string
@@ -127,8 +89,6 @@ class JsonApiFormatTransformer implements FormatTransformerInterface
     }
 
     /**
-     * Adds the resource short name as the example of the type field in the JSON:API schema.
-     *
      * @param \ArrayObject<string, mixed>|array<string, mixed> $schemaDefinition
      *
      * @return array<string, mixed>
@@ -146,68 +106,5 @@ class JsonApiFormatTransformer implements FormatTransformerInterface
         }
 
         return $schemaDefinition;
-    }
-
-    /**
-     * Creates POST schema variant by removing id field entirely for POST operations.
-     *
-     * @param array<string, mixed> $schemaDefinition
-     *
-     * @return array<string, mixed>
-     */
-    protected function createPostSchema(array $schemaDefinition): array
-    {
-        $postSchema = $schemaDefinition;
-
-        if (!isset($postSchema['properties']['data'])) {
-            return $postSchema;
-        }
-
-        if (isset($postSchema['properties']['data']['required'])) {
-            $postSchema['properties']['data']['required'] = array_values(array_filter(
-                $postSchema['properties']['data']['required'],
-                fn ($field) => $field !== 'id',
-            ));
-        }
-
-        if (isset($postSchema['properties']['data']['properties']['id'])) {
-            unset($postSchema['properties']['data']['properties']['id']);
-        }
-
-        return $postSchema;
-    }
-
-    /**
-     * Appends format suffix to schema reference.
-     *
-     * Example: "#/components/schemas/customers" -> "#/components/schemas/customers.jsonapi"
-     */
-    protected function appendFormatSuffix(string $ref): string
-    {
-        if (str_contains($ref, sprintf('.%s', static::FORMAT_SUFFIX))) {
-            return $ref;
-        }
-
-        $parts = explode('/', $ref);
-        $schemaName = array_pop($parts);
-
-        $schemaName .= sprintf('.%s', static::FORMAT_SUFFIX);
-        $parts[] = $schemaName;
-
-        return implode('/', $parts);
-    }
-
-    /**
-     * Appends -post suffix to schema reference for POST operations.
-     *
-     * Example: "#/components/schemas/customers.jsonapi" -> "#/components/schemas/customers.jsonapi-post"
-     */
-    protected function appendPostSuffix(string $ref): string
-    {
-        if (str_contains($ref, static::POST_SCHEMA_SUFFIX)) {
-            return $ref;
-        }
-
-        return $ref . static::POST_SCHEMA_SUFFIX;
     }
 }

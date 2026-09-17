@@ -339,6 +339,34 @@ class ResourceAttributeGeneratorTest extends Unit
         $this->assertStringContainsString("normalizationContext: ['gen_id' => false]", $result);
     }
 
+    public function testGivenOperationWithDenormalizationContextWhenGeneratingThenIncludesDenormalizationContextParameter(): void
+    {
+        // Arrange
+        $schema = [
+            'name' => 'Customers',
+            'shortName' => 'customers',
+            'operations' => [
+                'Patch' => [
+                    'type' => 'Patch',
+                    'denormalizationContext' => [
+                        'groups' => ['customers:write'],
+                        'disable_json_schema_serializer_groups' => false,
+                    ],
+                ],
+            ],
+        ];
+        $uses = [];
+        $generator = $this->createResourceAttributeGenerator();
+
+        // Act
+        $result = $generator->generate($schema, $uses);
+
+        // Assert
+        $this->assertStringContainsString('denormalizationContext:', $result);
+        $this->assertStringContainsString("'customers:write'", $result);
+        $this->assertStringContainsString("'disable_json_schema_serializer_groups' => false", $result);
+    }
+
     public function testGivenOperationWithoutOutputWhenGeneratingThenDoesNotIncludeOutputParameter(): void
     {
         // Arrange
