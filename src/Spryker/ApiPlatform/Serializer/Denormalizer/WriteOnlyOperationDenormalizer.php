@@ -17,19 +17,21 @@ use Symfony\Component\Serializer\SerializerAwareInterface;
 use Symfony\Component\Serializer\SerializerInterface;
 
 /**
- * Decorates {@see \ApiPlatform\JsonApi\Serializer\ItemNormalizer} to make write-only
- * operations (`read: false`) compatible with JSON:API request bodies that include
- * `data.id` as required by the JSON:API specification.
+ * Decorates the JSON:API item denormalizer to make write-only operations (`read: false`)
+ * compatible with JSON:API request bodies that include `data.id` as required by the
+ * JSON:API specification.
  *
- * Without this decorator, JSON:API ItemNormalizer treats body's `data.id` as the IRI
+ * Without this decorator, the JSON:API denormalizer treats body's `data.id` as the IRI
  * of an existing resource and tries to load it via IriConverter. For write-only
  * operations there is no canonical Get operation that can resolve such an IRI, so the
  * lookup fails with `400 "No route matches \"...\""`.
  *
  * The decorator pre-populates `OBJECT_TO_POPULATE` with a fresh resource instance,
- * which short-circuits the IRI-lookup branch in
- * {@see \ApiPlatform\JsonApi\Serializer\ItemNormalizer::denormalize()}
+ * which short-circuits the IRI-lookup branch in the denormalization routine
  * (the `if (!isset($context[OBJECT_TO_POPULATE]) && isset($data['data']['id']))` block).
+ * That routine lives in {@see \ApiPlatform\JsonApi\Serializer\ItemNormalizer} up to
+ * api-platform 4.3 and in {@see \ApiPlatform\JsonApi\Serializer\ItemDenormalizer} from
+ * 4.4 on, so both services are decorated with this class.
  *
  * Effective scope: only operations whose `canRead() === false` whose request body has
  * `data.id` and where no provider has already populated `OBJECT_TO_POPULATE` via the

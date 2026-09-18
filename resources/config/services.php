@@ -509,13 +509,24 @@ return static function (ContainerConfigurator $container): void {
      * ItemNormalizer would try to resolve `data.id` as an IRI and fail with a 400 error,
      * because write-only resources have no Get operation that could resolve the IRI.
      *
-     * `IGNORE_ON_INVALID_REFERENCE` skips registration when the JSON:API bundle is not
-     * loaded (e.g. in unit/functional test kernels) — the inner service does not exist
-     * there and the decoration would otherwise fail at compile time.
+     * Both JSON:API item services are decorated because api-platform moved denormalization
+     * out of the normalizer: up to 4.3 `api_platform.jsonapi.normalizer.item` handled both
+     * directions, while 4.4 added `api_platform.jsonapi.denormalizer.item` at the higher
+     * priority -889 and deprecated `ItemNormalizer::denormalize()`. Decorating only one of
+     * them leaves the write-only path unguarded on the other version.
+     *
+     * `IGNORE_ON_INVALID_REFERENCE` skips registration when the inner service does not
+     * exist — the JSON:API bundle is not loaded in unit/functional test kernels, and the
+     * denormalizer service is absent before 4.4 — which would otherwise fail at compile time.
      */
     $services->set(WriteOnlyOperationDenormalizer::class)
         ->autoconfigure(false)
         ->decorate('api_platform.jsonapi.normalizer.item', null, 0, ContainerInterface::IGNORE_ON_INVALID_REFERENCE)
+        ->arg('$decorated', service('.inner'));
+
+    $services->set(WriteOnlyOperationDenormalizer::class . '.denormalizer', WriteOnlyOperationDenormalizer::class)
+        ->autoconfigure(false)
+        ->decorate('api_platform.jsonapi.denormalizer.item', null, 0, ContainerInterface::IGNORE_ON_INVALID_REFERENCE)
         ->arg('$decorated', service('.inner'));
 
     // Surface the native type of generated nested value-object properties so API Platform
