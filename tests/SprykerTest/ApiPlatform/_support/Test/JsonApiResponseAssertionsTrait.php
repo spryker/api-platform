@@ -106,6 +106,18 @@ trait JsonApiResponseAssertionsTrait
     }
 
     /**
+     * The `id` of an item document, where `data` is one resource object. The counterpart of
+     * {@see static::getResourceIds()}, which reads a collection document.
+     */
+    protected function getResourceId(Response $response): ?string
+    {
+        $data = (array)($this->decodeJsonApi($response)[static::JSON_API_KEY_DATA] ?? []);
+        $id = $data[static::JSON_API_KEY_ID] ?? null;
+
+        return $id === null ? null : (string)$id;
+    }
+
+    /**
      * The `id` of every resource delivered in `included` by an `?include=` request.
      *
      * @return array<string>
@@ -144,9 +156,10 @@ trait JsonApiResponseAssertionsTrait
     }
 
     /**
-     * The attributes of the first resource of a collection document, where `data` is a list. Spryker
-     * puts collection metadata such as pagination on each member, so this is also how a collection's
-     * `pagination` block is reached.
+     * The attributes of the first resource of a collection document, where `data` is a list.
+     * Storefront resources put collection metadata such as pagination on the first member, so this is
+     * also how their `pagination` block is reached. Backend resources report it as top-level
+     * `meta.pagination` instead.
      *
      * @return array<string, mixed>
      */
