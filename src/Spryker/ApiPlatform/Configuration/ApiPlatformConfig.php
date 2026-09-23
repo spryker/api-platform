@@ -13,6 +13,10 @@ use Spryker\ApiPlatform\Utility\ApiTypeNormalizer;
 
 class ApiPlatformConfig
 {
+    public const string API_TYPE_BACKEND = 'backend';
+
+    public const string API_TYPE_STOREFRONT = 'storefront';
+
     /**
      * @param array<string> $sourceDirectories
      * @param array<string> $apiTypes
@@ -58,6 +62,16 @@ class ApiPlatformConfig
     public function getApiTypes(): array
     {
         return $this->apiTypes;
+    }
+
+    /**
+     * @api
+     */
+    public function hasApiType(string $apiType): bool
+    {
+        $normalizedApiTypes = array_map(ApiTypeNormalizer::normalizeForSchemaLookup(...), $this->apiTypes);
+
+        return in_array(ApiTypeNormalizer::normalizeForSchemaLookup($apiType), $normalizedApiTypes, true);
     }
 
     public function isDebug(): bool

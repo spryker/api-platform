@@ -218,6 +218,7 @@ class GlueApiExceptionSubscriberOnKernelResponseTest extends Unit
 
     public function testGiven400DenormalizeErrorWhenOnKernelResponseThenResponseBecomesStatus422WithCode901(): void
     {
+        // Arrange
         $resource = new class {
             public ?int $quantity = null;
         };
@@ -228,10 +229,12 @@ class GlueApiExceptionSubscriberOnKernelResponseTest extends Unit
             Response::HTTP_BAD_REQUEST,
             ['Content-Type' => 'application/json'],
         );
-
         $event = $this->createResponseEvent($request, $response);
+
+        // Act
         $this->createSubscriber()->onKernelResponse($event);
 
+        // Assert
         $convertedResponse = $event->getResponse();
         $data = json_decode((string)$convertedResponse->getContent(), true);
 
@@ -274,6 +277,9 @@ class GlueApiExceptionSubscriberOnKernelResponseTest extends Unit
         $this->assertSame($content, $response->getContent());
     }
 
+    /**
+     * @param array<string, mixed> $attributes
+     */
     protected function createRequest(string $resourceClass, array $attributes): Request
     {
         $request = Request::create('/test', 'POST', [], [], [], [], (string)json_encode([
@@ -284,6 +290,9 @@ class GlueApiExceptionSubscriberOnKernelResponseTest extends Unit
         return $request;
     }
 
+    /**
+     * @param array<int, array<string, mixed>> $errors
+     */
     protected function createUnprocessableResponse(array $errors): Response
     {
         return new Response(

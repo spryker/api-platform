@@ -12,7 +12,15 @@ namespace Spryker\ApiPlatform\DependencyInjection\Compiler;
 use Spryker\ApiPlatform\JsonSchema\JsonApiInputSchemaFactory;
 use Spryker\ApiPlatform\Metadata\CodeBucketResourceClassResolver;
 use Spryker\ApiPlatform\Metadata\CodeBucketResourceNameCollectionFactory;
+use Spryker\ApiPlatform\OpenApi\Decorator\ErrorResponseOpenApiDecorator;
 use Spryker\ApiPlatform\OpenApi\Decorator\OpenApiDecorator;
+use Spryker\ApiPlatform\OpenApi\ErrorResponse\ApiPlatformErrorSchemaRemover;
+use Spryker\ApiPlatform\OpenApi\ErrorResponse\DefaultErrorResponseAdder;
+use Spryker\ApiPlatform\OpenApi\ErrorResponse\ErrorResponseDocumenter;
+use Spryker\ApiPlatform\OpenApi\ErrorResponse\GlueApiErrorSchema;
+use Spryker\ApiPlatform\OpenApi\ErrorResponse\OperationMetadataResolver;
+use Spryker\ApiPlatform\OpenApi\ErrorResponse\PathItemOperationAccessor;
+use Spryker\ApiPlatform\OpenApi\ErrorResponse\RequestAttributesResolver;
 use Spryker\ApiPlatform\State\OptionalFieldFilteringValidateProvider;
 use Spryker\ApiPlatform\State\StrictBooleanCanonicalizingDeserializeProvider;
 use Spryker\ApiPlatform\Validation\ValidationConstraintReader;
@@ -33,6 +41,7 @@ use Symfony\Component\DependencyInjection\Reference;
  * - CodeBucketResourceClassResolver: Adds CodeBucket support to resource class resolution
  * - CodeBucketResourceNameCollectionFactory: Adds CodeBucket support to resource name collection
  * - OpenApiDecorator: Applies format-specific transformations to OpenAPI documentation
+ * - ErrorResponseOpenApiDecorator: Documents every error response with the Glue error schema and examples
  * - OptionalFieldFilteringValidateProvider: Drops violations for Optional fields absent from the body
  * - StrictBooleanCanonicalizingDeserializeProvider: Re-applies the boolean a client spelled as a string
  */
@@ -53,6 +62,12 @@ class ApiPlatformDecoratorPass implements CompilerPassInterface
     protected const string TAG_FORMAT_TRANSFORMER = 'spryker_api_platform.format_transformer';
 
     protected const string REFERENCE_INNER = '.inner';
+
+    /**
+     * Lower than the default priority of {@see OpenApiDecorator}, so this decorator is applied last and wraps
+     * the format decorator: it documents the error responses of the finished document.
+     */
+    protected const int DECORATION_PRIORITY_ERROR_RESPONSES = -10;
 
     public function process(ContainerBuilder $container): void
     {
@@ -79,6 +94,19 @@ class ApiPlatformDecoratorPass implements CompilerPassInterface
                 ->setArguments([
                     new Reference(static::REFERENCE_INNER),
                     new TaggedIteratorArgument(static::TAG_FORMAT_TRANSFORMER),
+                ]);
+
+            $container->register(ErrorResponseOpenApiDecorator::class, ErrorResponseOpenApiDecorator::class)
+                ->setDecoratedService(static::SERVICE_ID_OPENAPI_FACTORY, null, static::DECORATION_PRIORITY_ERROR_RESPONSES)
+                ->setArguments([
+                    new Reference(static::REFERENCE_INNER),
+                    new Reference(OperationMetadataResolver::class),
+                    new Reference(PathItemOperationAccessor::class),
+                    new Reference(DefaultErrorResponseAdder::class),
+                    new Reference(RequestAttributesResolver::class),
+                    new Reference(ErrorResponseDocumenter::class),
+                    new Reference(ApiPlatformErrorSchemaRemover::class),
+                    new Reference(GlueApiErrorSchema::class),
                 ]);
         }
 

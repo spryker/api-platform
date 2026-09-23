@@ -38,7 +38,7 @@ class TranslatingConstraintViolationListNormalizer implements NormalizerInterfac
 
     protected const string DETAIL_KEY = 'detail';
 
-    protected const string ERROR_CODE_VALIDATION = '901';
+    public const string ERROR_CODE_VALIDATION = '901';
 
     protected const int STATUS_UNPROCESSABLE_ENTITY = 422;
 

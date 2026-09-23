@@ -23,9 +23,9 @@ class GlueAuthenticationEntryPoint implements AuthenticationEntryPointInterface
 {
     protected const string CONTENT_TYPE_JSON_API = 'application/vnd.api+json';
 
-    protected const string ERROR_CODE_MISSING_ACCESS_TOKEN = '002';
+    public const string ERROR_CODE_MISSING_ACCESS_TOKEN = '002';
 
-    protected const string ERROR_DETAIL_MISSING_ACCESS_TOKEN = 'Missing access token.';
+    public const string ERROR_DETAIL_MISSING_ACCESS_TOKEN = 'Missing access token.';
 
     public function start(Request $request, ?AuthenticationException $authException = null): Response
     {

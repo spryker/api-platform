@@ -36,9 +36,9 @@ class JsonApiRequestValidatorSubscriber implements EventSubscriberInterface
 
     protected const string VALIDATORS_DOMAIN = 'validators';
 
-    protected const string ERROR_DETAIL_INVALID_TYPE = 'Invalid type.';
+    public const string ERROR_DETAIL_INVALID_TYPE = 'Invalid type.';
 
-    protected const string ERROR_DETAIL_POST_DATA_INVALID = 'Post data is invalid.';
+    public const string ERROR_DETAIL_POST_DATA_INVALID = 'Post data is invalid.';
 
     protected const string ERROR_DETAIL_RESOURCE_ID_NOT_SPECIFIED = 'Resource id is not specified.';
 
@@ -217,6 +217,14 @@ class JsonApiRequestValidatorSubscriber implements EventSubscriberInterface
                 Response::HTTP_BAD_REQUEST,
                 '',
                 $this->translate($request, static::ERROR_DETAIL_INVALID_TYPE),
+            );
+        }
+
+        if (isset($firstItem['attributes']) && !is_array($firstItem['attributes'])) {
+            throw new GlueApiException(
+                Response::HTTP_BAD_REQUEST,
+                '',
+                $this->translate($request, static::ERROR_DETAIL_POST_DATA_INVALID),
             );
         }
 

@@ -50,6 +50,16 @@ use Spryker\ApiPlatform\Generator\ValidationAttributeGenerator;
 use Spryker\ApiPlatform\Metadata\Property\NestedObjectPropertyMetadataFactory;
 use Spryker\ApiPlatform\Metadata\ResourceClassIndexProvider;
 use Spryker\ApiPlatform\Metadata\ResourceClassIndexProviderInterface;
+use Spryker\ApiPlatform\OpenApi\ErrorResponse\ApiPlatformErrorSchemaRemover;
+use Spryker\ApiPlatform\OpenApi\ErrorResponse\DefaultErrorResponseAdder;
+use Spryker\ApiPlatform\OpenApi\ErrorResponse\ErrorResponseBuilder;
+use Spryker\ApiPlatform\OpenApi\ErrorResponse\ErrorResponseDocumenter;
+use Spryker\ApiPlatform\OpenApi\ErrorResponse\GlueApiErrorSchema;
+use Spryker\ApiPlatform\OpenApi\ErrorResponse\OperationMetadataResolver;
+use Spryker\ApiPlatform\OpenApi\ErrorResponse\PathItemOperationAccessor;
+use Spryker\ApiPlatform\OpenApi\ErrorResponse\ProviderNotFoundErrorResolver;
+use Spryker\ApiPlatform\OpenApi\ErrorResponse\RequestAttributesResolver;
+use Spryker\ApiPlatform\OpenApi\ErrorResponse\SchemaReferenceResolver;
 use Spryker\ApiPlatform\OpenApi\FormatTransformer\JsonApiFormatTransformer;
 use Spryker\ApiPlatform\OpenApi\Normalizer\EmptyRelationshipNormalizer;
 use Spryker\ApiPlatform\OpenApi\Normalizer\IdNormalizer;
@@ -274,6 +284,29 @@ return static function (ContainerConfigurator $container): void {
     // OpenAPI Format Transformers
     $services->set(JsonApiFormatTransformer::class)
         ->tag('spryker_api_platform.format_transformer');
+
+    // OpenAPI error responses (the decorator itself is registered by ApiPlatformDecoratorPass)
+    $services->set(GlueApiErrorSchema::class);
+
+    $services->set(ProviderNotFoundErrorResolver::class);
+
+    $services->set(OperationMetadataResolver::class);
+
+    $services->set(ErrorResponseBuilder::class)
+        ->arg('$formats', param('api_platform.formats'));
+
+    $services->set(SchemaReferenceResolver::class);
+
+    $services->set(PathItemOperationAccessor::class);
+
+    $services->set(RequestAttributesResolver::class);
+
+    $services->set(DefaultErrorResponseAdder::class);
+
+    $services->set(ApiPlatformErrorSchemaRemover::class);
+
+    $services->set(ErrorResponseDocumenter::class)
+        ->arg('$errorFormats', param('api_platform.error_formats'));
 
     // Console Commands
     $services->set(ApiGenerateCommand::class)

@@ -49,7 +49,7 @@ class OauthAuthenticator extends AbstractAuthenticator
     /**
      * @uses \Spryker\Glue\AuthRestApi\AuthRestApiConfig::RESPONSE_DETAIL_INVALID_ACCESS_TOKEN
      */
-    protected const string ERROR_DETAIL_INVALID_TOKEN = 'Invalid access token.';
+    public const string ERROR_DETAIL_INVALID_TOKEN = 'Invalid access token.';
 
     /**
      * @uses \Spryker\Glue\AuthRestApi\AuthRestApiConfig::RESPONSE_DETAIL_MISSING_ACCESS_TOKEN
@@ -59,7 +59,7 @@ class OauthAuthenticator extends AbstractAuthenticator
     /**
      * @uses \Spryker\Glue\AuthRestApi\AuthRestApiConfig::RESPONSE_CODE_ACCESS_CODE_INVALID
      */
-    protected const string ERROR_CODE_UNAUTHORIZED = '001';
+    public const string ERROR_CODE_UNAUTHORIZED = '001';
 
     // Key used in the JWT sub claim to identify the user
     protected const string OAUTH_USER_DATA_KEY = 'uuid';

@@ -18,6 +18,7 @@ use ReflectionClass;
 use ReflectionNamedType;
 use ReflectionProperty;
 use Spryker\ApiPlatform\Exception\GlueApiException;
+use Spryker\ApiPlatform\OpenApi\ErrorResponse\ProviderNotFoundErrorResolver;
 use Spryker\ApiPlatform\Request\RequestAttribute;
 use Spryker\ApiPlatform\Validation\NestedObjectValidationErrorAugmenter;
 use Spryker\ApiPlatform\Validation\ValidationConstraintReader;
@@ -62,9 +63,9 @@ class GlueApiExceptionSubscriber implements EventSubscriberInterface
 
     protected const string ERROR_DETAIL_MISSING_ACCESS_TOKEN = 'Missing access token.';
 
-    protected const string ERROR_CODE_UNAUTHORIZED_REQUEST = '802';
+    public const string ERROR_CODE_UNAUTHORIZED_REQUEST = '802';
 
-    protected const string ERROR_DETAIL_UNAUTHORIZED_REQUEST = 'Unauthorized request.';
+    public const string ERROR_DETAIL_UNAUTHORIZED_REQUEST = 'Unauthorized request.';
 
     protected const string AUTHORIZATION_HEADER = 'Authorization';
 
@@ -74,7 +75,7 @@ class GlueApiExceptionSubscriber implements EventSubscriberInterface
 
     protected const string ERROR_DETAIL_CHECKOUT_AUTH_REQUIRED = 'One of Authorization or X-Anonymous-Customer-Unique-Id headers is required.';
 
-    protected const string ERROR_DETAIL_BAD_REQUEST = 'Post data missing or invalid.';
+    public const string ERROR_DETAIL_BAD_REQUEST = 'Post data missing or invalid.';
 
     protected const string ERROR_META_KEY_EXCEPTION = 'exception';
 
@@ -146,6 +147,7 @@ class GlueApiExceptionSubscriber implements EventSubscriberInterface
         protected bool $debug,
         protected LoggerInterface $logger = new NullLogger(),
         protected bool $isMethodNotAllowedStatusEnabled = true,
+        protected ProviderNotFoundErrorResolver $providerNotFoundErrorResolver = new ProviderNotFoundErrorResolver(),
     ) {
     }
 
@@ -720,53 +722,7 @@ class GlueApiExceptionSubscriber implements EventSubscriberInterface
      */
     protected function resolveProviderNotFoundError(string $resourceClass): ?array
     {
-        if ($resourceClass === '' || !class_exists($resourceClass)) {
-            return null;
-        }
-
-        try {
-            $reflection = new ReflectionClass($resourceClass);
-            $attributes = $reflection->getAttributes(ApiResource::class);
-
-            if ($attributes === []) {
-                return null;
-            }
-
-            $apiResource = $attributes[0]->newInstance();
-            $providerClass = $apiResource->getProvider();
-
-            if (!is_string($providerClass) || !class_exists($providerClass)) {
-                return null;
-            }
-
-            $providerReflection = new ReflectionClass($providerClass);
-
-            foreach ($providerReflection->getReflectionConstants() as $constant) {
-                if (!str_contains($constant->getName(), 'NOT_FOUND') || !str_contains($constant->getName(), 'MESSAGE')) {
-                    continue;
-                }
-
-                $codeConstantName = str_replace('MESSAGE', 'CODE', $constant->getName());
-
-                if (!$providerReflection->hasConstant($codeConstantName)) {
-                    continue;
-                }
-
-                $message = (string)$constant->getValue();
-                $code = (string)$providerReflection->getConstant($codeConstantName);
-
-                return [
-                    'status' => Response::HTTP_NOT_FOUND,
-                    'detail' => $message,
-                    'message' => $message,
-                    'code' => $code,
-                ];
-            }
-        } catch (Throwable) {
-            // Reflection failures should not break error handling
-        }
-
-        return null;
+        return $this->providerNotFoundErrorResolver->resolveByResourceClass($resourceClass);
     }
 
     /**
