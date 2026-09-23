@@ -114,6 +114,54 @@ class AcceptHeaderFallbackSubscriberTest extends Unit
         $this->assertSame(1, substr_count((string)$request->headers->get('Accept'), static::JSON_API_MIME_TYPE));
     }
 
+    /**
+     * @dataProvider provideMetaRouteNames
+     */
+    public function testGivenMetaRouteWithMissingAcceptHeaderWhenOnKernelRequestThenAcceptIsLeftUnchanged(string $routeName): void
+    {
+        // Arrange — meta routes negotiate their own format family (openapi/jsonld/html/yaml) via
+        // the `{_format}` route placeholder; they must not be coerced to JSON:API.
+        $subscriber = new AcceptHeaderFallbackSubscriber();
+        $request = new Request();
+        $request->attributes->set('_route', $routeName);
+        $event = $this->createRequestEvent($request);
+
+        // Act
+        $subscriber->onKernelRequest($event);
+
+        // Assert
+        $this->assertNull($request->headers->get('Accept'));
+    }
+
+    /**
+     * @dataProvider provideMetaRouteNames
+     */
+    public function testGivenMetaRouteWithWildcardAcceptHeaderWhenOnKernelRequestThenAcceptIsLeftUnchanged(string $routeName): void
+    {
+        // Arrange
+        $subscriber = new AcceptHeaderFallbackSubscriber();
+        $request = new Request();
+        $request->headers->set('Accept', '*/*');
+        $request->attributes->set('_route', $routeName);
+        $event = $this->createRequestEvent($request);
+
+        // Act
+        $subscriber->onKernelRequest($event);
+
+        // Assert
+        $this->assertSame('*/*', $request->headers->get('Accept'));
+    }
+
+    /**
+     * @return iterable<string, array<string>>
+     */
+    public function provideMetaRouteNames(): iterable
+    {
+        foreach (AcceptHeaderFallbackSubscriber::META_ROUTE_NAMES as $routeName) {
+            yield $routeName => [$routeName];
+        }
+    }
+
     public function testGivenSubRequestWhenOnKernelRequestThenAcceptIsLeftUnchanged(): void
     {
         // Arrange — sub-requests must not be rewritten.

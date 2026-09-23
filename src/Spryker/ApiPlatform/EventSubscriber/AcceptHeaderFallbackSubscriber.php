@@ -29,6 +29,18 @@ class AcceptHeaderFallbackSubscriber implements EventSubscriberInterface
     protected const string JSON_API_MIME_TYPE = 'application/vnd.api+json';
 
     /**
+     * API Platform's own meta routes, each negotiating its OWN format family instead of JSON:API:
+     * `api_doc` (`/docs.{_format}` — Swagger UI, ReDoc, Scalar, openapi/jsonld/html/yaml),
+     * `api_entrypoint` (`/{index}.{_format}` — the Hydra entrypoint, jsonld/html) and
+     * `api_jsonld_context` (`/contexts/{shortName}.{_format}` — the `@context` document every
+     * JSON-LD response links to, ld+json only). All three already let a client get a working
+     * response with no Accept header at all, via their `{_format}` route placeholder.
+     *
+     * @var array<string>
+     */
+    public const array META_ROUTE_NAMES = ['api_doc', 'api_entrypoint', 'api_jsonld_context'];
+
+    /**
      * Runs after Symfony's RouterListener (32) but before
      * AddFormatListener (28).
      */
@@ -51,6 +63,11 @@ class AcceptHeaderFallbackSubscriber implements EventSubscriberInterface
         }
 
         $request = $event->getRequest();
+
+        if (in_array($request->attributes->get('_route'), static::META_ROUTE_NAMES, true)) {
+            return;
+        }
+
         $accept = $request->headers->get(static::ACCEPT_HEADER);
 
         if ($accept === null || $accept === '') {
