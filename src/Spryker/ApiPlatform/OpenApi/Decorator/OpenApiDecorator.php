@@ -39,8 +39,6 @@ class OpenApiDecorator implements OpenApiFactoryInterface
 
     protected const string ACCEPT_LANGUAGE_HEADER_DESCRIPTION = 'Preferred language for the response (e.g., `de`, `en-US`). Uses standard HTTP content negotiation.';
 
-    protected const string ACCEPT_LANGUAGE_HEADER_EXAMPLE = 'de';
-
     protected const string ACCEPT_LANGUAGE_SCHEMA_TYPE = 'string';
 
     /**
@@ -78,8 +76,6 @@ class OpenApiDecorator implements OpenApiFactoryInterface
     protected const int PAGINATION_OFFSET_MINIMUM = 0;
 
     protected const int PAGINATION_LIMIT_EXAMPLE = 10;
-
-    protected const int PAGINATION_OFFSET_EXAMPLE = 0;
 
     protected const string SPARSE_FIELDSETS_PARAMETER_NAME = 'fields[]';
 
@@ -191,7 +187,6 @@ class OpenApiDecorator implements OpenApiFactoryInterface
             description: static::PAGINATION_OFFSET_PARAMETER_DESCRIPTION,
             required: false,
             schema: ['type' => static::PAGINATION_SCHEMA_TYPE, 'minimum' => static::PAGINATION_OFFSET_MINIMUM],
-            example: static::PAGINATION_OFFSET_EXAMPLE,
         );
     }
 
@@ -377,7 +372,6 @@ class OpenApiDecorator implements OpenApiFactoryInterface
             description: static::ACCEPT_LANGUAGE_HEADER_DESCRIPTION,
             required: false,
             schema: ['type' => static::ACCEPT_LANGUAGE_SCHEMA_TYPE],
-            example: static::ACCEPT_LANGUAGE_HEADER_EXAMPLE,
         );
     }
 

@@ -40,6 +40,7 @@ class GlueApiExceptionSubscriberOnKernelResponseTest extends Unit
 
     public function testGivenEmptyStringQuantityWhenOnKernelResponseThenTypeIntegerAndGreaterThanErrorsAreAdded(): void
     {
+        // Arrange
         $resource = new class {
             #[Type('integer')]
             #[GreaterThan(0)]
@@ -52,16 +53,20 @@ class GlueApiExceptionSubscriberOnKernelResponseTest extends Unit
         ]);
 
         $event = $this->createResponseEvent($request, $response);
+
+        // Act
         $this->createSubscriber()->onKernelResponse($event);
 
         $details = $this->extractDetails($event);
 
+        // Assert
         $this->assertContains('quantity => This value should be of type integer.', $details);
         $this->assertContains('quantity => This value should be greater than 0.', $details);
     }
 
     public function testGivenNumericStringQuantityWhenOnKernelResponseThenTypeIntegerErrorIsPrepended(): void
     {
+        // Arrange
         $resource = new class {
             #[Type('integer')]
             #[GreaterThan(0)]
@@ -74,15 +79,19 @@ class GlueApiExceptionSubscriberOnKernelResponseTest extends Unit
         ]);
 
         $event = $this->createResponseEvent($request, $response);
+
+        // Act
         $this->createSubscriber()->onKernelResponse($event);
 
         $data = json_decode((string)$event->getResponse()->getContent(), true);
 
+        // Assert
         $this->assertSame('quantity => This value should be of type integer.', $data['errors'][0]['detail']);
     }
 
     public function testGivenNonNumericStringQuantityWhenOnKernelResponseThenTypeNumericIsReplacedWithTypeInteger(): void
     {
+        // Arrange
         $resource = new class {
             #[Type('integer')]
             #[GreaterThan(0)]
@@ -95,16 +104,20 @@ class GlueApiExceptionSubscriberOnKernelResponseTest extends Unit
         ]);
 
         $event = $this->createResponseEvent($request, $response);
+
+        // Act
         $this->createSubscriber()->onKernelResponse($event);
 
         $details = $this->extractDetails($event);
 
+        // Assert
         $this->assertContains('quantity => This value should be of type integer.', $details);
         $this->assertNotContains('quantity => This value should be of type numeric.', $details);
     }
 
     public function testGivenRequiredBoolFieldAbsentWhenOnKernelResponseThenFieldMissingErrorIsAdded(): void
     {
+        // Arrange
         $resource = new class {
             public ?string $sku = null;
 
@@ -118,15 +131,19 @@ class GlueApiExceptionSubscriberOnKernelResponseTest extends Unit
         ]);
 
         $event = $this->createResponseEvent($request, $response);
+
+        // Act
         $this->createSubscriber()->onKernelResponse($event);
 
         $details = $this->extractDetails($event);
 
+        // Assert
         $this->assertContains('accepted => This field is missing.', $details);
     }
 
     public function testGivenRequiredBoolFieldAsEmptyStringWhenOnKernelResponseThenShouldBeTrueErrorIsAdded(): void
     {
+        // Arrange
         $resource = new class {
             public ?string $sku = null;
 
@@ -140,15 +157,19 @@ class GlueApiExceptionSubscriberOnKernelResponseTest extends Unit
         ]);
 
         $event = $this->createResponseEvent($request, $response);
+
+        // Act
         $this->createSubscriber()->onKernelResponse($event);
 
         $details = $this->extractDetails($event);
 
+        // Assert
         $this->assertContains('accepted => This value should be true.', $details);
     }
 
     public function testGivenConcatenatedErrorDetailWhenOnKernelResponseThenErrorIsSplitIntoSeparateObjects(): void
     {
+        // Arrange
         $resource = new class {
             public ?int $quantity = null;
 
@@ -161,16 +182,20 @@ class GlueApiExceptionSubscriberOnKernelResponseTest extends Unit
         ]);
 
         $event = $this->createResponseEvent($request, $response);
+
+        // Act
         $this->createSubscriber()->onKernelResponse($event);
 
         $details = $this->extractDetails($event);
 
+        // Assert
         $this->assertContains('quantity => This value should not be blank.', $details);
         $this->assertContains('sku => This value should not be blank.', $details);
     }
 
     public function testGivenConcatenatedDotPathErrorDetailWhenOnKernelResponseThenSplitWithArrowFormat(): void
     {
+        // Arrange
         $resource = new class {
             public mixed $billingAddress = null;
 
@@ -186,16 +211,20 @@ class GlueApiExceptionSubscriberOnKernelResponseTest extends Unit
         ]);
 
         $event = $this->createResponseEvent($request, $response);
+
+        // Act
         $this->createSubscriber()->onKernelResponse($event);
 
         $details = $this->extractDetails($event);
 
+        // Assert
         $this->assertContains('billingAddress.salutation => This value should not be blank.', $details);
         $this->assertContains('shipment.idShipmentMethod => This field is missing.', $details);
     }
 
     public function testGivenFieldNotInRequestBodyWhenOnKernelResponseThenDetailBecomesFieldMissing(): void
     {
+        // Arrange
         $resource = new class {
             public ?int $quantity = null;
 
@@ -208,10 +237,13 @@ class GlueApiExceptionSubscriberOnKernelResponseTest extends Unit
         ]);
 
         $event = $this->createResponseEvent($request, $response);
+
+        // Act
         $this->createSubscriber()->onKernelResponse($event);
 
         $details = $this->extractDetails($event);
 
+        // Assert
         $this->assertContains('sku => This field is missing.', $details);
         $this->assertNotContains('sku => This value should not be blank.', $details);
     }
@@ -238,6 +270,7 @@ class GlueApiExceptionSubscriberOnKernelResponseTest extends Unit
         $convertedResponse = $event->getResponse();
         $data = json_decode((string)$convertedResponse->getContent(), true);
 
+        // Assert
         $this->assertSame(Response::HTTP_UNPROCESSABLE_ENTITY, $convertedResponse->getStatusCode());
         $this->assertSame('901', $data['errors'][0]['code']);
         $this->assertStringContainsString('quantity => This value should be of type numeric.', $data['errors'][0]['detail']);

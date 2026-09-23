@@ -430,7 +430,7 @@ return static function (ContainerConfigurator $container): void {
     // separate RESPONSE subscribers that each decoded and re-encoded the whole body.
     $services->set(JsonApiResponseBodySubscriber::class);
 
-    // Locale resolution from Accept-Language header
+    // Locale resolution from Accept-Language header (storefront: negotiated against the current store)
     $services->set(AcceptLanguageLocaleSubscriber::class);
 
     // Locale resolution from Accept-Language header (backend: negotiated against the configured

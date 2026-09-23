@@ -21,6 +21,7 @@ use Spryker\ApiPlatform\Exception\GlueApiException;
 use Spryker\ApiPlatform\OpenApi\ErrorResponse\ProviderNotFoundErrorResolver;
 use Spryker\ApiPlatform\Request\RequestAttribute;
 use Spryker\ApiPlatform\Validation\NestedObjectValidationErrorAugmenter;
+use Spryker\ApiPlatform\Validation\Trait\ValidationMessageTranslationTrait;
 use Spryker\ApiPlatform\Validation\ValidationConstraintReader;
 use Symfony\Component\EventDispatcher\EventSubscriberInterface;
 use Symfony\Component\HttpFoundation\JsonResponse;
@@ -51,11 +52,11 @@ use Throwable;
  */
 class GlueApiExceptionSubscriber implements EventSubscriberInterface
 {
+    use ValidationMessageTranslationTrait;
+
     protected const string HEADER_ALLOW = 'Allow';
 
     protected const string CONTENT_TYPE_JSON_API = 'application/vnd.api+json';
-
-    protected const string VALIDATORS_DOMAIN = 'validators';
 
     protected const string ENGLISH_LOCALE = 'en';
 
@@ -413,12 +414,9 @@ class GlueApiExceptionSubscriber implements EventSubscriberInterface
     }
 
     /**
-     * BC: legacy Spryker Glue REST framework returned `text/html` + plain "Internal Server Error"
-     * body for uncaught exceptions; consumers (incl. Robot's `I send a POST request:` keyword)
-     * rely on this shape to detect 500s by failed JSON parsing. All explicitly handled errors
-     * (4xx, GlueApiException-derived 5xx) still go through `createGlueApiErrorResponse()` /
-     * `createHttpExceptionResponse()` and return the JSON:API envelope — only the *uncaught*
-     * last-resort fallback keeps the legacy `text/html` format.
+     * BC: the uncaught last-resort fallback keeps the legacy `text/html` + "Internal Server Error"
+     * shape, which consumers use to detect 500s by failed JSON parsing. Handled errors still return
+     * the JSON:API envelope.
      */
     protected function createInternalServerErrorResponse(): Response
     {
@@ -1319,14 +1317,9 @@ class GlueApiExceptionSubscriber implements EventSubscriberInterface
     }
 
     /**
-     * @param array<string, string> $parameters
-     */
-    protected function translateValidationMessage(string $messageTemplate, array $parameters = []): string
-    {
-        return $this->translator->trans($messageTemplate, $parameters, static::VALIDATORS_DOMAIN);
-    }
-
-    /**
+     * What an empty string sent to a numeric property reports when the property declares no Type or
+     * comparison constraint of its own to render a message from.
+     *
      * @return array<string>
      */
     protected function buildFallbackNumericMessages(): array
@@ -1371,20 +1364,6 @@ class GlueApiExceptionSubscriber implements EventSubscriberInterface
 
     /**
      * Augments 422 validation responses with missing errors for nullable bool properties.
-     *
-     * API Platform converts empty strings to null for ?bool typed properties, and IsTrue
-     * skips null values. This method restores the expected errors by inspecting the raw
-     * request body:
-     * - Field absent entirely → "This field is missing." (required field not provided)
-     * - Field submitted as empty string or null → "This value should be true." (non-boolean value)
-     *
-     * Note: when the response is already 422 (other fields invalid), any non-true bool
-     * value should be reported as a validation error. When all other fields are valid and
-     * only a bool field is null, the response is not 422, so this method does not run
-     * and the processor handles the domain-specific error (e.g. 413 for unaccepted terms).
-     *
-     * Only applies to POST requests — bool fields like acceptedTerms are only required
-     * on create operations, not on PATCH/PUT where they are excluded from validation groups.
      */
     protected function augmentValidationErrorsForBoolFields(Response $response, Request $request, string $resourceClass): void
     {
@@ -1759,5 +1738,10 @@ class GlueApiExceptionSubscriber implements EventSubscriberInterface
             'detail' => $securityMessage,
             'message' => rtrim($securityMessage, '.'),
         ];
+    }
+
+    protected function getTranslator(): TranslatorInterface
+    {
+        return $this->translator;
     }
 }

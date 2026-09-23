@@ -112,6 +112,30 @@ class OpenApiDecoratorTest extends Unit
         $this->assertContains(static::PARAMETER_ACCEPT_LANGUAGE, $parameterNames);
     }
 
+    public function testGivenAnyOperationWhenDecoratingThenResultNarrowingParametersDoNotPrefillTryItOut(): void
+    {
+        // Arrange
+        $decorator = $this->createDecorator([
+            static::PATH_COLLECTION => new Operation(parameters: [
+                new Parameter(static::PARAMETER_PAGE, static::PARAMETER_IN_QUERY),
+            ]),
+        ]);
+
+        // Act
+        $parameters = $this->getGetParameters($decorator(), static::PATH_COLLECTION);
+
+        // Assert
+        foreach ([static::PARAMETER_ACCEPT_LANGUAGE, static::PARAMETER_PAGE_OFFSET] as $parameterName) {
+            $parameter = $this->findParameter($parameters, $parameterName);
+
+            $this->assertNull(
+                $parameter->getExample(),
+                sprintf('Parameter "%s" carries an example, which pre-fills the Try it out form.', $parameterName),
+            );
+            $this->assertNotSame('', $parameter->getDescription(), sprintf('Parameter "%s" must still describe itself.', $parameterName));
+        }
+    }
+
     /**
      * @param array<string, \ApiPlatform\OpenApi\Model\Operation> $getOperationsByPath
      */
@@ -141,5 +165,33 @@ class OpenApiDecoratorTest extends Unit
             static fn (Parameter $parameter): string => $parameter->getName(),
             $operation->getParameters(),
         );
+    }
+
+    /**
+     * @return array<\ApiPlatform\OpenApi\Model\Parameter>
+     */
+    protected function getGetParameters(OpenApi $openApi, string $path): array
+    {
+        $operation = $openApi->getPaths()->getPath($path)?->getGet();
+        $this->assertNotNull($operation);
+
+        $parameters = $operation->getParameters();
+        $this->assertNotNull($parameters);
+
+        return $parameters;
+    }
+
+    /**
+     * @param array<\ApiPlatform\OpenApi\Model\Parameter> $parameters
+     */
+    protected function findParameter(array $parameters, string $name): Parameter
+    {
+        foreach ($parameters as $parameter) {
+            if ($parameter->getName() === $name) {
+                return $parameter;
+            }
+        }
+
+        $this->fail(sprintf('Parameter "%s" was not injected by the decorator.', $name));
     }
 }

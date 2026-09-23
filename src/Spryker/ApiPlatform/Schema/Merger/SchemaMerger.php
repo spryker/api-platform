@@ -227,6 +227,14 @@ class SchemaMerger implements SchemaMergerInterface
                 continue;
             }
 
+            // Tags are computed per contributing file from that file's own `shortName`, so two
+            // files for the same resource (same or cross layer) resolve the same tag independently.
+            if ($key === 'tags' && is_array($value) && is_array($result[$key])) {
+                $result[$key] = array_values(array_unique(array_merge($result[$key], $value)));
+
+                continue;
+            }
+
             if (is_array($value) && is_array($result[$key])) {
                 $result[$key] = array_merge($result[$key], $value);
 

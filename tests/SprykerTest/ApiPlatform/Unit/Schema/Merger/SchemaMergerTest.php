@@ -199,6 +199,32 @@ class SchemaMergerTest extends Unit
         $this->assertArrayHasKey('name', $result['properties']);
     }
 
+    public function testGivenSameTagInTwoContributingSchemasWhenMergingThenDeduplicatesTag(): void
+    {
+        // Arrange
+        $feature1 = [
+            'name' => 'Orders',
+            'tags' => ['orders'],
+            'properties' => ['budgetUuid' => ['type' => 'string']],
+            'sourceLayer' => 'feature',
+            'sourceFile' => 'orders-experience.yaml',
+        ];
+        $feature2 = [
+            'name' => 'Orders',
+            'tags' => ['orders'],
+            'properties' => ['budget' => ['type' => 'object']],
+            'sourceLayer' => 'feature',
+            'sourceFile' => 'purchasing-control.yaml',
+        ];
+        $merger = $this->createSchemaMerger();
+
+        // Act
+        $result = $merger->merge([$feature1, $feature2], 'Orders', 'Backend');
+
+        // Assert
+        $this->assertSame(['orders'], $result['tags']);
+    }
+
     public function testGivenSameTypedObjectPropertyInTwoLayersWhenMergingThenUnionsNestedFields(): void
     {
         // Arrange

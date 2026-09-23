@@ -11,6 +11,7 @@ namespace Spryker\ApiPlatform\Validation;
 
 use ReflectionClass;
 use ReflectionNamedType;
+use Spryker\ApiPlatform\Validation\Trait\ValidationMessageTranslationTrait;
 use Symfony\Component\HttpFoundation\Response;
 use Symfony\Component\Validator\Constraints\Email;
 use Symfony\Component\Validator\Constraints\NotBlank;
@@ -20,28 +21,11 @@ use Symfony\Contracts\Translation\TranslatorInterface;
 /**
  * Augments validation for present-but-empty nested value objects (generated `objectName`
  * canonical objects typed as `?Generated\Api\*` and cascaded via `Assert\Valid`), for every ApiType.
- *
- * Three behaviors, all driven off the RAW submitted body so coercion and `allowNull` cannot
- * erase the submitted shape:
- *
- * - Coerced bool leaf: a nested `?bool` leaf (e.g. `productConfigurationInstance.isComplete`)
- *   submitted as a non-boolean (`1`, `"True"`) is coerced before `Assert\Type` runs, so the Type
- *   error never fires — re-check the raw value and append the boolean Type error.
- * - Relabel flagged leaf: a required leaf (NotBlank/NotNull/Email) of a present-but-empty object
- *   that the validator already flagged is relabeled to "This field is missing." (the top-level
- *   rewrite the subscriber performs skips dotted, multi-error paths).
- * - Synthesize missing leaf: a required leaf of a present-but-empty object whose constraint allows
- *   null (a required leaf whose constraint allows null) produces NO error and the request passes —
- *   synthesize a "This field is missing." error per absent required leaf and force a 422 response.
- *
- * Only nested objects whose parent key IS present in the raw body are touched — an entirely
- * omitted object stays valid (`?Object` null, `Assert\Valid` skips) per legacy behavior.
- *
- * A pure transformer: it takes the already-decoded errors and returns the augmented set. All HTTP
- * request/response handling stays in the caller.
  */
 class NestedObjectValidationErrorAugmenter
 {
+    use ValidationMessageTranslationTrait;
+
     protected const string ERROR_CODE_VALIDATION = '901';
 
     protected const string MESSAGE_TEMPLATE_FIELD_MISSING = 'This field is missing.';
@@ -49,8 +33,6 @@ class NestedObjectValidationErrorAugmenter
     protected const string MESSAGE_TEMPLATE_TYPE = 'This value should be of type {{ type }}.';
 
     protected const string TYPE_NAME_BOOLEAN = 'boolean';
-
-    protected const string VALIDATORS_DOMAIN = 'validators';
 
     /**
      * ApiType-agnostic on purpose: the same prefix
@@ -360,17 +342,8 @@ class NestedObjectValidationErrorAugmenter
         return $leaves;
     }
 
-    /**
-     * Synthesized here rather than produced by the validator, so nothing has translated them yet —
-     * these are constraint message TEMPLATES, and the `validators` domain is where Symfony ships
-     * them in every locale. The translator already carries the request locale
-     * ({@see \Spryker\ApiPlatform\EventSubscriber\GlueApiExceptionSubscriber::onKernelRequestSetValidationLocale()}),
-     * which is also what keeps a synthesized message comparable with the real violations beside it.
-     *
-     * @param array<string, string> $parameters
-     */
-    protected function translateValidationMessage(string $messageTemplate, array $parameters = []): string
+    protected function getTranslator(): TranslatorInterface
     {
-        return $this->translator->trans($messageTemplate, $parameters, static::VALIDATORS_DOMAIN);
+        return $this->translator;
     }
 }
