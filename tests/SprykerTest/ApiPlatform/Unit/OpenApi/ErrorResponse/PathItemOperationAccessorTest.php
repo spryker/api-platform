@@ -32,9 +32,9 @@ class PathItemOperationAccessorTest extends Unit
 
     protected const string METHOD_DELETE = 'delete';
 
-    protected const string METHOD_QUERY = 'query';
+    protected const string METHOD_TRACE = 'trace';
 
-    protected const string OPERATION_ID_QUERY = 'queryCategories';
+    protected const string OPERATION_ID_TRACE = 'traceCategories';
 
     protected const string OPERATION_ID_GET = 'getCategory';
 
@@ -64,23 +64,19 @@ class PathItemOperationAccessorTest extends Unit
     public function testGivenPathItemWithAnOperationOnEveryMethodTheModelDefinesWhenGettingOperationsThenAllAreReturned(): void
     {
         // Arrange
-        $pathItem = new PathItem(
-            get: new Operation(operationId: 'get'),
-            put: new Operation(operationId: 'put'),
-            post: new Operation(operationId: 'post'),
-            delete: new Operation(operationId: 'delete'),
-            options: new Operation(operationId: 'options'),
-            head: new Operation(operationId: 'head'),
-            patch: new Operation(operationId: 'patch'),
-            trace: new Operation(operationId: 'trace'),
-            query: new Operation(operationId: 'query'),
-        );
+        $accessor = new PathItemOperationAccessor();
+        $methods = array_map(strtolower(...), PathItem::$methods);
+        $pathItem = new PathItem();
+
+        foreach ($methods as $method) {
+            $pathItem = $accessor->withOperation($pathItem, $method, new Operation(operationId: $method));
+        }
 
         // Act
-        $operations = (new PathItemOperationAccessor())->getOperations($pathItem);
+        $operations = $accessor->getOperations($pathItem);
 
         // Assert
-        $this->assertSame(array_map(strtolower(...), PathItem::$methods), array_keys($operations));
+        $this->assertSame($methods, array_keys($operations));
 
         foreach ($operations as $method => $operation) {
             $this->assertSame($method, $operation->getOperationId());
@@ -93,11 +89,11 @@ class PathItemOperationAccessorTest extends Unit
         $accessor = new PathItemOperationAccessor();
 
         // Act
-        $pathItem = $accessor->withOperation(new PathItem(), static::METHOD_QUERY, new Operation(operationId: static::OPERATION_ID_QUERY));
+        $pathItem = $accessor->withOperation(new PathItem(), static::METHOD_TRACE, new Operation(operationId: static::OPERATION_ID_TRACE));
 
         // Assert
-        $this->assertSame(static::OPERATION_ID_QUERY, $pathItem->getQuery()?->getOperationId());
-        $this->assertSame([static::METHOD_QUERY], array_keys($accessor->getOperations($pathItem)));
+        $this->assertSame(static::OPERATION_ID_TRACE, $pathItem->getTrace()?->getOperationId());
+        $this->assertSame([static::METHOD_TRACE], array_keys($accessor->getOperations($pathItem)));
     }
 
     public function testGivenMethodWhenReplacingItsOperationThenTheOtherMethodsAreUntouched(): void
