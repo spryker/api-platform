@@ -5,3 +5,4 @@
 "Post data missing or invalid.","Post data missing or invalid."
 "Missing access token.","Missing access token."
 "Unauthorized request.","Unauthorized request."
+"One of Authorization or X-Anonymous-Customer-Unique-Id headers is required.","One of Authorization or X-Anonymous-Customer-Unique-Id headers is required."

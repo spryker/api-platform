@@ -5,3 +5,4 @@
 "Post data missing or invalid.","Die gesendeten Daten fehlen oder sind ungültig."
 "Missing access token.","Zugriffstoken fehlt."
 "Unauthorized request.","Nicht autorisierte Anfrage."
+"One of Authorization or X-Anonymous-Customer-Unique-Id headers is required.","Einer der Header Authorization oder X-Anonymous-Customer-Unique-Id ist erforderlich."
