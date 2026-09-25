@@ -31,6 +31,18 @@ class PropertyAttributeGeneratorTest extends Unit
 
     protected ApiUnitTester $tester;
 
+    public function testGivenAResponseOptionalPropertyWhenGeneratingThenTheApiPropertyCarriesTheExtraProperty(): void
+    {
+        // Arrange
+        $property = ['type' => 'string', 'writable' => false, 'readable' => true, 'responseOptional' => true];
+
+        // Act
+        $attributes = (new PropertyAttributeGenerator())->generate($property, [], [], 'updatedAt', 'wishlists');
+
+        // Assert
+        $this->assertStringContainsString("extraProperties: ['responseOptional' => true]", $attributes);
+    }
+
     public function testGivenGroupsWhenGeneratingThenEmitsTheGroupsAttribute(): void
     {
         // Arrange
@@ -55,5 +67,33 @@ class PropertyAttributeGeneratorTest extends Unit
 
         // Assert
         $this->assertStringNotContainsString('#[Groups(', $result);
+    }
+
+    public function testGivenASyntheticIdentifierPropertyWhenGeneratingThenTheApiPropertyCarriesTheExtraProperty(): void
+    {
+        // Arrange
+        $property = ['type' => 'string', 'identifier' => true, 'syntheticIdentifier' => true, 'writable' => false];
+
+        // Act
+        $attributes = (new PropertyAttributeGenerator())->generate($property, [], [], 'checkoutDataId', 'checkout-data');
+
+        // Assert
+        $this->assertStringContainsString("extraProperties: ['syntheticIdentifier' => true]", $attributes);
+        $this->assertStringContainsString('identifier: true', $attributes);
+    }
+
+    public function testGivenBothExtraPropertyFlagsWhenGeneratingThenTheyShareOneExtraPropertiesArgument(): void
+    {
+        // Arrange
+        $property = ['type' => 'string', 'identifier' => true, 'syntheticIdentifier' => true, 'responseOptional' => true];
+
+        // Act
+        $attributes = (new PropertyAttributeGenerator())->generate($property, [], [], 'checkoutDataId', 'checkout-data');
+
+        // Assert
+        $this->assertStringContainsString(
+            "extraProperties: ['responseOptional' => true, 'syntheticIdentifier' => true]",
+            $attributes,
+        );
     }
 }

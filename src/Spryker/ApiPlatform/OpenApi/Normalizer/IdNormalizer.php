@@ -23,7 +23,7 @@ class IdNormalizer implements NormalizerInterface, NormalizerAwareInterface
     use NormalizerAwareTrait;
 
     public function __construct(
-        private readonly IdentifiersExtractorInterface $identifiersExtractor,
+        protected readonly IdentifiersExtractorInterface $identifiersExtractor,
     ) {
     }
 
@@ -83,21 +83,12 @@ class IdNormalizer implements NormalizerInterface, NormalizerAwareInterface
         }
 
         if (isset($data['data']['type']) && isset($data['data']['id'])) {
-            $identifiers = $this->extractIdentifiersSafely($object);
-            $identifier = array_pop($identifiers);
+            $identifier = $this->resolveDataIdentifier($object, $data['data']);
 
-            // Singleton resources (e.g. catalog-search, checkout-data) use the type name
-            // as a synthetic identifier for API Platform IRI generation.
-            // The old Glue REST API returned null IDs for these resources.
-            if ($identifier !== null && $identifier === $data['data']['type']) {
-                $identifier = null;
-
-                // Strip the synthetic identifier suffix from the self-link
-                // (e.g. "/checkout-data/checkout-data" → "/checkout-data")
-                $this->stripSyntheticIdentifierFromSelfLink($data['data'], $data['data']['type']);
-            }
-
-            $data['data']['id'] = $identifier;
+            // JSON:API requires `id` to be a string, and a resource whose identifier is an integer
+            // column would otherwise put a JSON number on the wire. The synthetic-identifier null
+            // above is the one legitimate absence and survives the cast.
+            $data['data']['id'] = $identifier === null ? null : (string)$identifier;
 
             if ($identifier !== null && ($context['operation'] ?? null) instanceof GetCollection) {
                 $this->ensureIdentifierInSelfLink($data['data'], (string)$identifier);
@@ -197,6 +188,37 @@ class IdNormalizer implements NormalizerInterface, NormalizerAwareInterface
         } catch (RuntimeException) {
             return [];
         }
+    }
+
+    /**
+     * The value that belongs in `data.id`, or null when the resource has none of its own.
+     *
+     * @param array<string, mixed> $resourceData
+     */
+    protected function resolveDataIdentifier(object $object, array &$resourceData): mixed
+    {
+        $identifiers = $this->extractIdentifiersSafely($object);
+        $identifier = array_pop($identifiers);
+
+        if ($identifier === null) {
+            // Extraction failed as a whole — a sub-resource whose operation declares a parent
+            // uriVariable (e.g. `orderReference` on `/orders/{orderReference}/order-items/{uuid}`)
+            // makes IdentifiersExtractor throw, because that Link points at another resource
+            // class. The resource's own identifier property still carries the value.
+            return $this->extractFallbackIdentifier($object);
+        }
+
+        if ($identifier !== $resourceData['type']) {
+            return $identifier;
+        }
+
+        // Singleton resources (e.g. catalog-search, checkout-data) use the type name as a synthetic
+        // identifier for API Platform IRI generation. The old Glue REST API returned null IDs for
+        // these resources, and the self-link carries the synthetic suffix
+        // (e.g. "/checkout-data/checkout-data" → "/checkout-data").
+        $this->stripSyntheticIdentifierFromSelfLink($resourceData, $resourceData['type']);
+
+        return null;
     }
 
     /**

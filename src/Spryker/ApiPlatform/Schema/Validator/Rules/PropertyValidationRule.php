@@ -152,7 +152,7 @@ class PropertyValidationRule implements ValidationRuleInterface
     protected function validateBooleanAttributes(array $properties, array $schema): array
     {
         $errors = [];
-        $booleanAttributes = ['writable', 'readable', 'identifier', 'required'];
+        $booleanAttributes = ['writable', 'readable', 'identifier', 'required', 'responseOptional', 'syntheticIdentifier', 'collectionOnly', 'itemOnly'];
 
         foreach ($properties as $propertyName => $property) {
             foreach ($booleanAttributes as $attribute) {

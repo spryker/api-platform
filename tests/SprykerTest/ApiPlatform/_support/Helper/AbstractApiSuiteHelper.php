@@ -23,6 +23,8 @@ use SprykerTest\Shared\Testify\Helper\LocatorHelper;
  * Registration happens in the constructor because a module created while the SuiteManager
  * create-loop still runs joins the suite's module snapshot and keeps its lifecycle hooks and
  * generated actor actions; one created later gets neither.
+ *
+ * See the API Platform testing guide in the Spryker documentation for the suite-wiring rules.
  */
 abstract class AbstractApiSuiteHelper extends Module
 {
@@ -42,6 +44,9 @@ abstract class AbstractApiSuiteHelper extends Module
     ];
 
     /**
+     * Created before {@see \SprykerTest\Shared\Testify\Helper\LocatorHelper} freezes the Spryker
+     * Config.
+     *
      * @return array<string>
      */
     abstract protected function getModulesBeforeEnvironment(): array;
@@ -104,6 +109,10 @@ abstract class AbstractApiSuiteHelper extends Module
         $this->moduleContainer->create($moduleName);
     }
 
+    /**
+     * Codeception addresses a class-based module by its FQCN with a leading backslash, while a
+     * bundled module such as `Asserts` is addressed by its bare name.
+     */
     protected function normalizeModuleName(string $moduleName): string
     {
         if (!str_contains($moduleName, '\\')) {

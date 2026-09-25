@@ -43,10 +43,51 @@ namespace Spryker\ApiPlatform\Generator;
  * #[ApiProperty(description: 'Unique customer reference', writable: false, identifier: true)]
  * ```
  *
+ * A property carrying `responseOptional: true` describes the response contract, not the request
+ * schema (unrelated to `required`), and renders as an `extraProperties` entry:
+ * ```php
+ * #[ApiProperty(extraProperties: ['responseOptional' => true])]
+ * ```
+ *
+ * A property carrying `syntheticIdentifier: true` is an identifier a singleton resource declares
+ * only so API Platform can mint an IRI for it; the wire carries `data.id: null`, as the legacy Glue
+ * REST API did. It renders the same way:
+ * ```php
+ * #[ApiProperty(identifier: true, extraProperties: ['syntheticIdentifier' => true])]
+ * ```
+ *
+ * A property carrying `collectionOnly: true` describes the collection response alone - pagination
+ * metadata - so the contract coverage gate demands it of collection operations only, and
+ * `itemOnly: true` is its mirror for a resource whose list answers a summary:
+ * ```php
+ * #[ApiProperty(extraProperties: ['collectionOnly' => true])]
+ * #[ApiProperty(extraProperties: ['itemOnly' => true])]
+ * ```
+ *
  * Handles array and nested OpenAPI context formatting for complex examples and enum definitions.
  */
 class PropertyAttributeGenerator
 {
+    /**
+     * @uses \Spryker\ApiPlatform\Contract\Coverage\ResponseAttributeTruthCollector::EXTRA_PROPERTY_RESPONSE_OPTIONAL
+     */
+    protected const string EXTRA_PROPERTY_RESPONSE_OPTIONAL = 'responseOptional';
+
+    /**
+     * @uses \Spryker\ApiPlatform\Contract\Coverage\SchemaTruthLoader::EXTRA_PROPERTY_SYNTHETIC_IDENTIFIER
+     */
+    protected const string EXTRA_PROPERTY_SYNTHETIC_IDENTIFIER = 'syntheticIdentifier';
+
+    /**
+     * @uses \Spryker\ApiPlatform\Contract\Coverage\ResponseAttributeTruthCollector::EXTRA_PROPERTY_COLLECTION_ONLY
+     */
+    protected const string EXTRA_PROPERTY_COLLECTION_ONLY = 'collectionOnly';
+
+    /**
+     * @uses \Spryker\ApiPlatform\Contract\Coverage\ResponseAttributeTruthCollector::EXTRA_PROPERTY_ITEM_ONLY
+     */
+    protected const string EXTRA_PROPERTY_ITEM_ONLY = 'itemOnly';
+
     /**
      * @param array<string, mixed> $property
      * @param array<string, mixed> $validationSchema
@@ -63,34 +104,59 @@ class PropertyAttributeGenerator
 
         $apiPropertyParts = [];
 
-        if (isset($property['description']) && $property['description'] !== '') {
-            $apiPropertyParts[] = sprintf("description: '%s'", addslashes($property['description']));
+        if (isset($property[SchemaKey::DESCRIPTION]) && $property[SchemaKey::DESCRIPTION] !== '') {
+            $apiPropertyParts[] = sprintf("description: '%s'", addslashes($property[SchemaKey::DESCRIPTION]));
         }
 
-        if (isset($property['writable']) && $property['writable'] === false) {
+        if (isset($property[SchemaKey::WRITABLE]) && $property[SchemaKey::WRITABLE] === false) {
             $apiPropertyParts[] = 'writable: false';
         }
 
-        if (isset($property['readable']) && $property['readable'] === false) {
+        if (isset($property[SchemaKey::READABLE]) && $property[SchemaKey::READABLE] === false) {
             $apiPropertyParts[] = 'readable: false';
         }
 
-        if (isset($property['identifier']) && $property['identifier'] === true) {
+        if (isset($property[SchemaKey::IDENTIFIER]) && $property[SchemaKey::IDENTIFIER] === true) {
             $apiPropertyParts[] = 'identifier: true';
         }
 
-        if (isset($property['identifier']) && $property['identifier'] === false) {
+        if (isset($property[SchemaKey::IDENTIFIER]) && $property[SchemaKey::IDENTIFIER] === false) {
             $apiPropertyParts[] = 'identifier: false';
         }
 
-        if (isset($property['required']) && $property['required'] === true) {
+        if (isset($property[SchemaKey::REQUIRED]) && $property[SchemaKey::REQUIRED] === true) {
             $apiPropertyParts[] = 'required: true';
         }
 
-        $openapiContext = $property['openapiContext'] ?? [];
+        $extraProperties = [];
 
-        if (isset($property['type']) && $property['type'] === 'map') {
-            $openapiContext = array_merge(['type' => 'object'], $openapiContext);
+        if (isset($property[SchemaKey::RESPONSE_OPTIONAL]) && $property[SchemaKey::RESPONSE_OPTIONAL] === true) {
+            $extraProperties[] = static::EXTRA_PROPERTY_RESPONSE_OPTIONAL;
+        }
+
+        if (isset($property[SchemaKey::SYNTHETIC_IDENTIFIER]) && $property[SchemaKey::SYNTHETIC_IDENTIFIER] === true) {
+            $extraProperties[] = static::EXTRA_PROPERTY_SYNTHETIC_IDENTIFIER;
+        }
+
+        if (isset($property[SchemaKey::COLLECTION_ONLY]) && $property[SchemaKey::COLLECTION_ONLY] === true) {
+            $extraProperties[] = static::EXTRA_PROPERTY_COLLECTION_ONLY;
+        }
+
+        if (isset($property[SchemaKey::ITEM_ONLY]) && $property[SchemaKey::ITEM_ONLY] === true) {
+            $extraProperties[] = static::EXTRA_PROPERTY_ITEM_ONLY;
+        }
+
+        if ($extraProperties !== []) {
+            $apiPropertyParts[] = sprintf(
+                'extraProperties: [%s]',
+                implode(', ', array_map(static fn (string $key): string => sprintf("'%s' => true", $key), $extraProperties)),
+            );
+        }
+
+        $openapiContext = $property[SchemaKey::OPEN_API_CONTEXT] ?? [];
+
+        if (isset($property[SchemaKey::TYPE]) && $property[SchemaKey::TYPE] === 'map') {
+            $openapiContext = array_merge([SchemaKey::TYPE => 'object'], $openapiContext);
         }
 
         if ($openapiContext !== []) {
@@ -98,8 +164,8 @@ class PropertyAttributeGenerator
             $apiPropertyParts[] = sprintf('openapiContext: %s', $formattedContext);
         }
 
-        if (isset($property['uriTemplate']) && $property['uriTemplate'] !== '') {
-            $apiPropertyParts[] = sprintf("uriTemplate: '%s'", addslashes($property['uriTemplate']));
+        if (isset($property[SchemaKey::URI_TEMPLATE]) && $property[SchemaKey::URI_TEMPLATE] !== '') {
+            $apiPropertyParts[] = sprintf("uriTemplate: '%s'", addslashes($property[SchemaKey::URI_TEMPLATE]));
         }
 
         if ($apiPropertyParts !== []) {

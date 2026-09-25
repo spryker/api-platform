@@ -32,9 +32,6 @@ class TestModeConfiguration
 
     protected static ?bool $reuseApplicationContainer = null;
 
-    /**
-     * Sets the test mode. Called by ApiPlatformHelper during initialization.
-     */
     public static function setTestMode(TestMode $mode): void
     {
         static::$testMode = $mode;
@@ -80,8 +77,6 @@ class TestModeConfiguration
     }
 
     /**
-     * Returns the current test mode.
-     *
      * Default mode is 'project' when not explicitly configured.
      */
     public static function getTestMode(): TestMode
@@ -89,25 +84,16 @@ class TestModeConfiguration
         return static::$testMode ?? TestMode::default();
     }
 
-    /**
-     * Checks if the current test mode is 'project'.
-     */
     public static function isProjectMode(): bool
     {
         return static::getTestMode() === TestMode::PROJECT;
     }
 
-    /**
-     * Checks if the current test mode is 'core'.
-     */
     public static function isCoreMode(): bool
     {
         return static::getTestMode() === TestMode::CORE;
     }
 
-    /**
-     * Resets the cached test mode. Useful for testing.
-     */
     public static function reset(): void
     {
         static::$testMode = null;

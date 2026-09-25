@@ -86,6 +86,7 @@ use Spryker\ApiPlatform\Schema\Object\Loader\ObjectSchemaLoaderInterface;
 use Spryker\ApiPlatform\Schema\Parser\SchemaParser;
 use Spryker\ApiPlatform\Schema\Parser\SchemaParserInterface;
 use Spryker\ApiPlatform\Schema\Report\CollectionInventoryBuilder;
+use Spryker\ApiPlatform\Schema\Validation\Collector\ExcludedValidationRuleCollector;
 use Spryker\ApiPlatform\Schema\Validation\Finder\ValidationSchemaFinder;
 use Spryker\ApiPlatform\Schema\Validation\Finder\ValidationSchemaFinderInterface;
 use Spryker\ApiPlatform\Schema\Validation\Loader\ValidationSchemaLoader;
@@ -267,6 +268,8 @@ return static function (ContainerConfigurator $container): void {
     // Generator: Canonical Object Registry (pre-pass that generates one shared value-object class
     // per resolved `*.object.yml` definition into `Generated\Api\{ApiType}\`).
     $services->set(CanonicalObjectRegistry::class);
+
+    $services->set(ExcludedValidationRuleCollector::class);
 
     // Generator: Class Generator
     $services->set(ClassGenerator::class);

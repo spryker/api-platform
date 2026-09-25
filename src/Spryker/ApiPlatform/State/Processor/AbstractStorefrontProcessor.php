@@ -12,6 +12,12 @@ namespace Spryker\ApiPlatform\State\Processor;
 use Generated\Shared\Transfer\CustomerTransfer;
 use Spryker\ApiPlatform\Request\RequestAttribute;
 
+/**
+ * A singleton resource — one the API exposes as a single POST with no item operation — has no
+ * identifier of its own, but JSON:API cannot serialize a resource without one. The convention is
+ * that such a processor assigns the resource type as a synthetic identifier; the serializer renders
+ * it back as the null id the legacy Glue REST API returned.
+ */
 abstract class AbstractStorefrontProcessor extends AbstractProcessor
 {
     public const string ATTRIBUTE_CUSTOMER_TRANSFER = RequestAttribute::CUSTOMER_TRANSFER;

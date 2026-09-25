@@ -27,6 +27,7 @@ use Spryker\ApiPlatform\Schema\Object\CanonicalObjectDefinitionResolver;
 use Spryker\ApiPlatform\Schema\Object\Finder\ObjectSchemaFinderInterface;
 use Spryker\ApiPlatform\Schema\Object\Loader\ObjectSchemaLoaderInterface;
 use Spryker\ApiPlatform\Schema\Parser\SchemaParserInterface;
+use Spryker\ApiPlatform\Schema\Validation\Collector\ExcludedValidationRuleCollector;
 use Spryker\ApiPlatform\Schema\Validation\Finder\ValidationSchemaFinderInterface;
 use Spryker\ApiPlatform\Schema\Validation\Loader\ValidationSchemaLoaderInterface;
 use Spryker\ApiPlatform\Schema\Validator\SchemaValidatorInterface;
@@ -90,6 +91,7 @@ class ResourceGenerator implements ResourceGeneratorInterface
         protected readonly ObjectSchemaLoaderInterface $objectSchemaLoader,
         protected readonly CanonicalObjectDefinitionResolver $canonicalObjectDefinitionResolver,
         protected readonly CanonicalObjectRegistry $canonicalObjectRegistry,
+        protected readonly ExcludedValidationRuleCollector $excludedValidationRuleCollector,
         protected LoggerInterface $logger = new NullLogger(),
     ) {
     }
@@ -157,6 +159,8 @@ class ResourceGenerator implements ResourceGeneratorInterface
 
             yield $result;
         }
+
+        yield from $this->reportExcludedValidationRules($apiType, $validationResult->getValidatedSchemas());
 
         if ($generatedCount === 0) {
             // No resources to generate is a valid state when all schemas are excluded via
@@ -261,6 +265,71 @@ class ResourceGenerator implements ResourceGeneratorInterface
         $this->filesystem->dumpFile($filePath, $generatedCode);
 
         return $filePath;
+    }
+
+    /**
+     * Warns about every validation rule an excluded schema file declares and nothing else does.
+     *
+     * `excludedPathFragments` is how a project resolves two modules shipping a schema for the same
+     * resource, but it excludes by path, so any rule the losing file declares on top of the winner
+     * is silently gone — absent from the generated class, the contract and the runtime validator
+     * alike. Reporting it here is the only moment the two files are both in hand.
+     *
+     * @param array<string, array<string, mixed>> $validatedSchemas
+     *
+     * @return \Generator<array{status: string, message: string, suggestion: string}>
+     */
+    protected function reportExcludedValidationRules(string $apiType, array $validatedSchemas): Generator
+    {
+        $generatedValidationByResource = [];
+
+        foreach ($validatedSchemas as $groupKey => $schema) {
+            $generatedValidationByResource[$this->stripCodeBucket((string)$groupKey)] = $schema['validation'] ?? [];
+        }
+
+        foreach ($this->validationSchemaFinder->findExcludedValidationSchemas($apiType) as $file) {
+            $filePath = $file->getRealPath() ?: $file->getPathname();
+            $resourceName = $this->generateValidationResourceName($filePath);
+
+            if (!isset($generatedValidationByResource[$resourceName])) {
+                continue;
+            }
+
+            $lostRules = $this->excludedValidationRuleCollector->collectLostRules(
+                $this->validationSchemaLoader->load($file),
+                $generatedValidationByResource[$resourceName],
+            );
+
+            if ($lostRules === []) {
+                continue;
+            }
+
+            yield [
+                'status' => 'warning',
+                'message' => sprintf(
+                    "%s is excluded from generation, so %d validation rule(s) it declares never reach resource \"%s\":\n  - %s",
+                    $filePath,
+                    count($lostRules),
+                    $resourceName,
+                    implode("\n  - ", $lostRules),
+                ),
+                'suggestion' => 'Declare these rules in the schema that does generate, or drop the excludedPathFragments entry that hides this file.',
+            ];
+        }
+    }
+
+    protected function stripCodeBucket(string $groupKey): string
+    {
+        $delimiterPosition = strpos($groupKey, static::CODEBUCKET_DELIMITER);
+
+        return $delimiterPosition === false ? $groupKey : substr($groupKey, 0, $delimiterPosition);
+    }
+
+    protected function generateValidationResourceName(string $filePath): string
+    {
+        $fileName = basename($filePath, '.validation.yml');
+
+        return basename($fileName, '.validation.yaml');
     }
 
     /**

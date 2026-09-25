@@ -58,6 +58,9 @@ class GlueApiExceptionSubscriber implements EventSubscriberInterface
 
     protected const string CONTENT_TYPE_JSON_API = 'application/vnd.api+json';
 
+    // The write methods whose body can carry a nested value object.
+    protected const array NESTED_OBJECT_WRITE_METHODS = [Request::METHOD_POST, Request::METHOD_PATCH];
+
     protected const string ENGLISH_LOCALE = 'en';
 
     protected const string ERROR_CODE_MISSING_ACCESS_TOKEN = '002';
@@ -499,7 +502,13 @@ class GlueApiExceptionSubscriber implements EventSubscriberInterface
         // synthesize "This field is missing." for present-but-empty nested objects.
         // Runs outside the 422 guard because a present-but-empty required object (whose leaf
         // constraints allow null) otherwise yields no errors and a 200 — this pass forces 422.
-        if ($request->attributes->has(RequestAttribute::API_RESOURCE_CLASS) && $request->getMethod() === 'POST') {
+        // An update needs it for the same reason: a write-only operation denormalizes onto a
+        // pre-populated instance, so a nested `?bool` leaf submitted as a non-boolean is coerced by
+        // the generated setter and answers 200 unless the raw body is re-checked here.
+        if (
+            $request->attributes->has(RequestAttribute::API_RESOURCE_CLASS)
+            && in_array($request->getMethod(), static::NESTED_OBJECT_WRITE_METHODS, true)
+        ) {
             $resourceClass = (string)$request->attributes->get(RequestAttribute::API_RESOURCE_CLASS, '');
 
             if ($resourceClass !== '') {

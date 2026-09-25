@@ -243,26 +243,20 @@ class ApiPlatformHelper extends Module
 
         $resourcePath = sprintf('%s/src/Generated/Api/%s', $projectRoot, $apiType);
 
-        echo sprintf(
-            "\n[ApiPlatformTest] Running in PROJECT mode for %s API.\n",
-            $apiType,
-        );
+        $this->debugSection('ApiPlatform', sprintf('Running in PROJECT mode for %s API.', $apiType));
 
         if (!is_dir($resourcePath) || count(glob($resourcePath . '/*.php')) === 0) {
-            echo sprintf(
-                "[ApiPlatformTest] WARNING: No resources found at %s\n"
-                . "[ApiPlatformTest] Generate resources with: vendor/bin/console api:generate %s\n\n",
+            // A warning, not a failure: the suite may only hold tests that never boot a kernel.
+            $this->debugSection('ApiPlatform', sprintf(
+                'No resources found at %s — generate them with: GLUE_APPLICATION=GLUE_%s vendor/bin/glue api:generate',
                 $resourcePath,
-                strtolower($apiType),
-            );
+                strtoupper($apiType),
+            ));
 
             return;
         }
 
-        echo sprintf(
-            "[ApiPlatformTest] Resources found at %s\n\n",
-            $resourcePath,
-        );
+        $this->debugSection('ApiPlatform', sprintf('Resources found at %s', $resourcePath));
     }
 
     protected function cleanupContainerCache(): void

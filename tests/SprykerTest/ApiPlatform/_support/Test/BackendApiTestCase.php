@@ -10,11 +10,8 @@ namespace SprykerTest\ApiPlatform\Test;
 /**
  * Base test case for Backend API functional tests.
  *
- * Extends AbstractApiTestCase with Backend API specific configuration:
- * - Resource paths pointing to generated Backend API resources
- * - Default client options including base URL and headers
- *
- * All Backend API tests should extend this class.
+ * Extends {@see AbstractApiTestCase} with the Backend resource paths, base URL and JSON:API
+ * headers. See `src/Spryker/ApiPlatform/tests/README.md` for which lane a test belongs in.
  *
  * JSON:API rather than JSON-LD, because that is what the Backend application actually serves:
  * `config/GlueBackend/packages/api_platform.php` registers `jsonapi` first and registers

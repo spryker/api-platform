@@ -256,13 +256,111 @@ YAML;
         return $generator;
     }
 
+    public function testGivenAnExcludedValidationSchemaDeclaringAnUnmatchedRuleWhenGeneratingThenWarnsThatTheRuleIsLost(): void
+    {
+        // Arrange — two modules ship a validation schema for the same resource and one is excluded,
+        // taking the only declaration of `NotCompromisedPassword` with it.
+        $this->tester->createDirectoryStructure([
+            'CustomersRestApi' => [
+                'resources' => [
+                    'api' => [
+                        'storefront' => [
+                            'customers.resource.yml' => $this->createCustomersResourceSchema(),
+                            'customers.validation.yml' => "post:\n    password:\n        - NotBlank: ~\n",
+                        ],
+                    ],
+                ],
+            ],
+            'Customer' => [
+                'resources' => [
+                    'api' => [
+                        'storefront' => [
+                            'customers.validation.yml' => "post:\n    password:\n        - NotBlank: ~\n        - NotCompromisedPassword: ~\n",
+                        ],
+                    ],
+                ],
+            ],
+        ]);
+        $generator = $this->createResourceGenerator(['/Customer/resources/api/']);
+
+        // Act
+        $request = (new ApiPlatformResourceGenerationRequestTransfer())
+            ->setApiType('Storefront')
+            ->setIsKeepExisting(true);
+        $results = iterator_to_array($generator->generateResources($request));
+
+        // Assert
+        $warnings = array_values(array_filter($results, static fn (array $result): bool => $result['status'] === 'warning'));
+        $this->assertCount(1, $warnings);
+        $this->assertStringContainsString('post.password.NotCompromisedPassword', $warnings[0]['message']);
+        $this->assertStringContainsString('Customer/resources/api/storefront/customers.validation.yml', $warnings[0]['message']);
+    }
+
+    public function testGivenAnExcludedValidationSchemaThatOnlyRepeatsGeneratedRulesWhenGeneratingThenWarnsAboutNothing(): void
+    {
+        // Arrange
+        $this->tester->createDirectoryStructure([
+            'CustomersRestApi' => [
+                'resources' => [
+                    'api' => [
+                        'storefront' => [
+                            'customers.resource.yml' => $this->createCustomersResourceSchema(),
+                            'customers.validation.yml' => "post:\n    password:\n        - NotBlank: ~\n",
+                        ],
+                    ],
+                ],
+            ],
+            'Customer' => [
+                'resources' => [
+                    'api' => [
+                        'storefront' => [
+                            'customers.validation.yml' => "post:\n    password:\n        - NotBlank: ~\n",
+                        ],
+                    ],
+                ],
+            ],
+        ]);
+        $generator = $this->createResourceGenerator(['/Customer/resources/api/']);
+
+        // Act
+        $request = (new ApiPlatformResourceGenerationRequestTransfer())
+            ->setApiType('Storefront')
+            ->setIsKeepExisting(true);
+        $results = iterator_to_array($generator->generateResources($request));
+
+        // Assert
+        $warnings = array_filter($results, static fn (array $result): bool => $result['status'] === 'warning');
+        $this->assertSame([], $warnings);
+    }
+
+    protected function createCustomersResourceSchema(): string
+    {
+        return <<<YAML
+        resource:
+            name: Customers
+            shortName: customers
+            description: "Customer registration"
+
+            operations:
+                - type: Post
+
+            properties:
+                password:
+                    type: string
+                    writable: true
+        YAML;
+    }
+
     protected function setProperty(object $object, string $property, mixed $value): void
     {
         $reflectionProperty = (new ReflectionClass($object))->getProperty($property);
         $reflectionProperty->setValue($object, $value);
     }
 
-    protected function createResourceGenerator(): ResourceGeneratorInterface
+    /**
+     * @param array<string> $excludedPathFragments
+     */
+    protected function createResourceGenerator(array $excludedPathFragments = []): ResourceGeneratorInterface
     {
         $config = new ApiPlatformConfig(
             sourceDirectories: [$this->tester->getVirtualFilesystemPath()],
@@ -270,6 +368,7 @@ YAML;
             generatedDir: sys_get_temp_dir(),
             apiTypes: ['Storefront'],
             debug: false,
+            excludedPathFragments: $excludedPathFragments,
         );
 
         $this->tester->getContainer()->set(ApiPlatformConfig::class, $config);

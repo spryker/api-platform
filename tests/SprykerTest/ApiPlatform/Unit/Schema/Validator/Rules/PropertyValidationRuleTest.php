@@ -115,6 +115,20 @@ class PropertyValidationRuleTest extends Unit
         $this->assertNotEmpty($errors);
     }
 
+    public function testGivenNonBooleanResponseOptionalAttributeWhenValidatingThenReturnsError(): void
+    {
+        // Arrange
+        $schema = ['properties' => ['status' => ['type' => 'string', 'responseOptional' => 'yes']]];
+        $rule = $this->tester->getContainer()->get(PropertyValidationRule::class);
+
+        // Act
+        $errors = $rule->validate($schema);
+
+        // Assert
+        $this->assertNotEmpty($errors);
+        $this->assertStringContainsString('responseOptional', $errors[0]);
+    }
+
     public function testGivenIncompatibleDefaultValueWhenValidatingThenReturnsError(): void
     {
         // Arrange

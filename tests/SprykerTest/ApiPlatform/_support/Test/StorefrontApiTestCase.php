@@ -10,11 +10,8 @@ namespace SprykerTest\ApiPlatform\Test;
 /**
  * Base test case for Storefront API functional tests.
  *
- * Extends AbstractApiTestCase with Storefront API specific configuration:
- * - Resource paths pointing to generated Storefront API resources
- * - Default client options including base URL and headers
- *
- * All Storefront API tests should extend this class.
+ * Extends {@see AbstractApiTestCase} with the Storefront resource paths, base URL and JSON:API
+ * headers. See `src/Spryker/ApiPlatform/tests/README.md` for which lane a test belongs in.
  */
 abstract class StorefrontApiTestCase extends AbstractApiTestCase
 {

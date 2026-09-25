@@ -9,6 +9,8 @@ declare(strict_types=1);
 
 namespace Spryker\ApiPlatform\Generator\MediaType;
 
+use Spryker\ApiPlatform\Generator\SchemaKey;
+
 /**
  * Formatter for JSON:API media type (application/vnd.api+json).
  *
@@ -51,13 +53,13 @@ class JsonApiMediaTypeFormatter implements MediaTypeFormatterInterface
     public function buildExample(array $parsedSchema, string $operationType): array
     {
         $example = [
-            'data' => [
-                'type' => $parsedSchema['shortName'] ?? 'resource',
-                'attributes' => [],
+            SchemaKey::DATA => [
+                SchemaKey::TYPE => $parsedSchema[SchemaKey::SHORT_NAME] ?? 'resource',
+                SchemaKey::ATTRIBUTES => [],
             ],
         ];
 
-        $properties = $parsedSchema['properties'] ?? [];
+        $properties = $parsedSchema[SchemaKey::PROPERTIES] ?? [];
 
         foreach ($properties as $propertyName => $propertyConfig) {
             if ($propertyConfig['identifier'] ?? false) {
@@ -65,13 +67,13 @@ class JsonApiMediaTypeFormatter implements MediaTypeFormatterInterface
             }
 
             if (in_array($operationType, ['Post', 'Patch', 'Put'], true)) {
-                if (isset($propertyConfig['writable']) && $propertyConfig['writable'] === false) {
+                if (isset($propertyConfig[SchemaKey::WRITABLE]) && $propertyConfig[SchemaKey::WRITABLE] === false) {
                     continue;
                 }
             }
 
-            if (isset($propertyConfig['openapiContext']['example'])) {
-                $example['data']['attributes'][$propertyName] = $propertyConfig['openapiContext']['example'];
+            if (isset($propertyConfig[SchemaKey::OPEN_API_CONTEXT][SchemaKey::EXAMPLE])) {
+                $example[SchemaKey::DATA][SchemaKey::ATTRIBUTES][$propertyName] = $propertyConfig[SchemaKey::OPEN_API_CONTEXT][SchemaKey::EXAMPLE];
             }
         }
 

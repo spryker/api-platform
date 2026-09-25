@@ -16,7 +16,8 @@ namespace SprykerTest\ApiPlatform\Test;
  *         Uses tests/_data/Api/{ApiType} paths. Container is compiled fresh each time.
  *
  * - PROJECT: For project-level testing. Resources must be pre-generated manually via
- *            `vendor/bin/console api:generate backend` or `api:generate storefront`.
+ *            `GLUE_APPLICATION=GLUE_BACKEND vendor/bin/glue api:generate` or
+ *            `GLUE_APPLICATION=GLUE_STOREFRONT vendor/bin/glue api:generate`.
  *            Uses src/Generated/Api/{ApiType} paths. Container is reused if available.
  */
 enum TestMode: string

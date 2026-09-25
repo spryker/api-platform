@@ -38,6 +38,89 @@ class GlueApiExceptionSubscriberOnKernelResponseTest extends Unit
 {
     protected ApiUnitTester $tester;
 
+    protected const string NESTED_BOOL_RESOURCE_CLASS = 'Generated\\Api\\Storefront\\NestedBoolLeafResource';
+
+    /**
+     * The nested-object pass only cascades into properties typed under the generated
+     * `Generated\Api\Storefront` namespace, so the fixture has to carry that FQCN. It is defined at
+     * runtime because the namespace is reserved for generated code and has no source-tree home.
+     */
+    protected function _before(): void
+    {
+        if (class_exists(static::NESTED_BOOL_RESOURCE_CLASS)) {
+            return;
+        }
+
+        // phpcs:ignore Squiz.PHP.Eval.Discouraged
+        eval(
+            'namespace Generated\\Api\\Storefront;'
+            . ' class NestedBoolLeafValueObject { public ?bool $isComplete = null; }'
+            . ' class NestedBoolLeafResource { public ?NestedBoolLeafValueObject $productConfigurationInstance = null; }'
+        );
+    }
+
+    /**
+     * On a write-only operation the leaf is assigned through a typed setter, where PHP's weak mode
+     * turns any non-empty string into `true` before `Assert\Type` can see it.
+     */
+    public function testGivenNonBooleanNestedLeafOnPatchWhenOnKernelResponseThenPassingResponseIsPromotedTo422(): void
+    {
+        // Arrange
+        $request = $this->createRequest(
+            static::NESTED_BOOL_RESOURCE_CLASS,
+            ['productConfigurationInstance' => ['isComplete' => 'yes']],
+            Request::METHOD_PATCH,
+        );
+        $event = $this->createResponseEvent($request, new Response('{}', Response::HTTP_OK, ['Content-Type' => 'application/json']));
+
+        // Act
+        $this->createSubscriber()->onKernelResponse($event);
+
+        // Assert
+        $this->assertSame(Response::HTTP_UNPROCESSABLE_ENTITY, $event->getResponse()->getStatusCode());
+        $this->assertContains(
+            'productConfigurationInstance.isComplete => This value should be of type boolean.',
+            $this->extractDetails($event),
+        );
+    }
+
+    public function testGivenBooleanNestedLeafOnPatchWhenOnKernelResponseThenResponseIsLeftAlone(): void
+    {
+        // Arrange
+        $request = $this->createRequest(
+            static::NESTED_BOOL_RESOURCE_CLASS,
+            ['productConfigurationInstance' => ['isComplete' => true]],
+            Request::METHOD_PATCH,
+        );
+        $event = $this->createResponseEvent($request, new Response('{}', Response::HTTP_OK, ['Content-Type' => 'application/json']));
+
+        // Act
+        $this->createSubscriber()->onKernelResponse($event);
+
+        // Assert
+        $this->assertSame(Response::HTTP_OK, $event->getResponse()->getStatusCode());
+    }
+
+    /**
+     * A read never carries a body to re-check, so the pass must not touch its response.
+     */
+    public function testGivenNonBooleanNestedLeafOnGetWhenOnKernelResponseThenResponseIsLeftAlone(): void
+    {
+        // Arrange
+        $request = $this->createRequest(
+            static::NESTED_BOOL_RESOURCE_CLASS,
+            ['productConfigurationInstance' => ['isComplete' => 'yes']],
+            Request::METHOD_GET,
+        );
+        $event = $this->createResponseEvent($request, new Response('{}', Response::HTTP_OK, ['Content-Type' => 'application/json']));
+
+        // Act
+        $this->createSubscriber()->onKernelResponse($event);
+
+        // Assert
+        $this->assertSame(Response::HTTP_OK, $event->getResponse()->getStatusCode());
+    }
+
     public function testGivenEmptyStringQuantityWhenOnKernelResponseThenTypeIntegerAndGreaterThanErrorsAreAdded(): void
     {
         // Arrange
@@ -313,9 +396,9 @@ class GlueApiExceptionSubscriberOnKernelResponseTest extends Unit
     /**
      * @param array<string, mixed> $attributes
      */
-    protected function createRequest(string $resourceClass, array $attributes): Request
+    protected function createRequest(string $resourceClass, array $attributes, string $method = Request::METHOD_POST): Request
     {
-        $request = Request::create('/test', 'POST', [], [], [], [], (string)json_encode([
+        $request = Request::create('/test', $method, [], [], [], [], (string)json_encode([
             'data' => ['attributes' => $attributes],
         ]));
         $request->attributes->set('_api_resource_class', $resourceClass);

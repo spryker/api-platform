@@ -68,6 +68,16 @@ class ResourceAttributeGenerator
         'new ArrayObject(' => 'ArrayObject',
     ];
 
+    /**
+     * @uses \Spryker\ApiPlatform\Contract\Coverage\SchemaTruthLoader::EXTRA_PROPERTY_DECLARED_RESPONSES
+     */
+    protected const string EXTRA_PROPERTY_DECLARED_RESPONSES = 'declaredResponses';
+
+    /**
+     * @uses \Spryker\ApiPlatform\Contract\Coverage\SchemaTruthLoader::EXTRA_PROPERTY_INTERNAL
+     */
+    protected const string EXTRA_PROPERTY_INTERNAL = 'internal';
+
     public function __construct(protected OpenApiOperationBuilder $openApiOperationBuilder)
     {
     }
@@ -101,13 +111,13 @@ class ResourceAttributeGenerator
             $attributeParts[] = sprintf("shortName: '%s'", $schema['shortName']);
         }
 
-        if (isset($schema['provider']) && $schema['provider'] !== '') {
-            $providerShortName = $this->extractShortClassName($schema['provider']);
+        if (isset($schema[SchemaKey::PROVIDER]) && $schema[SchemaKey::PROVIDER] !== '') {
+            $providerShortName = $this->extractShortClassName($schema[SchemaKey::PROVIDER]);
             $attributeParts[] = sprintf('provider: %s::class', $providerShortName);
         }
 
-        if (isset($schema['processor']) && $schema['processor'] !== '') {
-            $processorShortName = $this->extractShortClassName($schema['processor']);
+        if (isset($schema[SchemaKey::PROCESSOR]) && $schema[SchemaKey::PROCESSOR] !== '') {
+            $processorShortName = $this->extractShortClassName($schema[SchemaKey::PROCESSOR]);
             $attributeParts[] = sprintf('processor: %s::class', $processorShortName);
         }
 
@@ -202,8 +212,8 @@ class ResourceAttributeGenerator
             $attributeParts[] = sprintf('extraProperties: %s', $this->formatArrayParameter($extraProperties));
         }
 
-        if (isset($schema['openapiContext']) && $schema['openapiContext'] !== []) {
-            $attributeParts[] = sprintf('openapiContext: %s', $this->formatArrayParameter($schema['openapiContext']));
+        if (isset($schema[SchemaKey::OPEN_API_CONTEXT]) && $schema[SchemaKey::OPEN_API_CONTEXT] !== []) {
+            $attributeParts[] = sprintf('openapiContext: %s', $this->formatArrayParameter($schema[SchemaKey::OPEN_API_CONTEXT]));
         }
 
         $this->addOperationUseStatements($operations, $uses, implode("\n", $operationsParts));
@@ -274,12 +284,16 @@ class ResourceAttributeGenerator
             $parameters['securityPostValidationMessage'] = $operation['securityPostValidationMessage'];
         }
 
-        if (isset($operation['provider']) && is_string($operation['provider'])) {
-            $parameters['provider'] = $operation['provider'];
+        if (isset($operation[SchemaKey::PROVIDER]) && is_string($operation[SchemaKey::PROVIDER])) {
+            $parameters['provider'] = $operation[SchemaKey::PROVIDER];
         }
 
-        if (isset($operation['processor']) && is_string($operation['processor'])) {
-            $parameters['processor'] = $operation['processor'];
+        if (isset($operation[SchemaKey::PROCESSOR]) && is_string($operation[SchemaKey::PROCESSOR])) {
+            $parameters['processor'] = $operation[SchemaKey::PROCESSOR];
+        }
+
+        if (isset($operation[SchemaKey::CONTROLLER]) && is_string($operation[SchemaKey::CONTROLLER])) {
+            $parameters['controller'] = $operation[SchemaKey::CONTROLLER];
         }
 
         if (array_key_exists('output', $operation)) {
@@ -306,8 +320,14 @@ class ResourceAttributeGenerator
             $parameters['read'] = $operation['read'];
         }
 
-        if (isset($operation['extraProperties']) && is_array($operation['extraProperties']) && $operation['extraProperties'] !== []) {
-            $parameters['extraProperties'] = $operation['extraProperties'];
+        $extraProperties = is_array($operation[SchemaKey::EXTRA_PROPERTIES] ?? null) ? $operation[SchemaKey::EXTRA_PROPERTIES] : [];
+
+        if (($operation[SchemaKey::INTERNAL] ?? null) === true) {
+            $extraProperties[static::EXTRA_PROPERTY_INTERNAL] = true;
+        }
+
+        if ($extraProperties !== []) {
+            $parameters['extraProperties'] = $extraProperties;
         }
 
         return $parameters;
@@ -332,7 +352,7 @@ class ResourceAttributeGenerator
                 continue;
             }
 
-            if (($key === 'provider' || $key === 'processor') && is_string($value)) {
+            if (($key === 'provider' || $key === 'processor' || $key === 'controller') && is_string($value)) {
                 $shortName = $this->extractShortClassName($value);
                 $parts[] = sprintf('%s: %s::class', $key, $shortName);
 
@@ -468,8 +488,16 @@ class ResourceAttributeGenerator
             $baseParameters['validationContext'] = ['groups' => $validationGroups];
         }
 
-        if (($operation['openapi'] ?? null) === false) {
+        if (($operation[SchemaKey::OPEN_API] ?? null) === false) {
             $baseParameters['openapi'] = false;
+            $baseParameters['extraProperties'] = $this->addDeclaredResponsesExtraProperty(
+                $operation,
+                is_array($baseParameters['extraProperties'] ?? null) ? $baseParameters['extraProperties'] : [],
+            );
+
+            if ($baseParameters['extraProperties'] === []) {
+                unset($baseParameters['extraProperties']);
+            }
 
             return $this->formatOperationAttribute($operationClass, $baseParameters);
         }
@@ -487,6 +515,39 @@ class ResourceAttributeGenerator
         }
 
         return $this->formatOperationAttribute($operationClass, $baseParameters);
+    }
+
+    /**
+     * `openapi: false` and "here are the statuses I answer" are not contradictory statements, but
+     * API Platform's `openapi` argument holds either `false` or an Operation object, never both. A
+     * hidden operation would therefore lose its declared responses entirely, and the contract
+     * coverage gate would report both a missing declaration and a stale test claim for every test
+     * that correctly pins the legacy status. The statuses ride in `extraProperties` instead, which
+     * API Platform ignores and {@see \Spryker\ApiPlatform\Contract\Coverage\SchemaTruthLoader}
+     * reads back.
+     *
+     * @param array<string, mixed> $operation
+     * @param array<string, mixed> $extraProperties
+     *
+     * @return array<string, mixed>
+     */
+    protected function addDeclaredResponsesExtraProperty(array $operation, array $extraProperties): array
+    {
+        $responses = $operation[SchemaKey::OPEN_API_CONTEXT][SchemaKey::RESPONSES] ?? null;
+
+        if (!is_array($responses) || $responses === []) {
+            return $extraProperties;
+        }
+
+        $statuses = array_map(
+            static fn (int|string $status): int => (int)$status,
+            array_keys($responses),
+        );
+        sort($statuses);
+
+        $extraProperties[static::EXTRA_PROPERTY_DECLARED_RESPONSES] = array_values(array_unique($statuses));
+
+        return $extraProperties;
     }
 
     /**
@@ -558,7 +619,7 @@ class ResourceAttributeGenerator
                 $needsLinkImport = true;
             }
 
-            if (isset($operation['openapiContext']['requestBody'])) {
+            if (isset($operation[SchemaKey::OPEN_API_CONTEXT][SchemaKey::REQUEST_BODY])) {
                 $needsRequestBodyImport = true;
             }
         }
@@ -590,7 +651,7 @@ class ResourceAttributeGenerator
         $collected = [];
 
         foreach ($operations as $operation) {
-            foreach (['provider', 'processor'] as $serviceKey) {
+            foreach (['provider', 'processor', 'controller'] as $serviceKey) {
                 if (!isset($operation[$serviceKey]) || !is_string($operation[$serviceKey])) {
                     continue;
                 }

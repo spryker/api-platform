@@ -16,11 +16,35 @@ use Symfony\Component\HttpFoundation\Response;
 use Symfony\Component\Validator\Constraints\Email;
 use Symfony\Component\Validator\Constraints\NotBlank;
 use Symfony\Component\Validator\Constraints\NotNull;
+use Symfony\Component\Validator\Constraints\Type;
 use Symfony\Contracts\Translation\TranslatorInterface;
 
 /**
  * Augments validation for present-but-empty nested value objects (generated `objectName`
  * canonical objects typed as `?Generated\Api\*` and cascaded via `Assert\Valid`), for every ApiType.
+ *
+ * Four behaviors, all driven off the RAW submitted body so coercion and `allowNull` cannot
+ * erase the submitted shape:
+ *
+ * - Coerced bool leaf: a nested `?bool` leaf (e.g. `productConfigurationInstance.isComplete`)
+ *   submitted as a non-boolean (`1`, `"True"`) is coerced before `Assert\Type` runs, so the Type
+ *   error never fires — re-check the raw value and append the boolean Type error.
+ * - Relabel flagged leaf: a required leaf (NotBlank/NotNull/Email) of a present-but-empty object
+ *   that the validator already flagged is relabeled to "This field is missing." (the top-level
+ *   rewrite the subscriber performs skips dotted, multi-error paths).
+ * - Name the unassignable leaf: a leaf whose submitted value cannot be assigned to its generated
+ *   property aborts the whole nested object's denormalization, and the serializer reports that as
+ *   `<object> => This value should be of type object.` - naming a field the caller did not send and
+ *   cannot fix. Replace it with the leaf's own declared type error.
+ * - Synthesize missing leaf: a required leaf of a present-but-empty object whose constraint allows
+ *   null (a required leaf whose constraint allows null) produces NO error and the request passes —
+ *   synthesize a "This field is missing." error per absent required leaf and force a 422 response.
+ *
+ * Only nested objects whose parent key IS present in the raw body are touched — an entirely
+ * omitted object stays valid (`?Object` null, `Assert\Valid` skips) per legacy behavior.
+ *
+ * A pure transformer: it takes the already-decoded errors and returns the augmented set. All HTTP
+ * request/response handling stays in the caller.
  */
 class NestedObjectValidationErrorAugmenter
 {
@@ -33,6 +57,8 @@ class NestedObjectValidationErrorAugmenter
     protected const string MESSAGE_TEMPLATE_TYPE = 'This value should be of type {{ type }}.';
 
     protected const string TYPE_NAME_BOOLEAN = 'boolean';
+
+    protected const string TYPE_NAME_OBJECT = 'object';
 
     /**
      * ApiType-agnostic on purpose: the same prefix
@@ -96,6 +122,14 @@ class NestedObjectValidationErrorAugmenter
             }
 
             $modified = $this->augmentNestedBoolLeaves($errors, $existingDetails, $propertyName, $valueObjectClass, $submittedObject) || $modified;
+            $modified = $this->augmentUnassignableNestedLeaves(
+                $errors,
+                $existingDetails,
+                $propertyName,
+                $valueObjectClass,
+                $submittedObject,
+                $groups,
+            ) || $modified;
             $modified = $this->augmentNestedMissingLeaves(
                 $errors,
                 $existingDetails,
@@ -164,6 +198,142 @@ class NestedObjectValidationErrorAugmenter
         }
 
         return $modified;
+    }
+
+    /**
+     * A leaf whose submitted value cannot be assigned to its generated property - `"abc"` into an
+     * `?int` - makes the whole nested object fail to denormalize, and the serializer reports the
+     * parent: `<object> => This value should be of type object.` That names a field the caller did
+     * send correctly and says nothing about the one they got wrong, so it is replaced with the
+     * leaf's own type error.
+     *
+     * The leaf error carries no object prefix, which is the shape the legacy API answered and what
+     * {@see \SprykerTest\ApiPlatform\Test\NestedValidationAssertionsTrait::assertUnprefixedNestedViolation()}
+     * pins.
+     *
+     * @param array<array<string, mixed>> $errors
+     * @param array<string, bool> $existingDetails
+     * @param array<string, mixed> $submittedObject
+     * @param array<string> $groups
+     */
+    protected function augmentUnassignableNestedLeaves(
+        array &$errors,
+        array &$existingDetails,
+        string $propertyName,
+        string $valueObjectClass,
+        array $submittedObject,
+        array $groups,
+    ): bool {
+        $objectTypeDetail = sprintf(
+            '%s => %s',
+            $propertyName,
+            $this->translateValidationMessage(static::MESSAGE_TEMPLATE_TYPE, ['{{ type }}' => static::TYPE_NAME_OBJECT]),
+        );
+
+        if (!isset($existingDetails[$objectTypeDetail])) {
+            return false;
+        }
+
+        $leafDetails = [];
+
+        foreach ($this->resolveUnassignableLeafTypes($valueObjectClass, $submittedObject, $groups) as $leaf => $declaredType) {
+            $leafDetails[] = sprintf(
+                '%s => %s',
+                $leaf,
+                $this->translateValidationMessage(static::MESSAGE_TEMPLATE_TYPE, ['{{ type }}' => $declaredType]),
+            );
+        }
+
+        if ($leafDetails === []) {
+            return false;
+        }
+
+        foreach ($errors as $index => $error) {
+            if (($error['detail'] ?? '') === $objectTypeDetail) {
+                unset($errors[$index]);
+            }
+        }
+
+        unset($existingDetails[$objectTypeDetail]);
+
+        foreach ($leafDetails as $detail) {
+            if (isset($existingDetails[$detail])) {
+                continue;
+            }
+
+            $errors[] = ['detail' => $detail, 'code' => static::ERROR_CODE_VALIDATION, 'status' => Response::HTTP_UNPROCESSABLE_ENTITY];
+            $existingDetails[$detail] = true;
+        }
+
+        return true;
+    }
+
+    /**
+     * The submitted leaves that cannot be assigned to their generated property, mapped to the type
+     * name to report. That is the leaf's own `Assert\Type` type where the schema declares one -
+     * `numeric` rather than `int`, which is what the resource documents - and its PHP type otherwise.
+     *
+     * @param array<string, mixed> $submittedObject
+     * @param array<string> $groups
+     *
+     * @return array<string, string>
+     */
+    protected function resolveUnassignableLeafTypes(string $valueObjectClass, array $submittedObject, array $groups): array
+    {
+        if (!class_exists($valueObjectClass)) {
+            return [];
+        }
+
+        $leafTypes = [];
+
+        foreach ((new ReflectionClass($valueObjectClass))->getProperties() as $property) {
+            $leaf = $property->getName();
+            $type = $property->getType();
+
+            if (!array_key_exists($leaf, $submittedObject) || !$type instanceof ReflectionNamedType) {
+                continue;
+            }
+
+            if (!$this->isUnassignable($type, $submittedObject[$leaf])) {
+                continue;
+            }
+
+            $leafTypes[$leaf] = $this->resolveDeclaredTypeName($valueObjectClass, $leaf, $groups) ?? $type->getName();
+        }
+
+        return $leafTypes;
+    }
+
+    /**
+     * Only the builtin scalars are judged: a value bound for a class-typed leaf is a nested object of
+     * its own, whose denormalization the serializer reports on its own terms.
+     */
+    protected function isUnassignable(ReflectionNamedType $type, mixed $value): bool
+    {
+        if ($value === null) {
+            return !$type->allowsNull();
+        }
+
+        return match ($type->getName()) {
+            'int', 'float' => !is_numeric($value),
+            'bool' => !is_bool($value),
+            'string' => !is_scalar($value),
+            default => false,
+        };
+    }
+
+    /**
+     * @param array<string> $groups
+     */
+    protected function resolveDeclaredTypeName(string $valueObjectClass, string $propertyName, array $groups): ?string
+    {
+        foreach ($this->constraintReader->getConstraintsForGroups($valueObjectClass, $propertyName, $groups) as $constraint) {
+            if ($constraint instanceof Type && is_string($constraint->type)) {
+                return $constraint->type;
+            }
+        }
+
+        return null;
     }
 
     /**

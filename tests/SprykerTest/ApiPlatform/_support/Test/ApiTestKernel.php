@@ -108,9 +108,6 @@ class ApiTestKernel extends TestKernel
         return $this->getCoreModeCacheDir();
     }
 
-    /**
-     * Returns the cache directory for core mode.
-     */
     protected function getCoreModeCacheDir(): string
     {
         $baseDir = parent::getCacheDir();

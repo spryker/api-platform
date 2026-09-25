@@ -86,20 +86,53 @@ class ValidationSchemaFinder implements ValidationSchemaFinderInterface
             return;
         }
 
-        $finder = new Finder();
-        $finder
-            ->files()
-            ->in($directories)
-            ->name($this->getFileNamePatterns())
-            ->sortByName();
-
-        foreach ($finder as $file) {
+        foreach ($this->findSchemaFilesIn($directories) as $file) {
             if ($this->isExcluded((string)$file->getRealPath())) {
                 continue;
             }
 
             yield $file;
         }
+    }
+
+    /**
+     * The counterpart of {@see self::findAllValidationSchemas()}: the schema files an
+     * `excludedPathFragments` entry keeps out of generation. A caller reports them so the rules they
+     * declare do not disappear without a word.
+     *
+     * @return \Generator<\SplFileInfo>
+     */
+    public function findExcludedValidationSchemas(string $apiType): Generator
+    {
+        $apiType = ApiTypeNormalizer::normalizeForSchemaLookup($apiType);
+
+        $directories = $this->getSearchDirectories($apiType);
+
+        if ($directories === []) {
+            return;
+        }
+
+        foreach ($this->findSchemaFilesIn($directories) as $file) {
+            if (!$this->isExcluded((string)$file->getRealPath())) {
+                continue;
+            }
+
+            yield $file;
+        }
+    }
+
+    /**
+     * @param array<string> $directories
+     */
+    protected function findSchemaFilesIn(array $directories): Finder
+    {
+        $finder = new Finder();
+
+        return $finder
+            ->files()
+            ->in($directories)
+            ->name($this->getFileNamePatterns())
+            ->sortByName();
     }
 
     protected function isExcluded(string $realPath): bool

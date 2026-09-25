@@ -9,6 +9,7 @@ declare(strict_types=1);
 
 namespace SprykerTest\ApiPlatform\Test;
 
+use Spryker\ApiPlatform\Contract\Coverage\ResponseAttributePath;
 use Symfony\Component\HttpFoundation\Response;
 
 /**
@@ -64,6 +65,19 @@ trait JsonApiResponseAssertionsTrait
     protected const string PAGINATION_KEY_MAX_PAGE = 'maxPage';
 
     protected const string PAGINATION_KEY_CURRENT_ITEMS_PER_PAGE = 'currentItemsPerPage';
+
+    /**
+     * The same four keys as the attribute paths `assertResponseAttributes()` takes. The leaf keys
+     * above address the decoded `pagination` block; these address it from the resource root, which
+     * is how every collection test reaches it.
+     */
+    protected const string ATTRIBUTE_PAGINATION_NUM_FOUND = 'pagination.numFound';
+
+    protected const string ATTRIBUTE_PAGINATION_CURRENT_PAGE = 'pagination.currentPage';
+
+    protected const string ATTRIBUTE_PAGINATION_MAX_PAGE = 'pagination.maxPage';
+
+    protected const string ATTRIBUTE_PAGINATION_CURRENT_ITEMS_PER_PAGE = 'pagination.currentItemsPerPage';
 
     /**
      * @uses \Spryker\ApiPlatform\State\Provider\AbstractProvider::buildPaginationTransfer()
@@ -128,6 +142,52 @@ trait JsonApiResponseAssertionsTrait
     }
 
     /**
+     * Every compounded resource of one type, for a write response that carries the resource it
+     * changed as `data` and the resources it touched as `included`.
+     *
+     * @return list<array<string, mixed>>
+     */
+    protected function findIncludedResources(Response $response, string $resourceType): array
+    {
+        $includedResources = [];
+
+        foreach ($this->getJsonApiMembers($response, static::JSON_API_KEY_INCLUDED) as $includedResource) {
+            if ($includedResource[static::JSON_API_KEY_TYPE] !== $resourceType) {
+                continue;
+            }
+
+            $includedResources[] = $includedResource;
+        }
+
+        return $includedResources;
+    }
+
+    /**
+     * The first compounded resource of one type. Fails when the document carries none, because a
+     * test reading one has already established that the write produced it.
+     *
+     * @return array<string, mixed>
+     */
+    protected function findIncludedResource(Response $response, string $resourceType): array
+    {
+        foreach ($this->getJsonApiMembers($response, static::JSON_API_KEY_INCLUDED) as $includedResource) {
+            if ($includedResource[static::JSON_API_KEY_TYPE] === $resourceType) {
+                return $includedResource;
+            }
+        }
+
+        $this->fail(sprintf('No included "%s" resource in: %s', $resourceType, (string)$response->getContent()));
+    }
+
+    /**
+     * The `id` of the first compounded resource of one type - a cart item's group key, for one.
+     */
+    protected function readIncludedResourceId(Response $response, string $resourceType): string
+    {
+        return (string)$this->findIncludedResource($response, $resourceType)[static::JSON_API_KEY_ID];
+    }
+
+    /**
      * @return array<string>
      */
     protected function getErrorCodes(Response $response): array
@@ -187,7 +247,8 @@ trait JsonApiResponseAssertionsTrait
     /**
      * A validation failure answers 422 and names the attribute it rejected. Which of an attribute's
      * constraints fired is not part of the response contract, so the assertion stops at the
-     * attribute.
+     * attribute — the rule under test is declared by
+     * {@see \Spryker\ApiPlatform\Contract\Attribute\CoversApiValidation}.
      */
     protected function assertValidationFailedForAttribute(Response $response, string $attribute): void
     {
@@ -198,9 +259,14 @@ trait JsonApiResponseAssertionsTrait
     }
 
     /**
+     * Public for the same reason as {@see \SprykerTest\ApiPlatform\Test\AbstractApiTestCase::handleApiRequest()}:
+     * {@see \SprykerTest\ApiPlatform\Helper\ApiRequestHelper} forwards it to the actor, and that is
+     * the only caller. A test goes through the actor; another helper goes through
+     * {@see \SprykerTest\ApiPlatform\Helper\ApiRequestHelperTrait}.
+     *
      * @param array<string, mixed> $attributes
      */
-    protected function encodeJsonApiBody(string $type, array $attributes, ?string $id = null): string
+    public function encodeJsonApiBody(string $type, array $attributes, ?string $id = null): string
     {
         $data = [
             static::JSON_API_KEY_TYPE => $type,
@@ -215,7 +281,8 @@ trait JsonApiResponseAssertionsTrait
     }
 
     /**
-     * The document-level `self` link, the one outside `data`.
+     * The document-level `self` link, the one outside `data`, which
+     * {@see \Spryker\ApiPlatform\Contract\Envelope\JsonApiEnvelopeVerifier} does not demand.
      *
      * Asserted through `str_ends_with()` rather than `assertStringEndsWith()`, whose suffix
      * parameter is typed `non-empty-string`: an empty expectation would otherwise hold vacuously,
@@ -235,9 +302,13 @@ trait JsonApiResponseAssertionsTrait
         );
     }
 
-    protected function assertJsonApiError(Response $response, int $expectedStatus, string $expectedCode, string $expectedDetail): void
+    /**
+     * @param string|null $expectedCode The `code` member, or null for the error arms that answer
+     *   without one - the framework's own 404 and the request-validator's rejections do.
+     */
+    protected function assertJsonApiError(Response $response, int $expectedStatus, ?string $expectedCode, string $expectedDetail): void
     {
-        $this->assertSame($expectedStatus, $response->getStatusCode());
+        $this->assertSame($expectedStatus, $response->getStatusCode(), (string)$response->getContent());
 
         $payload = $this->decodeJsonApi($response);
         $error = $payload[static::JSON_API_KEY_ERRORS][0] ?? [];
@@ -320,5 +391,156 @@ trait JsonApiResponseAssertionsTrait
         ksort($comparable);
 
         $this->assertSame($expectedAttributes, $comparable, $message);
+    }
+
+    /**
+     * Asserts the response carries each named attribute with the expected value, and records the
+     * path so {@see \Spryker\ApiPlatform\Contract\Coverage\ResponseAttributeRecorder} can hold a
+     * `#[CoversApiRequiredResponseAttributes]` test to the schema-derived truth.
+     *
+     * @param array<string, mixed> $expectedByPath e.g. `['customers[0].firstName' => $customerTransfer->getFirstName()]`
+     */
+    protected function assertResponseAttributes(Response $response, array $expectedByPath): void
+    {
+        $document = $this->decodeJsonApi($response);
+        foreach ($expectedByPath as $path => $expected) {
+            $actual = $this->readResponseAttribute($document, $path);
+            $this->assertSame($expected, $actual, sprintf(
+                '%s: expected %s, got %s',
+                $path,
+                json_encode($expected, JSON_THROW_ON_ERROR),
+                json_encode($actual, JSON_THROW_ON_ERROR),
+            ));
+            $this->responseAttributeRecorder?->record($path);
+        }
+    }
+
+    /**
+     * Only for values the server mints and the test cannot know (uuid, createdAt), and for a nested
+     * object the truth carries as a presence path. Still recorded, so it counts towards the same
+     * coverage as {@see static::assertResponseAttributes()} — prefer that one whenever the test
+     * created the fixture the value comes from.
+     *
+     * @param array<string> $paths
+     */
+    protected function assertResponseAttributesPresent(Response $response, array $paths): void
+    {
+        $document = $this->decodeJsonApi($response);
+        foreach ($paths as $path) {
+            $this->assertNotNull($this->readResponseAttribute($document, $path), sprintf('%s is null', $path));
+            $this->responseAttributeRecorder?->record($path);
+        }
+    }
+
+    /**
+     * The {@see static::assertResponseAttributes()} of a write that answers its parent resource:
+     * the operation's own attributes travel in the compound document's `included` bag, so they are
+     * read from there and recorded against the same coverage.
+     *
+     * @param array<string, mixed> $expectedByPath
+     */
+    protected function assertIncludedResourceAttributes(Response $response, string $resourceType, array $expectedByPath): void
+    {
+        $document = $this->decodeJsonApi($response);
+        foreach ($expectedByPath as $path => $expected) {
+            $actual = $this->readIncludedResponseAttribute($document, $resourceType, $path);
+            $this->assertSame($expected, $actual, sprintf(
+                '%s %s: expected %s, got %s',
+                $resourceType,
+                $path,
+                json_encode($expected, JSON_THROW_ON_ERROR),
+                json_encode($actual, JSON_THROW_ON_ERROR),
+            ));
+            $this->responseAttributeRecorder?->record($path);
+        }
+    }
+
+    /**
+     * The {@see static::assertResponseAttributesPresent()} twin of
+     * {@see static::assertIncludedResourceAttributes()}, under the same rule: only for a value the
+     * server mints and for a nested object the truth carries as a presence path.
+     *
+     * @param array<string> $paths
+     */
+    protected function assertIncludedResourceAttributesPresent(Response $response, string $resourceType, array $paths): void
+    {
+        $document = $this->decodeJsonApi($response);
+        foreach ($paths as $path) {
+            $this->assertNotNull(
+                $this->readIncludedResponseAttribute($document, $resourceType, $path),
+                sprintf('%s %s is null', $resourceType, $path),
+            );
+            $this->responseAttributeRecorder?->record($path);
+        }
+    }
+
+    /**
+     * Resolves one response attribute path against a decoded document: a collection document
+     * selects the member the path names, an item document has only one resource object and ignores
+     * the selector, and the remaining segments walk that resource's `attributes`.
+     *
+     * A wildcard path is rejected up front and by name: it is the form the coverage truth set
+     * speaks, so copying one into an assertion is the obvious mistake to make.
+     *
+     * @param array<string, mixed> $document
+     */
+    protected function readResponseAttribute(array $document, string $path): mixed
+    {
+        $this->assertTrue(ResponseAttributePath::isValid($path), sprintf('"%s" is not a valid response attribute path', $path));
+        $this->assertFalse(ResponseAttributePath::isWildcard($path), sprintf(
+            '"%s" is a truth path; assert a concrete member, e.g. %s',
+            $path,
+            ResponseAttributePath::concreteMemberPath($path),
+        ));
+        $data = $document[static::JSON_API_KEY_DATA] ?? null;
+        $this->assertIsArray($data, 'response has no "data" member');
+        $member = array_is_list($data) ? ($data[ResponseAttributePath::memberIndex($path)] ?? null) : $data;
+
+        return $this->walkResourceAttributes($member, $path);
+    }
+
+    /**
+     * The same resolution against a resource in the compound document's `included` bag rather than
+     * against `data`. A write that answers its parent - `POST /carts/{cartId}/items` answers the
+     * cart, with the item included - carries the operation's own response attributes there, so this
+     * is how those are read back.
+     *
+     * @param array<string, mixed> $document
+     */
+    protected function readIncludedResponseAttribute(array $document, string $resourceType, string $path): mixed
+    {
+        $this->assertTrue(ResponseAttributePath::isValid($path), sprintf('"%s" is not a valid response attribute path', $path));
+        $this->assertFalse(ResponseAttributePath::isWildcard($path), sprintf(
+            '"%s" is a truth path; assert a concrete member, e.g. %s',
+            $path,
+            ResponseAttributePath::concreteMemberPath($path),
+        ));
+        $members = [];
+        foreach ((array)($document[static::JSON_API_KEY_INCLUDED] ?? []) as $includedResource) {
+            if (is_array($includedResource) && ($includedResource[static::JSON_API_KEY_TYPE] ?? null) === $resourceType) {
+                $members[] = $includedResource;
+            }
+        }
+
+        $this->assertNotSame([], $members, sprintf('%s: no included "%s" resource in the response', $path, $resourceType));
+
+        return $this->walkResourceAttributes($members[ResponseAttributePath::memberIndex($path)] ?? null, $path);
+    }
+
+    /**
+     * @param array<string, mixed>|null $member
+     */
+    protected function walkResourceAttributes(?array $member, string $path): mixed
+    {
+        $this->assertIsArray($member, sprintf('%s: no resource object at member %d', $path, ResponseAttributePath::memberIndex($path)));
+        $cursor = $member[static::JSON_API_KEY_ATTRIBUTES] ?? null;
+        foreach (ResponseAttributePath::segments($path) as $segment) {
+            if (!is_array($cursor) || !array_key_exists($segment, $cursor)) {
+                $this->fail(sprintf('%s: segment "%s" is missing from the response', $path, (string)$segment));
+            }
+            $cursor = $cursor[$segment];
+        }
+
+        return $cursor;
     }
 }

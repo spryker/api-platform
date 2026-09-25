@@ -36,7 +36,9 @@ class ApiCsvFileLoaderTest extends Unit
     protected function _after(): void
     {
         foreach ($this->temporaryFiles as $file) {
-            @unlink($file);
+            if (is_file($file)) {
+                unlink($file);
+            }
         }
 
         $this->temporaryFiles = [];

@@ -69,6 +69,10 @@ class SprykerApiPlatformExtension extends Extension implements PrependExtensionI
         $container->setParameter('spryker_api_platform.generated_dir', $config['generated_dir']);
         $container->setParameter('spryker_api_platform.api_types', $config['api_types']);
         $container->setParameter('spryker_api_platform.excluded_path_fragments', $config['excluded_path_fragments']);
+        $container->setParameter(
+            'spryker_api_platform.contract_coverage_excluded_resources',
+            $config['contract_coverage_excluded_resources'],
+        );
         $container->setParameter('spryker_api_platform.debug', $config['debug']);
         $container->setParameter(
             'spryker_api_platform.is_method_not_allowed_status_enabled',

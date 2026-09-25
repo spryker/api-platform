@@ -38,6 +38,8 @@ class NestedObjectValidationErrorAugmenterTest extends Unit
 
     protected const string BACKEND_BOOL_LEAF_RESOURCE_CLASS = 'Generated\\Api\\Backend\\BoolLeafResource';
 
+    protected const string TYPED_LEAF_RESOURCE_CLASS = 'Generated\\Api\\Storefront\\TypedLeafResource';
+
     /**
      * The augmenter only cascades into nested properties typed under a generated `Generated\Api\*`
      * namespace, so both the value-object fixtures and the resource fixtures that reference them
@@ -62,7 +64,9 @@ class NestedObjectValidationErrorAugmenterTest extends Unit
             . ' class SynthesizingValueObject { public const SYNTHESIZE_MISSING_FIELDS_WHEN_EMPTY = true; #[Assert\\NotBlank(allowNull: true)] public ?string $address1 = null; }'
             . ' class BoolLeafResource { public ?BoolLeafValueObject $productConfigurationInstance = null; }'
             . ' class RequiredLeafResource { public ?RequiredLeafValueObject $billingAddress = null; }'
-            . ' class SynthesizingResource { public ?SynthesizingValueObject $shippingAddress = null; }';
+            . ' class SynthesizingResource { public ?SynthesizingValueObject $shippingAddress = null; }'
+            . ' class TypedLeafValueObject { #[Assert\\Type(type: \'numeric\')] public ?int $idShipmentMethod = null; }'
+            . ' class TypedLeafResource { public ?TypedLeafValueObject $shipment = null; }';
 
         // A single eval cannot mix two unbraced namespace declarations, so the ApiTypes are separate.
         $backendFixtureCode = 'namespace Generated\\Api\\Backend;'
@@ -163,6 +167,48 @@ class NestedObjectValidationErrorAugmenterTest extends Unit
         $this->assertContains('shippingAddress.address1 => This field is missing.', $details);
         // The empty-required-object case supersedes the downstream domain error.
         $this->assertNotContains('Address not found.', $details);
+    }
+
+    public function testGivenAnUnassignableNestedLeafWhenAugmentingThenTheObjectLevelTypeErrorIsReplacedByTheLeafs(): void
+    {
+        // Arrange - a value the leaf's `?int` cannot take aborts the whole object's denormalization,
+        // and the serializer reports the object rather than the leaf the caller got wrong.
+        $augmenter = $this->createAugmenter();
+        $rawAttributes = ['shipment' => ['idShipmentMethod' => 'abc']];
+        $errors = [
+            ['detail' => 'shipment => This value should be of type object.', 'code' => '901', 'status' => Response::HTTP_UNPROCESSABLE_ENTITY],
+        ];
+
+        // Act
+        $result = $augmenter->augment(static::TYPED_LEAF_RESOURCE_CLASS, $rawAttributes, [], $errors);
+
+        // Assert - the type reported is the one the schema declares, not the PHP type.
+        $this->assertTrue($result->modified);
+        $this->assertSame(
+            ['idShipmentMethod => This value should be of type numeric.'],
+            array_column($result->errors, 'detail'),
+        );
+    }
+
+    public function testGivenAnAssignableNestedLeafWhenAugmentingThenTheObjectLevelTypeErrorIsLeftAlone(): void
+    {
+        // Arrange - the object failed to denormalize for some other reason, which this augmenter has
+        // nothing to say about.
+        $augmenter = $this->createAugmenter();
+        $rawAttributes = ['shipment' => ['idShipmentMethod' => 7]];
+        $errors = [
+            ['detail' => 'shipment => This value should be of type object.', 'code' => '901', 'status' => Response::HTTP_UNPROCESSABLE_ENTITY],
+        ];
+
+        // Act
+        $result = $augmenter->augment(static::TYPED_LEAF_RESOURCE_CLASS, $rawAttributes, [], $errors);
+
+        // Assert
+        $this->assertFalse($result->modified);
+        $this->assertSame(
+            ['shipment => This value should be of type object.'],
+            array_column($result->errors, 'detail'),
+        );
     }
 
     protected function createAugmenter(): NestedObjectValidationErrorAugmenter

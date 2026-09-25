@@ -118,6 +118,25 @@ class SprykerApiPlatformExtensionTest extends Unit
         $this->assertSame(['/abs/config/api/objects/storefront'], $directories);
     }
 
+    public function testGivenContractCoverageExcludedResourcesConfigWhenLoadingThenTheContainerParameterIsSet(): void
+    {
+        // Arrange
+        $container = new ContainerBuilder();
+        $container->setParameter('kernel.project_dir', static::PROJECT_DIR);
+        $container->setParameter('kernel.bundles', []);
+
+        $extension = new SprykerApiPlatformExtension();
+
+        // Act
+        $extension->load([['contract_coverage_excluded_resources' => ['wishlists']]], $container);
+
+        // Assert
+        $this->assertSame(
+            ['wishlists'],
+            $container->getParameter('spryker_api_platform.contract_coverage_excluded_resources'),
+        );
+    }
+
     /**
      * Loads the extension with the given config and returns an ApiPlatformConfig wired with the resolved
      * canonical_object_search_directories parameter.

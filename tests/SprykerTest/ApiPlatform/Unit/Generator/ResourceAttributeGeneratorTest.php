@@ -528,6 +528,232 @@ class ResourceAttributeGeneratorTest extends Unit
         $this->assertContains('Spryker\Glue\Customer\Api\Processor\CustomersProcessor', $uses);
     }
 
+    public function testGivenGetOperationDeclaresResponsesWhenGeneratingThenResponsesAppearDespiteNoRequestBody(): void
+    {
+        // Arrange
+        $schema = [
+            'name' => 'Stores',
+            'shortName' => 'stores',
+            'tags' => ['stores'],
+            'operations' => [
+                'Get' => [
+                    'type' => 'Get',
+                    'openapiContext' => [
+                        'responses' => [
+                            200 => ['description' => 'OK.'],
+                            404 => ['description' => 'Not found.'],
+                        ],
+                    ],
+                ],
+            ],
+        ];
+        $uses = [];
+
+        // Act
+        $result = $this->createResourceAttributeGenerator()->generate($schema, $uses);
+
+        // Assert
+        $this->assertStringContainsString(
+            "200 => new Response(description: 'OK.')",
+            $result,
+        );
+        $this->assertStringContainsString("404 => new Response(description: 'Not found.')", $result);
+        $this->assertContains('ApiPlatform\OpenApi\Model\Response', $uses);
+    }
+
+    public function testGivenGetOperationDeclaresResponsesWithoutTagsWhenGeneratingThenOpenApiOperationIsStillEmitted(): void
+    {
+        // Arrange
+        $schema = [
+            'name' => 'Stores',
+            'shortName' => 'stores',
+            'operations' => [
+                'Delete' => [
+                    'type' => 'Delete',
+                    'openapiContext' => [
+                        'responses' => [
+                            204 => ['description' => 'Deleted.'],
+                        ],
+                    ],
+                ],
+            ],
+        ];
+        $uses = [];
+
+        // Act
+        $result = $this->createResourceAttributeGenerator()->generate($schema, $uses);
+
+        // Assert
+        $this->assertStringContainsString("204 => new Response(description: 'Deleted.')", $result);
+        $this->assertStringNotContainsString('tags:', $result);
+        $this->assertContains('ApiPlatform\OpenApi\Model\Operation', $uses);
+        $this->assertContains('ApiPlatform\OpenApi\Model\Response', $uses);
+    }
+
+    public function testGivenGetOperationDeclaresNoResponsesWhenGeneratingThenResponseImportIsNotAdded(): void
+    {
+        // Arrange
+        $schema = [
+            'name' => 'Stores',
+            'shortName' => 'stores',
+            'tags' => ['stores'],
+            'operations' => [
+                'Get' => [
+                    'type' => 'Get',
+                ],
+            ],
+        ];
+        $uses = [];
+
+        // Act
+        $result = $this->createResourceAttributeGenerator()->generate($schema, $uses);
+
+        // Assert
+        $this->assertStringNotContainsString('responses:', $result);
+        $this->assertNotContains('ApiPlatform\OpenApi\Model\Response', $uses);
+    }
+
+    public function testGivenGetOperationDeclaresParametersWhenGeneratingThenTheyAppearAlongsideTheParameterImport(): void
+    {
+        // Arrange
+        $schema = [
+            'name' => 'CmsPages',
+            'shortName' => 'cms-pages',
+            'operations' => [
+                'GetCollection' => [
+                    'type' => 'GetCollection',
+                    'openapiContext' => [
+                        'parameters' => [
+                            [
+                                'name' => 'q',
+                                'in' => 'query',
+                                'required' => false,
+                                'schema' => ['type' => 'string'],
+                            ],
+                        ],
+                    ],
+                ],
+            ],
+        ];
+        $uses = [];
+
+        // Act
+        $result = $this->createResourceAttributeGenerator()->generate($schema, $uses);
+
+        // Assert
+        $this->assertStringContainsString("parameters: [\n", $result);
+        $this->assertStringContainsString(
+            "new Parameter(name: 'q', in: 'query', required: false, schema: ['type' => 'string']),",
+            $result,
+        );
+        $this->assertContains('ApiPlatform\OpenApi\Model\Operation', $uses);
+        $this->assertContains('ApiPlatform\OpenApi\Model\Parameter', $uses);
+    }
+
+    public function testGivenAnOperationDeclaringAControllerWhenGeneratingThenItIsReferencedByClassAndImported(): void
+    {
+        // Arrange
+        $schema = [
+            'name' => 'WishlistItems',
+            'shortName' => 'wishlist-items',
+            'operations' => [
+                'Get' => [
+                    'type' => 'Get',
+                    'controller' => 'ApiPlatform\Symfony\Action\NotFoundAction',
+                ],
+            ],
+        ];
+        $uses = [];
+
+        // Act
+        $result = $this->createResourceAttributeGenerator()->generate($schema, $uses);
+
+        // Assert
+        $this->assertStringContainsString('controller: NotFoundAction::class', $result);
+        $this->assertContains('ApiPlatform\Symfony\Action\NotFoundAction', $uses);
+    }
+
+    public function testGivenAnOperationHiddenFromOpenApiWhenGeneratingThenOpenapiIsFalseAndItsDeclaredStatusesRideInExtraProperties(): void
+    {
+        // Arrange — an operation that is hidden but still declares responses. `openapi` holds either
+        // `false` or an Operation object, never both, so the declared statuses travel as an extra
+        // property the contract coverage gate can read back.
+        $schema = [
+            'name' => 'WishlistItems',
+            'shortName' => 'wishlist-items',
+            'tags' => ['wishlist-items'],
+            'operations' => [
+                'Get' => [
+                    'type' => 'Get',
+                    'openapi' => false,
+                    'openapiContext' => [
+                        'responses' => [
+                            200 => ['description' => 'A single wishlist item.'],
+                        ],
+                    ],
+                ],
+            ],
+        ];
+        $uses = [];
+
+        // Act
+        $result = $this->createResourceAttributeGenerator()->generate($schema, $uses);
+
+        // Assert
+        $this->assertStringContainsString('openapi: false', $result);
+        $this->assertStringContainsString("extraProperties: ['declaredResponses' => ['0' => 200]]", $result);
+        $this->assertStringNotContainsString('new Operation(', $result);
+        $this->assertStringNotContainsString('responses:', $result);
+        $this->assertNotContains('ApiPlatform\OpenApi\Model\Response as OpenApiResponse', $uses);
+    }
+
+    public function testGivenAHiddenOperationDeclaringNoResponsesWhenGeneratingThenNoExtraPropertiesAreEmitted(): void
+    {
+        // Arrange
+        $schema = [
+            'name' => 'WishlistItems',
+            'shortName' => 'wishlist-items',
+            'operations' => [
+                'Get' => [
+                    'type' => 'Get',
+                    'openapi' => false,
+                ],
+            ],
+        ];
+        $uses = [];
+
+        // Act
+        $result = $this->createResourceAttributeGenerator()->generate($schema, $uses);
+
+        // Assert
+        $this->assertStringContainsString('openapi: false', $result);
+        $this->assertStringNotContainsString('extraProperties:', $result);
+    }
+
+    public function testGivenAnOperationMarkedInternalWhenGeneratingThenTheFlagRidesInExtraProperties(): void
+    {
+        // Arrange
+        $schema = [
+            'name' => 'WishlistItems',
+            'shortName' => 'wishlist-items',
+            'operations' => [
+                'Get' => [
+                    'type' => 'Get',
+                    'internal' => true,
+                    'controller' => 'ApiPlatform\Symfony\Action\NotFoundAction',
+                ],
+            ],
+        ];
+        $uses = [];
+
+        // Act
+        $result = $this->createResourceAttributeGenerator()->generate($schema, $uses);
+
+        // Assert
+        $this->assertStringContainsString("extraProperties: ['internal' => true]", $result);
+        $this->assertStringContainsString('controller: NotFoundAction::class', $result);
+    }
+
     protected function createResourceAttributeGenerator(): ResourceAttributeGenerator
     {
         $mediaTypeFormatterRegistry = $this->createMock(MediaTypeFormatterRegistry::class);

@@ -9,6 +9,7 @@ declare(strict_types=1);
 
 namespace Spryker\ApiPlatform\Generator;
 
+use Spryker\ApiPlatform\Exception\ApiSchemaGenerationException;
 use Spryker\ApiPlatform\Generator\MediaType\MediaTypeFormatterRegistry;
 
 /**
@@ -121,7 +122,11 @@ class OpenApiOperationBuilder
             $operationParts[] = sprintf("summary: '%s'", addslashes($openapiContext[static::CONTEXT_KEY_SUMMARY]));
         }
 
-        $parameters = $this->formatParameters($openapiContext[static::CONTEXT_KEY_PARAMETERS] ?? null, $indentLevel);
+        $parameters = $this->formatParameters(
+            $openapiContext[static::CONTEXT_KEY_PARAMETERS] ?? null,
+            $indentLevel,
+            $this->describeOperation($parsedSchema, $operation, $operationType),
+        );
 
         if ($parameters !== '') {
             $operationParts[] = $parameters;
@@ -142,7 +147,14 @@ class OpenApiOperationBuilder
         return $this->buildOperationString($operationParts, $indentLevel);
     }
 
-    protected function formatParameters(mixed $parameters, int $indentLevel): string
+    /**
+     * A query parameter is contract exactly as a response status is: a `filter[...]` the schema does
+     * not declare is a capability no client can discover and no gate can enforce. A parameter that
+     * cannot be emitted would leave the schema silently, so it fails generation instead.
+     *
+     * @throws \Spryker\ApiPlatform\Exception\ApiSchemaGenerationException
+     */
+    protected function formatParameters(mixed $parameters, int $indentLevel, string $operationLocator = ''): string
     {
         if (!is_array($parameters)) {
             return '';
@@ -150,15 +162,51 @@ class OpenApiOperationBuilder
 
         $parameterParts = [];
 
-        foreach ($parameters as $parameter) {
+        foreach ($parameters as $index => $parameter) {
             if (!is_array($parameter) || !is_string($parameter[static::PARAMETER_KEY_NAME] ?? null)) {
-                continue;
+                throw new ApiSchemaGenerationException(sprintf(
+                    'openapiContext.parameters entry #%d%s declares no "name". It is required by OpenAPI, '
+                        . 'and a parameter that cannot be emitted would leave the schema silently - '
+                        . 'declare it in the resource yml.',
+                    (int)$index,
+                    $operationLocator === '' ? '' : sprintf(' of %s', $operationLocator),
+                ));
             }
 
             $parameterParts[] = $this->formatParameter($parameter);
         }
 
         return $this->formatNamedList(static::CONTEXT_KEY_PARAMETERS, $parameterParts, $indentLevel);
+    }
+
+    /**
+     * Names the operation a generation failure came from, so the message points at the declaration
+     * to change rather than at the code that threw.
+     *
+     * @param array<string, mixed> $parsedSchema
+     * @param array<string, mixed> $operation
+     */
+    protected function describeOperation(array $parsedSchema, array $operation, string $operationType): string
+    {
+        $parts = [];
+
+        if (is_string($parsedSchema[SchemaKey::SHORT_NAME] ?? null)) {
+            $parts[] = $parsedSchema[SchemaKey::SHORT_NAME];
+        }
+
+        $parts[] = $operationType;
+
+        if (is_string($operation[SchemaKey::URI_TEMPLATE] ?? null)) {
+            $parts[] = $operation[SchemaKey::URI_TEMPLATE];
+        }
+
+        $locator = implode(' ', $parts);
+
+        if (is_string($parsedSchema[SchemaKey::SOURCE_FILE] ?? null)) {
+            $locator .= sprintf(' (%s)', $parsedSchema[SchemaKey::SOURCE_FILE]);
+        }
+
+        return $locator;
     }
 
     /**
@@ -235,6 +283,10 @@ class OpenApiOperationBuilder
         return sprintf('new Example(%s)', implode(', ', $arguments));
     }
 
+    /**
+     * The schema's declared responses are the API contract: they drive both the OpenAPI document and
+     * the contract coverage gate, so every declared status is carried through verbatim.
+     */
     protected function formatResponses(mixed $responses, int $indentLevel): string
     {
         if (!is_array($responses)) {
@@ -251,7 +303,7 @@ class OpenApiOperationBuilder
             }
 
             $statusKey = is_int($status) ? (string)$status : sprintf("'%s'", addslashes((string)$status));
-            $responseParts[] = sprintf("%s => new Response(description: '%s')", $statusKey, addslashes($description));
+            $responseParts[] = sprintf("%s => new Response(description: '%s')", $statusKey, $this->escapeSingleQuoted($description));
         }
 
         return $this->formatNamedList(static::CONTEXT_KEY_RESPONSES, $responseParts, $indentLevel);
@@ -325,6 +377,16 @@ class OpenApiOperationBuilder
         $content = $paramIndent . implode(",\n" . $paramIndent, $parts);
 
         return sprintf("new Operation(\n%s,\n%s)", $content, $closeIndent);
+    }
+
+    /**
+     * Only the backslash and the single quote carry meaning inside a single-quoted PHP literal.
+     * `addslashes()` would also escape the double quote, emitting a stray backslash into the
+     * generated description.
+     */
+    protected function escapeSingleQuoted(string $value): string
+    {
+        return str_replace(['\\', "'"], ['\\\\', "\\'"], $value);
     }
 
     /**

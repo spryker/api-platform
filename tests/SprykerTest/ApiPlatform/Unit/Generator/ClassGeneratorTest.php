@@ -540,6 +540,48 @@ class ClassGeneratorTest extends Unit
         $this->assertStringNotContainsString('#[Assert\\Collection(', $result);
     }
 
+    public function testGivenConstraintBesideACollectionOnAnObjectPropertyWhenGeneratingThenKeepsItNextToTheValidCascade(): void
+    {
+        // Arrange — the schema guards the object property itself with `NotBlank` and describes its
+        // fields with `Collection`; only the Collection is unusable once the property denormalizes.
+        $schema = [
+            'name' => 'Payments',
+            'properties' => [
+                'quote' => [
+                    'type' => 'object',
+                    'properties' => [
+                        'priceMode' => ['type' => 'string'],
+                    ],
+                ],
+            ],
+            'validation' => [
+                'post' => [
+                    'quote' => [
+                        'NotBlank',
+                        [
+                            'Collection' => [
+                                'fields' => [
+                                    'priceMode' => ['NotBlank'],
+                                ],
+                            ],
+                        ],
+                    ],
+                ],
+            ],
+            'operations' => ['Post' => []],
+        ];
+        $validationGroupMapper = $this->createValidationGroupMapper('payments:create');
+        $generator = $this->createClassGeneratorWithMapper($validationGroupMapper);
+
+        // Act
+        $result = $generator->generate($schema, 'Storefront');
+
+        // Assert
+        $this->assertStringContainsString("#[Assert\\NotBlank(groups: ['payments:create'])]", $result);
+        $this->assertStringContainsString("#[Assert\\Valid(groups: ['payments:create'])]", $result);
+        $this->assertStringNotContainsString('#[Assert\\Collection(', $result);
+    }
+
     public function testGivenObjectPropertyWithoutNestedPropertiesWhenGeneratingThenTypesToObjectAndEmitsNoCompanion(): void
     {
         // Arrange — a bare `type: object` with no `properties` is not a generated nested object,

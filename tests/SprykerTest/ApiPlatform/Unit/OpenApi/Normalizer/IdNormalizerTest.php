@@ -11,6 +11,7 @@ namespace SprykerTest\ApiPlatform\Unit\OpenApi\Normalizer;
 
 use ApiPlatform\Metadata\IdentifiersExtractorInterface;
 use Codeception\Test\Unit;
+use RuntimeException;
 use Spryker\ApiPlatform\OpenApi\Normalizer\IdNormalizer;
 use stdClass;
 use Symfony\Component\Serializer\Normalizer\NormalizerInterface;
@@ -130,5 +131,60 @@ class IdNormalizerTest extends Unit
 
         // Assert
         $this->assertEquals('entity-id', $result['data']['id']);
+    }
+
+    public function testGivenIdentifierExtractionFailsWhenNormalizingThenFallsBackToTheResourceUuid(): void
+    {
+        // Arrange — a sub-resource operation carries a parent uriVariable pointing at another
+        // resource class, so IdentifiersExtractor throws and yields nothing.
+        $object = new class {
+            public ?string $uuid = 'order-item-uuid';
+        };
+        $identifiersExtractor = $this->createMock(IdentifiersExtractorInterface::class);
+        $identifiersExtractor->method('getIdentifiersFromItem')
+            ->willThrowException(new RuntimeException('Not able to retrieve identifiers.'));
+
+        $innerNormalizer = $this->createMock(NormalizerInterface::class);
+        $innerNormalizer->method('normalize')->willReturn([
+            'data' => [
+                'type' => 'order-items',
+                'id' => '/orders/DE--1/order-items/order-item-uuid',
+            ],
+        ]);
+
+        $normalizer = new IdNormalizer($identifiersExtractor);
+        $normalizer->setNormalizer($innerNormalizer);
+
+        // Act
+        $result = $normalizer->normalize($object, 'jsonapi', []);
+
+        // Assert
+        $this->assertEquals('order-item-uuid', $result['data']['id']);
+    }
+
+    public function testGivenASingletonResourceWhenNormalizingThenTheIdStaysNull(): void
+    {
+        // Arrange — a singleton uses its type name as the synthetic identifier.
+        $object = new stdClass();
+        $identifiersExtractor = $this->createMock(IdentifiersExtractorInterface::class);
+        $identifiersExtractor->method('getIdentifiersFromItem')
+            ->willReturn(['id' => 'checkout-data']);
+
+        $innerNormalizer = $this->createMock(NormalizerInterface::class);
+        $innerNormalizer->method('normalize')->willReturn([
+            'data' => [
+                'type' => 'checkout-data',
+                'id' => '/checkout-data/checkout-data',
+            ],
+        ]);
+
+        $normalizer = new IdNormalizer($identifiersExtractor);
+        $normalizer->setNormalizer($innerNormalizer);
+
+        // Act
+        $result = $normalizer->normalize($object, 'jsonapi', []);
+
+        // Assert
+        $this->assertNull($result['data']['id']);
     }
 }

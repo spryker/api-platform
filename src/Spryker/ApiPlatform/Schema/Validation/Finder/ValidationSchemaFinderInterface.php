@@ -30,6 +30,13 @@ interface ValidationSchemaFinderInterface
     public function findAllValidationSchemas(string $apiType): Generator;
 
     /**
+     * The schema files an `excludedPathFragments` entry keeps out of generation.
+     *
+     * @return \Generator<\SplFileInfo>
+     */
+    public function findExcludedValidationSchemas(string $apiType): Generator;
+
+    /**
      * Get diagnostic information about validation schema search for troubleshooting.
      *
      * @return array<string, mixed>

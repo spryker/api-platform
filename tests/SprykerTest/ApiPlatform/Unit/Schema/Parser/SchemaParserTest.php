@@ -892,6 +892,66 @@ class SchemaParserTest extends Unit
         $this->assertArrayNotHasKey('output', $result['operations']['Get']);
     }
 
+    public function testGivenOperationWithControllerWhenParsingThenExtractsController(): void
+    {
+        // Arrange
+        $rawSchema = [
+            'resource' => [
+                'name' => 'WishlistItems',
+                'operations' => [
+                    ['type' => 'Get', 'controller' => 'ApiPlatform\\Symfony\\Action\\NotFoundAction'],
+                ],
+            ],
+        ];
+        $parser = $this->createSchemaParser();
+
+        // Act
+        $result = $parser->parse($rawSchema, new SplFileInfo(__FILE__));
+
+        // Assert
+        $this->assertSame('ApiPlatform\\Symfony\\Action\\NotFoundAction', $result['operations']['Get']['controller']);
+    }
+
+    public function testGivenOperationHiddenFromOpenApiWhenParsingThenExtractsTheFalse(): void
+    {
+        // Arrange
+        $rawSchema = [
+            'resource' => [
+                'name' => 'WishlistItems',
+                'operations' => [
+                    ['type' => 'Get', 'openapi' => false],
+                ],
+            ],
+        ];
+        $parser = $this->createSchemaParser();
+
+        // Act
+        $result = $parser->parse($rawSchema, new SplFileInfo(__FILE__));
+
+        // Assert
+        $this->assertFalse($result['operations']['Get']['openapi']);
+    }
+
+    public function testGivenOperationWithoutOpenapiWhenParsingThenDoesNotIncludeOpenapi(): void
+    {
+        // Arrange
+        $rawSchema = [
+            'resource' => [
+                'name' => 'WishlistItems',
+                'operations' => [
+                    ['type' => 'Get'],
+                ],
+            ],
+        ];
+        $parser = $this->createSchemaParser();
+
+        // Act
+        $result = $parser->parse($rawSchema, new SplFileInfo(__FILE__));
+
+        // Assert
+        $this->assertArrayNotHasKey('openapi', $result['operations']['Get']);
+    }
+
     public function testGivenSingleValidationSchemaWhenParsingThenValidationIsAlwaysIndexedArray(): void
     {
         // Arrange
@@ -1134,6 +1194,19 @@ class SchemaParserTest extends Unit
 
         // Assert
         $this->assertEquals('active', $result['properties']['status']['default']);
+    }
+
+    public function testGivenPropertyWithResponseOptionalWhenParsingThenExtractsResponseOptional(): void
+    {
+        // Arrange
+        $rawSchema = ['resource' => ['name' => 'Customer', 'properties' => ['status' => ['type' => 'string', 'responseOptional' => true]]]];
+        $parser = $this->createSchemaParser();
+
+        // Act
+        $result = $parser->parse($rawSchema, new SplFileInfo(__FILE__));
+
+        // Assert
+        $this->assertTrue($result['properties']['status']['responseOptional']);
     }
 
     public function testGivenPropertyWithNestedPropertiesWhenParsingThenCapturesNestedProperties(): void

@@ -12,6 +12,7 @@ namespace Spryker\ApiPlatform\Schema\Parser;
 use SplFileInfo;
 use Spryker\ApiPlatform\Exception\ApiSchemaValidationException;
 use Spryker\ApiPlatform\Generator\ResourceNameTagGenerator;
+use Spryker\ApiPlatform\Generator\SchemaKey;
 use Spryker\ApiPlatform\Schema\Validation\Mapper\ValidationGroupMapperInterface;
 use Spryker\ApiPlatform\Schema\Validator\PreMergeValidatorInterface;
 
@@ -258,6 +259,10 @@ class SchemaParser implements SchemaParserInterface
                 $normalizedOperation['processor'] = $operation['processor'];
             }
 
+            if (isset($operation[SchemaKey::CONTROLLER]) && is_string($operation[SchemaKey::CONTROLLER])) {
+                $normalizedOperation[SchemaKey::CONTROLLER] = $operation[SchemaKey::CONTROLLER];
+            }
+
             if (isset($operation['validationGroups']) && is_array($operation['validationGroups'])) {
                 $normalizedOperation['validationGroups'] = $operation['validationGroups'];
             }
@@ -278,8 +283,8 @@ class SchemaParser implements SchemaParserInterface
                 $normalizedOperation['requirements'] = $operation['requirements'];
             }
 
-            if (array_key_exists('openapi', $operation) && is_bool($operation['openapi'])) {
-                $normalizedOperation['openapi'] = $operation['openapi'];
+            if (array_key_exists(SchemaKey::OPEN_API, $operation) && is_bool($operation[SchemaKey::OPEN_API])) {
+                $normalizedOperation[SchemaKey::OPEN_API] = $operation[SchemaKey::OPEN_API];
             }
 
             if (isset($operation['security']) && is_string($operation['security'])) {
@@ -338,8 +343,21 @@ class SchemaParser implements SchemaParserInterface
                 $normalizedOperation['read'] = (bool)$operation['read'];
             }
 
+            // Only the `false` case is carried: `openapi` otherwise holds the Operation object the
+            // generator builds from `openapiContext`, which no schema declares by hand.
+            if (array_key_exists(SchemaKey::OPEN_API, $operation) && $operation[SchemaKey::OPEN_API] === false) {
+                $normalizedOperation[SchemaKey::OPEN_API] = false;
+            }
+
             if (isset($operation['extraProperties']) && is_array($operation['extraProperties'])) {
                 $normalizedOperation['extraProperties'] = $operation['extraProperties'];
+            }
+
+            // The schema author's own statement that an operation exists only to mint IRIs for its
+            // sub-resources. Carried as a flag rather than inferred from `controller:`, so the
+            // classification follows stated intent rather than an incidental framework class.
+            if (($operation[SchemaKey::INTERNAL] ?? null) === true) {
+                $normalizedOperation[SchemaKey::INTERNAL] = true;
             }
 
             $normalized[$operationName ?? $operationType] = $normalizedOperation;
@@ -447,6 +465,22 @@ class SchemaParser implements SchemaParserInterface
 
             if (isset($property['required'])) {
                 $normalized[$propertyName]['required'] = $property['required'];
+            }
+
+            if (isset($property['responseOptional'])) {
+                $normalized[$propertyName]['responseOptional'] = $property['responseOptional'];
+            }
+
+            if (isset($property[SchemaKey::SYNTHETIC_IDENTIFIER])) {
+                $normalized[$propertyName][SchemaKey::SYNTHETIC_IDENTIFIER] = $property[SchemaKey::SYNTHETIC_IDENTIFIER];
+            }
+
+            if (isset($property[SchemaKey::COLLECTION_ONLY])) {
+                $normalized[$propertyName][SchemaKey::COLLECTION_ONLY] = $property[SchemaKey::COLLECTION_ONLY];
+            }
+
+            if (isset($property[SchemaKey::ITEM_ONLY])) {
+                $normalized[$propertyName][SchemaKey::ITEM_ONLY] = $property[SchemaKey::ITEM_ONLY];
             }
 
             if (isset($property['default'])) {

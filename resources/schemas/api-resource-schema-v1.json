@@ -169,6 +169,12 @@
                                     "default": false,
                                     "examples": [true, false]
                                 },
+                                "responseOptional": {
+                                    "type": "boolean",
+                                    "description": "Whether this property is exempt from the required-response-attribute coverage gate because the server cannot always populate it. Describes the response contract, independent of the request-side \"required\" flag.",
+                                    "default": false,
+                                    "examples": [true, false]
+                                },
                                 "default": {
                                     "description": "Default value for the property (must match the property type)",
                                     "examples": [0, "", false, []]
@@ -444,6 +450,10 @@
                 "required": {
                     "type": "boolean",
                     "description": "Whether the nested property is required"
+                },
+                "responseOptional": {
+                    "type": "boolean",
+                    "description": "Whether this nested property is exempt from the required-response-attribute coverage gate because the server cannot always populate it. Describes the response contract, independent of the request-side \"required\" flag."
                 },
                 "default": {
                     "description": "Default value for the nested property"
