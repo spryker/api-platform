@@ -49,6 +49,8 @@ class PaginationLinksTransform
 
     protected const string PAGINATION_KEY_MAX_PAGE = 'maxPage';
 
+    protected const string PAGINATION_KEY_CURRENT_ITEMS_PER_PAGE = 'currentItemsPerPage';
+
     /**
      * Adds pagination links to an already-decoded JSON:API document, if it carries pagination
      * metadata on the first resource.
@@ -65,7 +67,7 @@ class PaginationLinksTransform
         if (is_array($requestPagination) && $this->isCollectionDocument($data)) {
             unset($data[static::DOCUMENT_SECTION_META][static::META_TOTAL_ITEMS]);
             $data[static::DOCUMENT_SECTION_META][static::META_PAGINATION] = $requestPagination;
-            $this->addPaginationLinks($data, $request, $requestPagination);
+            $this->addPaginationLinks($data, $request, $requestPagination, true);
 
             return true;
         }
@@ -93,7 +95,7 @@ class PaginationLinksTransform
      * @param array<string, mixed> $data
      * @param array<string, mixed> $pagination
      */
-    protected function addPaginationLinks(array &$data, Request $request, array $pagination): bool
+    protected function addPaginationLinks(array &$data, Request $request, array $pagination, bool $isAppliedPagination = false): bool
     {
         if (!isset($pagination[static::PAGINATION_KEY_CURRENT_PAGE], $pagination[static::PAGINATION_KEY_MAX_PAGE])) {
             return false;
@@ -108,7 +110,7 @@ class PaginationLinksTransform
             return false;
         }
 
-        $itemsPerPage = $this->resolveItemsPerPage($request, $pagination);
+        $itemsPerPage = $this->resolveItemsPerPage($request, $pagination, $isAppliedPagination);
 
         $data[static::DOCUMENT_SECTION_LINKS]['first'] = $this->buildPaginationLink($request, 0, $itemsPerPage);
         $data[static::DOCUMENT_SECTION_LINKS]['last'] = $this->buildPaginationLink($request, ($maxPage - 1) * $itemsPerPage, $itemsPerPage);
@@ -167,15 +169,19 @@ class PaginationLinksTransform
         return $modified;
     }
 
-    protected function resolveItemsPerPage(Request $request, mixed $pagination): int
+    protected function resolveItemsPerPage(Request $request, mixed $pagination, bool $isAppliedPagination = false): int
     {
+        if ($isAppliedPagination && isset($pagination[static::PAGINATION_KEY_CURRENT_ITEMS_PER_PAGE])) {
+            return (int)$pagination[static::PAGINATION_KEY_CURRENT_ITEMS_PER_PAGE];
+        }
+
         $pageParam = $request->query->all()[static::PAGINATION_PARAM_PAGE] ?? null;
 
         if (is_array($pageParam) && isset($pageParam[static::PAGINATION_PARAM_LIMIT])) {
             return (int)$pageParam[static::PAGINATION_PARAM_LIMIT];
         }
 
-        return (int)($pagination['currentItemsPerPage'] ?? $pagination['config']['defaultItemsPerPage'] ?? 12);
+        return (int)($pagination[static::PAGINATION_KEY_CURRENT_ITEMS_PER_PAGE] ?? $pagination['config']['defaultItemsPerPage'] ?? 12);
     }
 
     protected function buildPaginationLink(Request $request, int $offset, int $limit): string

@@ -204,6 +204,25 @@ class JsonApiResponseBodySubscriberTest extends Unit
         $this->assertStringContainsString('page[offset]=2', $data['links']['next']);
     }
 
+    public function testGivenARequestedLimitAboveTheAppliedOneWhenOnKernelResponseThenLinksUseTheAppliedLimit(): void
+    {
+        // Arrange
+        $content = '{"links":{"self":"http://localhost/test-resources"},"meta":{"totalItems":1},"data":[{"id":"1","type":"test-resources","attributes":{"name":"first"}}]}';
+        $pagination = ['numFound' => 250, 'currentPage' => 1, 'maxPage' => 3, 'currentItemsPerPage' => 100];
+        $request = Request::create('/test-resources?page[limit]=500&page[offset]=0');
+        $request->attributes->set(PaginationLinksTransform::REQUEST_ATTRIBUTE_PAGINATION, $pagination);
+        $subscriber = $this->createSubscriberWithRealTransforms();
+        $event = $this->createResponseEventForRequest($content, $request);
+
+        // Act
+        $subscriber->onKernelResponse($event);
+
+        // Assert
+        $data = json_decode((string)$event->getResponse()->getContent(), true);
+        $this->assertStringContainsString('page[limit]=100&page[offset]=100', $data['links']['next']);
+        $this->assertStringContainsString('page[limit]=100&page[offset]=200', $data['links']['last']);
+    }
+
     public function testGivenPaginationRequestAttributeWithoutResultPagesWhenOnKernelResponseThenMetaPaginationIsEmittedWithoutLinks(): void
     {
         // Arrange
