@@ -51,6 +51,8 @@ class JsonApiEnvelopeVerifierTest extends Unit
 
     protected const int STATUS_OK = 200;
 
+    protected const int STATUS_ACCEPTED = 202;
+
     protected const int STATUS_NO_CONTENT = 204;
 
     protected const int STATUS_NOT_FOUND = 404;
@@ -267,6 +269,27 @@ class JsonApiEnvelopeVerifierTest extends Unit
 
         // Assert
         $this->assertSame([], $violations);
+    }
+
+    public function testGivenAnAcceptedResponseWithoutABodyWhenVerifyingThenItReportsNothing(): void
+    {
+        // Act
+        $violations = $this->verifyAs(static::VERB_POST, static::STATUS_ACCEPTED, null, '');
+
+        // Assert
+        $this->assertSame([], $violations);
+    }
+
+    public function testGivenAnAcceptedResponseCarryingANonDocumentBodyWhenVerifyingThenItReportsIt(): void
+    {
+        // Act
+        $violations = $this->verifyAs(static::VERB_POST, static::STATUS_ACCEPTED, static::MEDIA_TYPE_JSON_API, 'accepted');
+
+        // Assert
+        $this->assertSame(
+            ['POST /wishlists/{uuid} answered 202 with a body that is not a JSON document.'],
+            $violations,
+        );
     }
 
     public function testGivenANoContentResponseCarryingABodyWhenVerifyingThenItReportsIt(): void

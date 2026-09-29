@@ -74,6 +74,9 @@ envelope-check grounds. The identifier is `data.id` — it lives in the JSON:API
 test produced, demands the `type` and the `self` link of every resource object the document carries,
 and a non-empty `id` of each one whose resource declares an identifier.
 
+An operation declaring `output: false` answers no body, so it demands no response attributes, and
+the envelope check accepts its empty `202` the same way it accepts an empty `204`.
+
 That last guarantee stops where the schema does. A resource marking no property `identifier: true`
 — an action endpoint, a singleton — may answer without an `id`, and its responses are outside the
 identifier check. The exemption is derived by reflecting the generated resources

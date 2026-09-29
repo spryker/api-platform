@@ -15,6 +15,7 @@ use Generated\Api\Storefront\WishlistsStorefrontResource;
 use Spryker\ApiPlatform\Contract\Coverage\ResponseAttribute;
 use Spryker\ApiPlatform\Contract\Coverage\TruthSet;
 use SprykerTest\ApiPlatform\Coverage\ContractCoverageFactory;
+use SprykerTest\ApiPlatform\Unit\Coverage\Fixture\BodylessWriteFixtureResource;
 use SprykerTest\ApiPlatform\Unit\Coverage\Fixture\CollectionOnlyAttributeFixtureResource;
 use SprykerTest\ApiPlatform\Unit\Coverage\Fixture\DeclaredResponsesFixtureResource;
 use SprykerTest\ApiPlatform\Unit\Coverage\Fixture\ErrorOnlyCollectionFixtureResource;
@@ -185,6 +186,22 @@ class SchemaTruthLoaderTest extends Unit
             $truthSet->responseAttributes,
         )));
         $this->assertSame(['GET /error-only/{uuid}'], $dispatchKeys);
+    }
+
+    public function testGivenAWriteDeclaringNoOutputWhenLoadingThenItDemandsNoResponseAttributes(): void
+    {
+        // Arrange
+        $loader = ContractCoverageFactory::createSchemaTruthLoader();
+
+        // Act
+        $truthSet = $loader->load([BodylessWriteFixtureResource::class]);
+
+        // Assert
+        $dispatchKeys = array_values(array_unique(array_map(
+            static fn ($responseAttribute): string => $responseAttribute->dispatchKey,
+            $truthSet->responseAttributes,
+        )));
+        $this->assertSame(['GET /bodyless-writes'], $dispatchKeys);
     }
 
     public function testGivenShapeScopedAttributesWhenLoadingThenEachOperationDemandsItsOwnShape(): void

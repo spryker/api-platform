@@ -130,6 +130,7 @@ class SchemaTruthLoader
                 $reflectionClass,
                 $operationTruth['servableOperations'],
                 $operationTruth['declaredResponses'],
+                $operationTruth['bodylessDispatchKeys'],
             ),
         );
     }
@@ -144,9 +145,12 @@ class SchemaTruthLoader
      * than a route-not-found - never returns a resource body, so there is nothing for a test to
      * assert and nothing the gate can demand.
      *
+     * An operation declaring `output: false` answers no body either, whatever its success status.
+     *
      * @param \ReflectionClass<object> $reflectionClass
      * @param array<\Spryker\ApiPlatform\Contract\Coverage\ApiOperation> $servableOperations
      * @param array<string, array<int>> $declaredResponses
+     * @param array<string> $bodylessDispatchKeys
      *
      * @return array<\Spryker\ApiPlatform\Contract\Coverage\ResponseAttribute>
      */
@@ -154,11 +158,13 @@ class SchemaTruthLoader
         ReflectionClass $reflectionClass,
         array $servableOperations,
         array $declaredResponses,
+        array $bodylessDispatchKeys,
     ): array {
         $successOperations = array_values(array_filter(
             $servableOperations,
             fn (ApiOperation $operation): bool => $operation->status === null
                 && strtoupper($operation->verb) !== static::VERB_DELETE
+                && !in_array($operation->dispatchKey(), $bodylessDispatchKeys, true)
                 && $this->declaresSuccessResponse($declaredResponses[$operation->dispatchKey()] ?? []),
         ));
 
@@ -189,7 +195,7 @@ class SchemaTruthLoader
     }
 
     /**
-     * @return array{servableOperations: array<\Spryker\ApiPlatform\Contract\Coverage\ApiOperation>, nonServableOperations: array<\Spryker\ApiPlatform\Contract\Coverage\ApiOperation>, internalOperations: array<\Spryker\ApiPlatform\Contract\Coverage\ApiOperation>, undeclaredResponseOperations: array<\Spryker\ApiPlatform\Contract\Coverage\ApiOperation>, declaredResponses: array<string, array<int>>, inputOperations: array<array{operation: \Spryker\ApiPlatform\Contract\Coverage\ApiOperation, groups: array<string>}>}
+     * @return array{servableOperations: array<\Spryker\ApiPlatform\Contract\Coverage\ApiOperation>, nonServableOperations: array<\Spryker\ApiPlatform\Contract\Coverage\ApiOperation>, internalOperations: array<\Spryker\ApiPlatform\Contract\Coverage\ApiOperation>, undeclaredResponseOperations: array<\Spryker\ApiPlatform\Contract\Coverage\ApiOperation>, declaredResponses: array<string, array<int>>, inputOperations: array<array{operation: \Spryker\ApiPlatform\Contract\Coverage\ApiOperation, groups: array<string>}>, bodylessDispatchKeys: array<string>}
      */
     protected function collectOperations(ApiResource $apiResource, string $shortName, string $identifier): array
     {
@@ -201,6 +207,7 @@ class SchemaTruthLoader
         $undeclaredResponseOperations = [];
         $declaredResponses = [];
         $inputOperations = [];
+        $bodylessDispatchKeys = [];
 
         // `Operations` is keyed on the base `Operation`, so a resource may carry one that is not
         // HTTP and cannot answer `getMethod()`.
@@ -228,6 +235,10 @@ class SchemaTruthLoader
                 $nonServableOperations[] = $apiOperation;
 
                 continue;
+            }
+
+            if ($this->answersNoBody($operation)) {
+                $bodylessDispatchKeys[] = $apiOperation->dispatchKey();
             }
 
             $declaredStatuses = $this->declaredResponseStatuses($operation);
@@ -264,7 +275,19 @@ class SchemaTruthLoader
             'undeclaredResponseOperations' => $undeclaredResponseOperations,
             'declaredResponses' => $declaredResponses,
             'inputOperations' => $inputOperations,
+            'bodylessDispatchKeys' => $bodylessDispatchKeys,
         ];
+    }
+
+    /**
+     * Read straight off the attribute, `output: false` is still `false`; after API Platform's metadata
+     * factories it has become an output without a class.
+     */
+    protected function answersNoBody(HttpOperation $operation): bool
+    {
+        $output = $operation->getOutput();
+
+        return $output === false || (is_array($output) && array_key_exists('class', $output) && $output['class'] === null);
     }
 
     /**

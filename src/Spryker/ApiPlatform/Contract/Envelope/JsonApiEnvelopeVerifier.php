@@ -34,6 +34,8 @@ class JsonApiEnvelopeVerifier
 
     protected const int STATUS_SUCCESS_MAX = 299;
 
+    protected const int STATUS_ACCEPTED = 202;
+
     protected const int STATUS_NO_CONTENT = 204;
 
     protected const string KEY_DATA = 'data';
@@ -76,6 +78,11 @@ class JsonApiEnvelopeVerifier
             return trim($body) === ''
                 ? []
                 : [sprintf('%s answered %d with a body; a no-content response carries none.', $operationKey, $status)];
+        }
+
+        // JSON:API owes no document for an accepted request, so an empty one is left alone; a body still has to hold.
+        if ($status === static::STATUS_ACCEPTED && trim($body) === '') {
+            return [];
         }
 
         $violations = $this->verifyMediaType($operationKey, $mediaType);
