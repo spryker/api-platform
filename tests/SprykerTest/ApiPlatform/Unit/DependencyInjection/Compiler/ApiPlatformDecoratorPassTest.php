@@ -13,9 +13,11 @@ use Codeception\Test\Unit;
 use Spryker\ApiPlatform\DependencyInjection\Compiler\ApiPlatformDecoratorPass;
 use Spryker\ApiPlatform\OpenApi\Decorator\ErrorResponseOpenApiDecorator;
 use Spryker\ApiPlatform\OpenApi\Decorator\OpenApiDecorator;
+use Spryker\ApiPlatform\PropertyAccess\LosslessIntegerPropertyAccessor;
 use SprykerTest\ApiPlatform\ApiUnitTester;
 use stdClass;
 use Symfony\Component\DependencyInjection\ContainerBuilder;
+use Symfony\Component\DependencyInjection\Definition;
 
 /**
  * Auto-generated group annotations
@@ -35,6 +37,13 @@ class ApiPlatformDecoratorPassTest extends Unit
     protected const string SERVICE_ID_OPENAPI_FACTORY = 'api_platform.openapi.factory';
 
     protected const int PRIORITY_DEFAULT = 0;
+
+    protected const string SERVICE_ID_PROPERTY_ACCESSOR = 'property_accessor';
+
+    /**
+     * @var array<string>
+     */
+    protected const array SERIALIZER_PROPERTY_ACCESSOR_ALIASES = ['api_platform.property_accessor', 'serializer.property_accessor'];
 
     protected ApiUnitTester $tester;
 
@@ -72,5 +81,45 @@ class ApiPlatformDecoratorPassTest extends Unit
 
         // Assert
         $this->assertFalse($container->hasDefinition(ErrorResponseOpenApiDecorator::class));
+    }
+
+    public function testGivenTheSerializerPropertyAccessorAliasesWhenProcessingThenEachIsDecoratedWithTheLosslessIntegerAccessor(): void
+    {
+        // Arrange
+        $container = new ContainerBuilder();
+        $container->register(static::SERVICE_ID_RESOURCE_CLASS_RESOLVER, stdClass::class);
+        $container->register(static::SERVICE_ID_PROPERTY_ACCESSOR, stdClass::class);
+        foreach (static::SERIALIZER_PROPERTY_ACCESSOR_ALIASES as $alias) {
+            $container->setAlias($alias, static::SERVICE_ID_PROPERTY_ACCESSOR);
+        }
+
+        // Act
+        (new ApiPlatformDecoratorPass())->process($container);
+
+        // Assert
+        $decoratedIds = [];
+        foreach ($container->getDefinitions() as $definition) {
+            if ($definition->getClass() === LosslessIntegerPropertyAccessor::class) {
+                $decoratedIds[] = $definition->getDecoratedService()[0] ?? null;
+            }
+        }
+        $this->assertEqualsCanonicalizing(static::SERIALIZER_PROPERTY_ACCESSOR_ALIASES, $decoratedIds);
+    }
+
+    public function testGivenNoPropertyAccessorWhenProcessingThenNoLosslessIntegerAccessorIsRegistered(): void
+    {
+        // Arrange
+        $container = new ContainerBuilder();
+        $container->register(static::SERVICE_ID_RESOURCE_CLASS_RESOLVER, stdClass::class);
+
+        // Act
+        (new ApiPlatformDecoratorPass())->process($container);
+
+        // Assert
+        $accessorDefinitions = array_filter(
+            $container->getDefinitions(),
+            static fn (Definition $definition): bool => $definition->getClass() === LosslessIntegerPropertyAccessor::class,
+        );
+        $this->assertSame([], $accessorDefinitions);
     }
 }

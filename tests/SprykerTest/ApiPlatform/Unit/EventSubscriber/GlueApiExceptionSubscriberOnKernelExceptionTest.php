@@ -14,6 +14,7 @@ use Codeception\Test\Unit;
 use InvalidArgumentException;
 use Spryker\ApiPlatform\EventSubscriber\GlueApiExceptionSubscriber;
 use Spryker\ApiPlatform\Exception\GlueApiException;
+use Spryker\ApiPlatform\Exception\LossyIntegerConversionException;
 use Spryker\ApiPlatform\Validation\NestedObjectValidationErrorAugmenter;
 use Spryker\ApiPlatform\Validation\ValidationConstraintReader;
 use SprykerTest\ApiPlatform\ApiUnitTester;
@@ -25,6 +26,7 @@ use Symfony\Component\HttpKernel\Exception\BadRequestHttpException;
 use Symfony\Component\HttpKernel\Exception\MethodNotAllowedHttpException;
 use Symfony\Component\HttpKernel\HttpKernelInterface;
 use Symfony\Component\Security\Core\Exception\AccessDeniedException;
+use Symfony\Component\Serializer\Exception\NotNormalizableValueException;
 use Symfony\Component\Translation\IdentityTranslator;
 
 /**
@@ -44,6 +46,14 @@ class GlueApiExceptionSubscriberOnKernelExceptionTest extends Unit
      * replaces with the status text.
      */
     protected const string ROUTER_MESSAGE = 'No route found for "DELETE http://glue-backend.example/fixtures/1"';
+
+    protected const string PROPERTY_QUANTITY = 'quantity';
+
+    protected const float FRACTIONAL_QUANTITY = 1.5;
+
+    protected const string DENORMALIZATION_FAILURE_MESSAGE = 'Failed to denormalize attribute "quantity".';
+
+    protected const string EXPECTED_TYPE_UNKNOWN = 'unknown';
 
     protected ApiUnitTester $tester;
 
@@ -178,6 +188,36 @@ class GlueApiExceptionSubscriberOnKernelExceptionTest extends Unit
 
         $data = $this->decodeResponse($response);
         $this->assertSame('quantity => This value should be of type numeric.', $data['errors'][0]['detail']);
+    }
+
+    public function testGivenALossyIntegerConversionWrappedByTheSerializerWhenOnKernelExceptionThenReturns422WithAnIntegerTypeDetail(): void
+    {
+        // Arrange
+        $subscriber = $this->createSubscriber();
+        $exception = NotNormalizableValueException::createForUnexpectedDataType(
+            static::DENORMALIZATION_FAILURE_MESSAGE,
+            static::FRACTIONAL_QUANTITY,
+            [static::EXPECTED_TYPE_UNKNOWN],
+            static::PROPERTY_QUANTITY,
+            false,
+            0,
+            new LossyIntegerConversionException(static::PROPERTY_QUANTITY),
+        );
+        $request = new Request();
+        $request->attributes->set('_api_resource_class', 'SomeResourceClass');
+        $event = $this->createExceptionEvent($exception, $request);
+
+        // Act
+        $subscriber->onKernelException($event);
+
+        // Assert
+        $response = $event->getResponse();
+        $this->assertNotNull($response);
+        $this->assertSame(Response::HTTP_UNPROCESSABLE_ENTITY, $response->getStatusCode());
+
+        $data = $this->decodeResponse($response);
+        $this->assertSame('901', $data['errors'][0]['code']);
+        $this->assertSame('quantity => This value should be of type integer.', $data['errors'][0]['detail']);
     }
 
     /**

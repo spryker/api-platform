@@ -9,22 +9,24 @@ declare(strict_types=1);
 
 namespace Spryker\ApiPlatform\EventSubscriber;
 
-use ApiPlatform\Metadata\ApiResource;
 use ApiPlatform\Metadata\Operation;
 use ApiPlatform\Metadata\Resource\Factory\ResourceMetadataCollectionFactoryInterface;
 use Psr\Log\LoggerInterface;
 use Psr\Log\NullLogger;
-use ReflectionClass;
-use ReflectionNamedType;
-use ReflectionProperty;
+use Spryker\ApiPlatform\Error\JsonApiErrorResponseFactory;
 use Spryker\ApiPlatform\Exception\GlueApiException;
 use Spryker\ApiPlatform\OpenApi\ErrorResponse\ProviderNotFoundErrorResolver;
 use Spryker\ApiPlatform\Request\RequestAttribute;
+use Spryker\ApiPlatform\ResponseTransform\RelativeLinkTransform;
+use Spryker\ApiPlatform\Security\AccessDeniedErrorResponseBuilder;
+use Spryker\ApiPlatform\Validation\BoolValidationErrorAugmenter;
+use Spryker\ApiPlatform\Validation\DenormalizationErrorMatcher;
 use Spryker\ApiPlatform\Validation\NestedObjectValidationErrorAugmenter;
+use Spryker\ApiPlatform\Validation\NumericValidationErrorAugmenter;
 use Spryker\ApiPlatform\Validation\Trait\ValidationMessageTranslationTrait;
 use Spryker\ApiPlatform\Validation\ValidationConstraintReader;
+use Spryker\ApiPlatform\Validation\ValidationErrorFormatNormalizer;
 use Symfony\Component\EventDispatcher\EventSubscriberInterface;
-use Symfony\Component\HttpFoundation\JsonResponse;
 use Symfony\Component\HttpFoundation\Request;
 use Symfony\Component\HttpFoundation\Response;
 use Symfony\Component\HttpKernel\Event\ExceptionEvent;
@@ -36,12 +38,6 @@ use Symfony\Component\HttpKernel\Exception\MethodNotAllowedHttpException;
 use Symfony\Component\HttpKernel\Exception\NotFoundHttpException;
 use Symfony\Component\HttpKernel\KernelEvents;
 use Symfony\Component\Security\Core\Exception\AccessDeniedException;
-use Symfony\Component\Validator\Constraint;
-use Symfony\Component\Validator\Constraints\AbstractComparison;
-use Symfony\Component\Validator\Constraints\GreaterThan;
-use Symfony\Component\Validator\Constraints\LessThan;
-use Symfony\Component\Validator\Constraints\Range;
-use Symfony\Component\Validator\Constraints\Type;
 use Symfony\Contracts\Translation\LocaleAwareInterface;
 use Symfony\Contracts\Translation\TranslatorInterface;
 use Throwable;
@@ -49,99 +45,38 @@ use Throwable;
 /**
  * Intercepts GlueApiException and AccessDeniedException instances and converts them
  * into JSON:API formatted error responses with Glue-compatible `code` field included.
+ *
+ * The single entry point for Glue error handling on API Platform requests: it decides which
+ * event and which case applies, and delegates building and augmenting the error to its collaborators.
  */
 class GlueApiExceptionSubscriber implements EventSubscriberInterface
 {
     use ValidationMessageTranslationTrait;
 
-    protected const string HEADER_ALLOW = 'Allow';
+    public const string ERROR_CODE_UNAUTHORIZED_REQUEST = AccessDeniedErrorResponseBuilder::ERROR_CODE_UNAUTHORIZED_REQUEST;
 
-    protected const string CONTENT_TYPE_JSON_API = 'application/vnd.api+json';
+    public const string ERROR_DETAIL_UNAUTHORIZED_REQUEST = AccessDeniedErrorResponseBuilder::ERROR_DETAIL_UNAUTHORIZED_REQUEST;
+
+    public const string ERROR_DETAIL_BAD_REQUEST = 'Post data missing or invalid.';
 
     // The write methods whose body can carry a nested value object.
     protected const array NESTED_OBJECT_WRITE_METHODS = [Request::METHOD_POST, Request::METHOD_PATCH];
 
     protected const string ENGLISH_LOCALE = 'en';
 
-    protected const string ERROR_CODE_MISSING_ACCESS_TOKEN = '002';
+    protected JsonApiErrorResponseFactory $errorResponseFactory;
 
-    protected const string ERROR_DETAIL_MISSING_ACCESS_TOKEN = 'Missing access token.';
+    protected AccessDeniedErrorResponseBuilder $accessDeniedErrorResponseBuilder;
 
-    public const string ERROR_CODE_UNAUTHORIZED_REQUEST = '802';
+    protected DenormalizationErrorMatcher $denormalizationErrorMatcher;
 
-    public const string ERROR_DETAIL_UNAUTHORIZED_REQUEST = 'Unauthorized request.';
+    protected ValidationErrorFormatNormalizer $validationErrorFormatNormalizer;
 
-    protected const string AUTHORIZATION_HEADER = 'Authorization';
+    protected NumericValidationErrorAugmenter $numericValidationErrorAugmenter;
 
-    protected const string ANONYMOUS_CUSTOMER_HEADER = 'X-Anonymous-Customer-Unique-Id';
+    protected BoolValidationErrorAugmenter $boolValidationErrorAugmenter;
 
-    protected const string ERROR_CODE_CHECKOUT_AUTH_REQUIRED = '1105';
-
-    protected const string ERROR_DETAIL_CHECKOUT_AUTH_REQUIRED = 'One of Authorization or X-Anonymous-Customer-Unique-Id headers is required.';
-
-    public const string ERROR_DETAIL_BAD_REQUEST = 'Post data missing or invalid.';
-
-    protected const string ERROR_META_KEY_EXCEPTION = 'exception';
-
-    protected const string ERROR_META_KEY_FILE = 'file';
-
-    protected const string ERROR_META_KEY_LINE = 'line';
-
-    protected const string ERROR_META_KEY_TRACE = 'trace';
-
-    protected const string TYPE_INTEGER_ERROR_MESSAGE = 'This value should be of type integer.';
-
-    /**
-     * Matches a validation detail that begins with a `property: ` prefix, where the property may be a
-     * plain name, a Symfony bracket path (`parent[child][0]`) or a dotted cascade path (`parent.child`).
-     */
-    protected const string REGEX_DETAIL_PROPERTY_PREFIX = '/^[\w\[\].]+: /';
-
-    /**
-     * Captures the field name of a detail whose only violation is "This value should not be blank.".
-     */
-    protected const string REGEX_NOT_BLANK_ONLY_FIELD = '/^(\w+) => This value should not be blank\.$/';
-
-    /**
-     * Captures the field name of a detail that carries a violation OTHER than the "not blank" one.
-     */
-    protected const string REGEX_NON_NOT_BLANK_FIELD = '/^(\w+) => (?!This value should not be blank\.$)/';
-
-    /**
-     * Matches PropertyAccessor's type-mismatch message and captures the expected type and property
-     * path: `Expected argument of type "<type>", "<given>" given at property path "<path>"`.
-     */
-    protected const string REGEX_PROPERTY_ACCESS_TYPE_ERROR = '/Expected argument of type "(\??[\w\\\\]+)", "[^"]+" given at property path "([\w\.\[\]]+)"/';
-
-    /**
-     * Matches an API Platform denormalization message and captures the offending attribute name:
-     * `denormalize attribute "<name>" ... Expected argument of type`.
-     */
-    protected const string REGEX_DENORMALIZE_ATTRIBUTE = '/denormalize attribute "(\w+)".*Expected argument of type/';
-
-    /**
-     * @var array<string>
-     *
-     * The `links` names this stack produces. Used by BOTH hasRelativeLink() and
-     * promoteRelativeLinks() — extend this set to promote additional link names.
-     */
-    protected const array LINK_NAMES = ['self', 'related', 'first', 'last', 'prev', 'next'];
-
-    protected const string ERROR_CODE_VALIDATION = '901';
-
-    protected const string MESSAGE_TEMPLATE_FIELD_MISSING = 'This field is missing.';
-
-    protected const string MESSAGE_TEMPLATE_SHOULD_BE_TRUE = 'This value should be true.';
-
-    protected const string MESSAGE_TEMPLATE_TYPE = 'This value should be of type {{ type }}.';
-
-    protected const string MESSAGE_TEMPLATE_GREATER_THAN = 'This value should be greater than {{ compared_value }}.';
-
-    protected const string TYPE_NAME_INTEGER = 'integer';
-
-    protected const string TYPE_NAME_NUMERIC = 'numeric';
-
-    protected const string COMPARED_VALUE_ZERO = '0';
+    protected RelativeLinkTransform $relativeLinkTransform;
 
     public function __construct(
         protected TranslatorInterface $translator,
@@ -152,7 +87,23 @@ class GlueApiExceptionSubscriber implements EventSubscriberInterface
         protected LoggerInterface $logger = new NullLogger(),
         protected bool $isMethodNotAllowedStatusEnabled = true,
         protected ProviderNotFoundErrorResolver $providerNotFoundErrorResolver = new ProviderNotFoundErrorResolver(),
+        ?JsonApiErrorResponseFactory $errorResponseFactory = null,
+        ?AccessDeniedErrorResponseBuilder $accessDeniedErrorResponseBuilder = null,
+        ?DenormalizationErrorMatcher $denormalizationErrorMatcher = null,
+        ?ValidationErrorFormatNormalizer $validationErrorFormatNormalizer = null,
+        ?NumericValidationErrorAugmenter $numericValidationErrorAugmenter = null,
+        ?BoolValidationErrorAugmenter $boolValidationErrorAugmenter = null,
+        ?RelativeLinkTransform $relativeLinkTransform = null,
     ) {
+        $this->errorResponseFactory = $errorResponseFactory ?? new JsonApiErrorResponseFactory($providerNotFoundErrorResolver);
+        $this->accessDeniedErrorResponseBuilder = $accessDeniedErrorResponseBuilder
+            ?? new AccessDeniedErrorResponseBuilder($translator, $this->errorResponseFactory, $providerNotFoundErrorResolver);
+        $this->denormalizationErrorMatcher = $denormalizationErrorMatcher ?? new DenormalizationErrorMatcher($translator);
+        $this->validationErrorFormatNormalizer = $validationErrorFormatNormalizer ?? new ValidationErrorFormatNormalizer($translator);
+        $this->numericValidationErrorAugmenter = $numericValidationErrorAugmenter
+            ?? new NumericValidationErrorAugmenter($constraintReader, $translator);
+        $this->boolValidationErrorAugmenter = $boolValidationErrorAugmenter ?? new BoolValidationErrorAugmenter($translator);
+        $this->relativeLinkTransform = $relativeLinkTransform ?? new RelativeLinkTransform();
     }
 
     /**
@@ -196,17 +147,8 @@ class GlueApiExceptionSubscriber implements EventSubscriberInterface
                 return;
             }
 
-            $event->setResponse($this->createJsonApiResponse(
-                [
-                    'errors' => [
-                        [
-                            'code' => (string)Response::HTTP_BAD_REQUEST,
-                            'status' => Response::HTTP_BAD_REQUEST,
-                            'detail' => $this->translateValidationMessage(static::ERROR_DETAIL_BAD_REQUEST),
-                        ],
-                    ],
-                ],
-                Response::HTTP_BAD_REQUEST,
+            $event->setResponse($this->errorResponseFactory->createBadRequestResponse(
+                $this->translateValidationMessage(static::ERROR_DETAIL_BAD_REQUEST),
             ));
         }
     }
@@ -238,63 +180,46 @@ class GlueApiExceptionSubscriber implements EventSubscriberInterface
     public function onKernelException(ExceptionEvent $event): void
     {
         $exception = $event->getThrowable();
+        $request = $event->getRequest();
 
         if ($exception instanceof GlueApiException) {
-            $event->setResponse($this->createGlueApiErrorResponse($exception));
+            $event->setResponse($this->errorResponseFactory->createGlueApiErrorResponse($exception));
 
             return;
         }
 
         if ($exception instanceof AccessDeniedException) {
-            $event->setResponse($this->createAccessDeniedResponse($event));
+            $event->setResponse($this->accessDeniedErrorResponseBuilder->createAccessDeniedResponse($request));
 
             return;
         }
 
         // Convert API Platform deserialization/validation 400 errors to 422
         // for backward compatibility with the old REST API behavior.
-        if ($exception instanceof BadRequestHttpException && $event->getRequest()->attributes->has(RequestAttribute::API_RESOURCE_CLASS)) {
-            $event->setResponse($this->createValidationErrorResponse($exception));
+        if ($exception instanceof BadRequestHttpException && $request->attributes->has(RequestAttribute::API_RESOURCE_CLASS)) {
+            $event->setResponse($this->errorResponseFactory->createValidationErrorResponse([
+                $this->denormalizationErrorMatcher->transformDenormalizationMessage($exception->getMessage()),
+            ]));
 
             return;
         }
 
-        // PropertyAccessor throws a raw InvalidArgumentException when JSON:API ItemNormalizer
-        // tries to assign a non-numeric string to a typed `?int`/`?float` property. Without
-        // this branch the kernel renders a 500. Legacy Glue returned 422 / code 901 with
-        // "<property> => This value should be of type numeric." — restore that contract.
-        if ($event->getRequest()->attributes->has(RequestAttribute::API_RESOURCE_CLASS)) {
-            // Walk the exception chain: a failed nested value-object denormalization surfaces as a
-            // TypeError whose previous PropertyAccess exception carries the matchable message.
-            $propertyTypeError = null;
-            for ($throwable = $exception; $throwable !== null; $throwable = $throwable->getPrevious()) {
-                $propertyTypeError = $this->matchPropertyTypeError($throwable->getMessage());
-
-                if ($propertyTypeError !== null) {
-                    break;
-                }
-            }
+        // Without this branch a property that cannot take the submitted value renders a 500.
+        // Legacy Glue returned 422 / code 901 with "<property> => This value should be of type numeric."
+        if ($request->attributes->has(RequestAttribute::API_RESOURCE_CLASS)) {
+            $propertyTypeError = $this->denormalizationErrorMatcher->match($exception);
 
             if ($propertyTypeError !== null) {
-                $event->setResponse($this->createJsonApiResponse(
-                    [
-                        'errors' => [
-                            [
-                                'code' => static::ERROR_CODE_VALIDATION,
-                                'status' => Response::HTTP_UNPROCESSABLE_ENTITY,
-                                'detail' => $propertyTypeError,
-                            ],
-                        ],
-                    ],
-                    Response::HTTP_UNPROCESSABLE_ENTITY,
-                ));
+                $event->setResponse($this->errorResponseFactory->createValidationErrorResponse([$propertyTypeError]));
 
                 return;
             }
         }
 
-        if ($exception instanceof MethodNotAllowedHttpException && !$event->getRequest()->attributes->has(RequestAttribute::API_RESOURCE_CLASS)) {
-            $event->setResponse($this->createMethodNotAllowedResponse($exception, $event->getRequest()));
+        if ($exception instanceof MethodNotAllowedHttpException && !$request->attributes->has(RequestAttribute::API_RESOURCE_CLASS)) {
+            $event->setResponse($this->isMethodNotAllowedStatusEnabled
+                ? $this->errorResponseFactory->createMethodNotAllowedResponse($exception, $request)
+                : $this->errorResponseFactory->createHttpExceptionResponse(new NotFoundHttpException(), $request));
 
             return;
         }
@@ -308,11 +233,11 @@ class GlueApiExceptionSubscriber implements EventSubscriberInterface
         // kernel::handle() throws and ApiApplicationProxy's Throwable catch preserves the original Glue
         // error response (e.g. DynamicEntityBackendApi returns code 007 in application/json format).
         if ($exception instanceof HttpExceptionInterface) {
-            $isNonApiPlatformFallback = $event->getRequest()->attributes->get(RequestAttribute::API_PLATFORM_REQUEST) === true
-                && !$event->getRequest()->attributes->has(RequestAttribute::API_RESOURCE_CLASS);
+            $isNonApiPlatformFallback = $request->attributes->get(RequestAttribute::API_PLATFORM_REQUEST) === true
+                && !$request->attributes->has(RequestAttribute::API_RESOURCE_CLASS);
 
             if (!$isNonApiPlatformFallback) {
-                $event->setResponse($this->createHttpExceptionResponse($exception, $event->getRequest()));
+                $event->setResponse($this->errorResponseFactory->createHttpExceptionResponse($exception, $request));
             }
         }
     }
@@ -360,7 +285,7 @@ class GlueApiExceptionSubscriber implements EventSubscriberInterface
         $this->logUncaughtThrowable($throwable, $request);
 
         if (!$this->debug) {
-            $event->setResponse($this->createInternalServerErrorResponse());
+            $event->setResponse($this->errorResponseFactory->createInternalServerErrorResponse());
 
             return;
         }
@@ -369,35 +294,13 @@ class GlueApiExceptionSubscriber implements EventSubscriberInterface
             return;
         }
 
-        $event->setResponse($this->createDebugInternalServerErrorResponse($throwable));
+        $event->setResponse($this->errorResponseFactory->createDebugInternalServerErrorResponse($throwable));
     }
 
     protected function isApiPlatformRequest(Request $request): bool
     {
         return $request->attributes->has(RequestAttribute::API_RESOURCE_CLASS)
             || $request->attributes->get(RequestAttribute::API_PLATFORM_REQUEST) === true;
-    }
-
-    protected function createDebugInternalServerErrorResponse(Throwable $throwable): JsonResponse
-    {
-        return $this->createJsonApiResponse(
-            [
-                'errors' => [
-                    [
-                        'status' => Response::HTTP_INTERNAL_SERVER_ERROR,
-                        'title' => $throwable::class,
-                        'detail' => $throwable->getMessage(),
-                        'meta' => [
-                            static::ERROR_META_KEY_EXCEPTION => $throwable::class,
-                            static::ERROR_META_KEY_FILE => $throwable->getFile(),
-                            static::ERROR_META_KEY_LINE => $throwable->getLine(),
-                            static::ERROR_META_KEY_TRACE => explode(PHP_EOL, $throwable->getTraceAsString()),
-                        ],
-                    ],
-                ],
-            ],
-            Response::HTTP_INTERNAL_SERVER_ERROR,
-        );
     }
 
     protected function logUncaughtThrowable(Throwable $throwable, Request $request): void
@@ -417,51 +320,6 @@ class GlueApiExceptionSubscriber implements EventSubscriberInterface
     }
 
     /**
-     * BC: the uncaught last-resort fallback keeps the legacy `text/html` + "Internal Server Error"
-     * shape, which consumers use to detect 500s by failed JSON parsing. Handled errors still return
-     * the JSON:API envelope.
-     */
-    protected function createInternalServerErrorResponse(): Response
-    {
-        return new Response(
-            Response::$statusTexts[Response::HTTP_INTERNAL_SERVER_ERROR] ?? 'Internal Server Error',
-            Response::HTTP_INTERNAL_SERVER_ERROR,
-            ['Content-Type' => 'text/html; charset=UTF-8'],
-        );
-    }
-
-    protected function createGlueApiErrorResponse(GlueApiException $exception): JsonResponse
-    {
-        $errors = $exception->getErrors();
-        foreach ($errors as &$errorItem) {
-            if (!isset($errorItem['message'])) {
-                $errorItem['message'] = (string)$errorItem['detail'];
-            }
-
-            if (array_key_exists('code', $errorItem) && $errorItem['code'] === null) {
-                unset($errorItem['code']);
-            }
-        }
-
-        if ($errors === []) {
-            $error = [];
-            $errorCode = $exception->getErrorCode();
-
-            if ($errorCode !== null && $errorCode !== '') {
-                $error['code'] = $errorCode;
-            }
-
-            $error['status'] = $exception->getStatusCode();
-            $error['detail'] = $exception->getMessage();
-            $error['message'] = $exception->getMessage();
-
-            $errors = [$error];
-        }
-
-        return $this->createJsonApiResponse(['errors' => $errors], $exception->getStatusCode());
-    }
-
-    /**
      * Converts API Platform's 400 deserialization errors to 422 with Spryker error code 901,
      * preserving backward compatibility with the old REST API validation error format.
      */
@@ -474,28 +332,24 @@ class GlueApiExceptionSubscriber implements EventSubscriberInterface
         $response = $event->getResponse();
         $request = $event->getRequest();
 
-        // Promote relative link URLs to absolute using the request base URL.
-        // The old Glue REST API always returned fully-qualified URLs (http://host/path).
-        $this->fixRelativeLinks($response, $request);
+        $this->relativeLinkTransform->transform($response, $request);
+
+        if (!$request->attributes->has(RequestAttribute::API_RESOURCE_CLASS)) {
+            return;
+        }
+
+        $resourceClass = (string)$request->attributes->get(RequestAttribute::API_RESOURCE_CLASS, '');
+
+        // Enrich generic 404 responses from API Platform with domain-specific error messages.
+        if ($response->getStatusCode() === Response::HTTP_NOT_FOUND) {
+            $this->enrichNotFoundResponse($response, $resourceClass);
+        }
 
         // Augment 422 validation responses with missing Type/GreaterThan errors for empty-string numeric fields.
         // API Platform converts empty strings to null for typed properties (e.g. ?int), which causes Type and
         // comparison constraints to pass. The old REST API validated raw strings, so all errors were returned.
-        // Enrich generic 404 responses from API Platform with domain-specific error messages.
-        if ($response->getStatusCode() === Response::HTTP_NOT_FOUND && $request->attributes->has(RequestAttribute::API_RESOURCE_CLASS)) {
-            $this->enrichNotFoundResponse($response, $request);
-        }
-
-        if ($response->getStatusCode() === Response::HTTP_UNPROCESSABLE_ENTITY && $request->attributes->has(RequestAttribute::API_RESOURCE_CLASS)) {
-            $this->normalizeValidationErrorFormat($response, $request);
-
-            $resourceClass = (string)$request->attributes->get(RequestAttribute::API_RESOURCE_CLASS, '');
-
-            if ($resourceClass !== '') {
-                $this->augmentValidationErrorsForEmptyStringValues($response, $request, $resourceClass);
-                $this->augmentValidationErrorsForStringNumericValues($response, $request, $resourceClass);
-                $this->augmentValidationErrorsForBoolFields($response, $request, $resourceClass);
-            }
+        if ($response->getStatusCode() === Response::HTTP_UNPROCESSABLE_ENTITY) {
+            $this->augmentValidationErrors($response, $request, $resourceClass);
         }
 
         // Augment nested value-object validation: re-check coerced bool leaves, and relabel or
@@ -505,245 +359,147 @@ class GlueApiExceptionSubscriber implements EventSubscriberInterface
         // An update needs it for the same reason: a write-only operation denormalizes onto a
         // pre-populated instance, so a nested `?bool` leaf submitted as a non-boolean is coerced by
         // the generated setter and answers 200 unless the raw body is re-checked here.
-        if (
-            $request->attributes->has(RequestAttribute::API_RESOURCE_CLASS)
-            && in_array($request->getMethod(), static::NESTED_OBJECT_WRITE_METHODS, true)
-        ) {
-            $resourceClass = (string)$request->attributes->get(RequestAttribute::API_RESOURCE_CLASS, '');
-
-            if ($resourceClass !== '') {
-                $this->augmentValidationErrorsForNestedObjects($event, $request, $resourceClass);
-            }
+        if ($resourceClass !== '' && in_array($request->getMethod(), static::NESTED_OBJECT_WRITE_METHODS, true)) {
+            $this->augmentValidationErrorsForNestedObjects($event, $request, $resourceClass);
         }
 
-        if ($response->getStatusCode() !== Response::HTTP_BAD_REQUEST || !$request->attributes->has(RequestAttribute::API_RESOURCE_CLASS)) {
+        // The response as it arrived, not one the nested pass may have replaced.
+        if ($response->getStatusCode() === Response::HTTP_BAD_REQUEST) {
+            $this->convertDenormalizationErrors($event, $response);
+        }
+    }
+
+    protected function enrichNotFoundResponse(Response $response, string $resourceClass): void
+    {
+        // Do not overwrite responses that already have domain-specific error codes
+        // (e.g., from GlueApiException). Only enrich generic API Platform 404 responses.
+        $data = $this->decodeErrorResponse($response);
+
+        if ($data !== null && isset($data['errors'][0]['code']) && $data['errors'][0]['code'] !== '404') {
             return;
         }
 
+        $notFoundError = $this->providerNotFoundErrorResolver->resolveByResourceClass($resourceClass);
+
+        if ($notFoundError === null) {
+            return;
+        }
+
+        $response->setContent((string)json_encode(
+            ['errors' => [$notFoundError]],
+            JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES,
+        ));
+    }
+
+    protected function augmentValidationErrors(Response $response, Request $request, string $resourceClass): void
+    {
+        $data = $this->decodeErrorResponse($response);
+
+        if ($data !== null && isset($data['errors'])) {
+            $normalizedErrors = $this->validationErrorFormatNormalizer->normalize($data['errors'], $this->resolveSubmittedFields($request));
+
+            if ($normalizedErrors !== null) {
+                $response->setContent((string)json_encode(['errors' => $normalizedErrors], JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES));
+            }
+        }
+
+        if ($resourceClass === '') {
+            return;
+        }
+
+        $rawAttributes = $this->extractRawAttributes($request);
+        $groups = $this->getActiveValidationGroups($request);
+
+        $this->rewriteErrors($response, fn (array $errors): array => $this->numericValidationErrorAugmenter
+            ->augmentEmptyStringValues($resourceClass, $groups, $errors));
+        $this->rewriteErrors($response, fn (array $errors): array => $this->numericValidationErrorAugmenter
+            ->augmentStringNumericValues($resourceClass, $rawAttributes, $groups, $errors));
+
+        if ($request->getMethod() === Request::METHOD_POST) {
+            $this->rewriteErrors($response, fn (array $errors): array => $this->boolValidationErrorAugmenter
+                ->augment($resourceClass, $rawAttributes, $errors));
+        }
+    }
+
+    /**
+     * Only deserialization errors (a detail mentioning "denormalize" or a syntax error) are converted.
+     */
+    protected function convertDenormalizationErrors(ResponseEvent $event, Response $response): void
+    {
         $data = $this->decodeErrorResponse($response);
 
         if ($data === null || !isset($data['errors'])) {
             return;
         }
 
-        // Only convert deserialization errors (contain "denormalize" in detail)
-        $firstError = $data['errors'][0] ?? [];
-        $detail = $firstError['detail'] ?? '';
+        $detail = $data['errors'][0]['detail'] ?? '';
 
         if (!str_contains($detail, 'denormalize') && !str_contains($detail, 'Syntax error')) {
             return;
         }
 
-        $errors = [];
+        $details = [];
 
         foreach ($data['errors'] as $error) {
-            $detail = $error['detail'] ?? $error['title'] ?? 'Validation error.';
-
-            $errors[] = [
-                'code' => '901',
-                'status' => Response::HTTP_UNPROCESSABLE_ENTITY,
-                'detail' => $this->transformDenormalizationMessage($detail),
-            ];
+            $details[] = $this->denormalizationErrorMatcher->transformDenormalizationMessage(
+                $error['detail'] ?? $error['title'] ?? 'Validation error.',
+            );
         }
 
-        $event->setResponse($this->createJsonApiResponse(
-            ['errors' => $errors],
+        $event->setResponse($this->errorResponseFactory->createValidationErrorResponse($details));
+    }
+
+    /**
+     * Delegates present-but-empty nested value-object augmentation to the augmenter, which is a pure
+     * transformer over the decoded error array. This subscriber owns all request/response I/O: it
+     * resolves the request-derived inputs, hands them to the augmenter, and rebuilds the response
+     * only when the augmenter reports a change. Synthesizing missing-field errors on an
+     * otherwise-passing request requires promoting the status to 422, so a modified result always
+     * yields a fresh 422 response with consistent headers/status.
+     */
+    protected function augmentValidationErrorsForNestedObjects(ResponseEvent $event, Request $request, string $resourceClass): void
+    {
+        $data = $this->decodeErrorResponse($event->getResponse());
+        $errors = is_array($data) && isset($data['errors']) && is_array($data['errors']) ? $data['errors'] : [];
+
+        $result = $this->nestedObjectAugmenter->augment(
+            $resourceClass,
+            $this->extractRawAttributes($request),
+            $this->getActiveValidationGroups($request),
+            $errors,
+        );
+
+        if (!$result->modified) {
+            return;
+        }
+
+        $event->setResponse($this->errorResponseFactory->createJsonApiResponse(
+            ['errors' => $result->errors],
             Response::HTTP_UNPROCESSABLE_ENTITY,
         ));
     }
 
-    protected function createValidationErrorResponse(BadRequestHttpException $exception): JsonResponse
-    {
-        return $this->createJsonApiResponse(
-            [
-                'errors' => [
-                    [
-                        'code' => '901',
-                        'status' => Response::HTTP_UNPROCESSABLE_ENTITY,
-                        'detail' => $this->transformDenormalizationMessage($exception->getMessage()),
-                    ],
-                ],
-            ],
-            Response::HTTP_UNPROCESSABLE_ENTITY,
-        );
-    }
-
     /**
-     * Promotes relative link URLs (LINK_NAMES under `links` keys, any nesting level) to absolute URLs.
-     * API Platform's CollectionNormalizer generates ABS_PATH links (/path) by default.
+     * Hands the response's decoded errors to an augmenter and writes the body back only when it changed them.
+     *
+     * @param callable(array<int, array<string, mixed>>): array<int, array<string, mixed>> $augment
      */
-    protected function fixRelativeLinks(Response $response, Request $request): void
+    protected function rewriteErrors(Response $response, callable $augment): void
     {
-        if (!$request->attributes->has(RequestAttribute::API_RESOURCE_CLASS)) {
-            return;
-        }
-
-        $contentType = $response->headers->get('Content-Type') ?? '';
-
-        if (!str_contains($contentType, 'json')) {
-            return;
-        }
-
-        $content = $response->getContent();
-
-        if ($content === false || $content === '') {
-            return;
-        }
-
-        // With url_generation_strategy=ABS_URL links are normally absolute already, so the
-        // whole-body decode/encode below is skipped on the happy path.
-        if (!$this->hasRelativeLink($content)) {
-            return;
-        }
-
         $data = $this->decodeErrorResponse($response);
 
-        if ($data === null) {
+        if ($data === null || !isset($data['errors'])) {
             return;
         }
 
-        $scheme = $request->getScheme();
-        $host = $request->getHttpHost();
-        $baseUrl = $scheme . '://' . $host;
+        $errors = $augment($data['errors']);
 
-        $this->promoteRelativeLinks($data, $baseUrl);
+        if ($errors === $data['errors']) {
+            return;
+        }
 
+        $data['errors'] = $errors;
         $response->setContent((string)json_encode($data, JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES));
-    }
-
-    /**
-     * Detects a relative link in the raw response body without decoding it.
-     * The escaped variant (`"self":"\/`) cannot occur while the encoder emits unescaped slashes,
-     * but it keeps link promotion working against a body encoded with default flags.
-     */
-    protected function hasRelativeLink(string $content): bool
-    {
-        foreach (static::LINK_NAMES as $linkName) {
-            if (
-                str_contains($content, sprintf('"%s":"/', $linkName))
-                || str_contains($content, sprintf('"%s":"\/', $linkName))
-            ) {
-                return true;
-            }
-        }
-
-        return false;
-    }
-
-    /**
-     * Promotes the same LINK_NAMES set that hasRelativeLink() guards on, so the guard can never
-     * be narrower than the promotion.
-     *
-     * @param array<string, mixed> $data
-     */
-    protected function promoteRelativeLinks(array &$data, string $baseUrl): void
-    {
-        if (isset($data['links']) && is_array($data['links'])) {
-            foreach (static::LINK_NAMES as $linkName) {
-                $link = $data['links'][$linkName] ?? null;
-
-                if (is_string($link) && str_starts_with($link, '/')) {
-                    $data['links'][$linkName] = $baseUrl . $link;
-                }
-            }
-        }
-
-        // Recurse into data items and included resources
-        foreach (['data', 'included'] as $key) {
-            if (!isset($data[$key]) || !is_array($data[$key])) {
-                continue;
-            }
-
-            if (isset($data[$key]['links'])) {
-                // Single resource
-                $this->promoteRelativeLinks($data[$key], $baseUrl);
-            } else {
-                // Collection of items
-                foreach ($data[$key] as &$item) {
-                    if (is_array($item)) {
-                        $this->promoteRelativeLinks($item, $baseUrl);
-                    }
-                }
-                unset($item);
-            }
-        }
-    }
-
-    protected function createMethodNotAllowedResponse(
-        MethodNotAllowedHttpException $exception,
-        Request $request
-    ): JsonResponse {
-        if (!$this->isMethodNotAllowedStatusEnabled) {
-            return $this->createHttpExceptionResponse(new NotFoundHttpException(), $request);
-        }
-
-        return $this->createHttpExceptionResponse(
-            new MethodNotAllowedHttpException($this->extractAllowedMethods($exception)),
-            $request,
-        );
-    }
-
-    /**
-     * @return array<string>
-     */
-    protected function extractAllowedMethods(MethodNotAllowedHttpException $exception): array
-    {
-        $allowHeader = $exception->getHeaders()[static::HEADER_ALLOW] ?? '';
-
-        if (!is_string($allowHeader) || $allowHeader === '') {
-            return [];
-        }
-
-        return array_map('trim', explode(',', $allowHeader));
-    }
-
-    protected function createHttpExceptionResponse(HttpExceptionInterface $exception, Request $request): JsonResponse
-    {
-        $statusCode = $exception->getStatusCode();
-        $message = $exception->getMessage();
-        $detail = ($message !== '' && $message !== (Response::$statusTexts[$statusCode] ?? ''))
-            ? $message
-            : (Response::$statusTexts[$statusCode] ?? 'Error');
-
-        $error = [
-            'status' => $statusCode,
-            'detail' => $detail,
-        ];
-
-        // For 404 responses, check if the resource class has a domain-specific
-        // "not found" error code and message defined as class constants.
-        if ($statusCode === Response::HTTP_NOT_FOUND) {
-            $resourceClass = (string)$request->attributes->get(RequestAttribute::API_RESOURCE_CLASS, '');
-            $notFoundError = $this->resolveProviderNotFoundError($resourceClass);
-
-            if ($notFoundError !== null) {
-                $error = $notFoundError;
-            }
-        }
-
-        return $this->createJsonApiResponse(['errors' => [$error]], $statusCode, $exception->getHeaders());
-    }
-
-    /**
-     * @return array{code: string, status: int, detail: string, message: string}|null
-     */
-    protected function resolveProviderNotFoundError(string $resourceClass): ?array
-    {
-        return $this->providerNotFoundErrorResolver->resolveByResourceClass($resourceClass);
-    }
-
-    /**
-     * @param array<string, mixed> $data
-     * @param array<string, string> $headers
-     */
-    protected function createJsonApiResponse(array $data, int $statusCode, array $headers = []): JsonResponse
-    {
-        $response = new JsonResponse(null, $statusCode, $headers);
-        $response->setEncodingOptions(JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES);
-        $response->setData($data);
-        $response->headers->set('Content-Type', static::CONTENT_TYPE_JSON_API);
-
-        return $response;
     }
 
     /**
@@ -779,112 +535,6 @@ class GlueApiExceptionSubscriber implements EventSubscriberInterface
         );
     }
 
-    protected function enrichNotFoundResponse(Response $response, Request $request): void
-    {
-        // Do not overwrite responses that already have domain-specific error codes
-        // (e.g., from GlueApiException). Only enrich generic API Platform 404 responses.
-        $data = $this->decodeErrorResponse($response);
-
-        if ($data !== null && isset($data['errors'][0]['code']) && $data['errors'][0]['code'] !== '404') {
-            return;
-        }
-
-        $resourceClass = (string)$request->attributes->get(RequestAttribute::API_RESOURCE_CLASS, '');
-        $notFoundError = $this->resolveProviderNotFoundError($resourceClass);
-
-        if ($notFoundError === null) {
-            return;
-        }
-
-        $response->setContent((string)json_encode(
-            ['errors' => [$notFoundError]],
-            JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES,
-        ));
-    }
-
-    /**
-     * Splits single-error validation responses (where all violations are concatenated
-     * with newlines in one detail string) into separate error objects with code 901
-     * and "property => message" format, matching the old REST API behavior.
-     */
-    protected function normalizeValidationErrorFormat(Response $response, Request $request): void
-    {
-        $data = $this->decodeErrorResponse($response);
-
-        if ($data === null || !isset($data['errors'])) {
-            return;
-        }
-
-        // Check if errors need reformatting: single error with "property: message" format.
-        // Property may be a nested path produced by Collection/All constraints, e.g.
-        // `parent[child][0][leaf]` (bracket notation) or, when the nested property is a typed
-        // value object validated via an `Assert\Valid` cascade, dot notation `parent.child` —
-        // accept word characters, bracket-segment and dot notation.
-        if (count($data['errors']) !== 1) {
-            return;
-        }
-
-        $detail = $data['errors'][0]['detail'] ?? '';
-
-        if (!is_string($detail) || $detail === '' || !preg_match(static::REGEX_DETAIL_PROPERTY_PREFIX, $detail)) {
-            return;
-        }
-
-        $submittedFields = $this->resolveSubmittedFields($request);
-        $lines = array_filter(explode("\n", $detail), static fn (string $line): bool => $line !== '');
-        $errors = [];
-
-        foreach ($lines as $line) {
-            $colonPos = strpos($line, ': ');
-            $fieldName = $colonPos !== false ? substr($line, 0, $colonPos) : null;
-            $message = $colonPos !== false ? substr($line, $colonPos + 2) : $line;
-
-            if ($fieldName !== null) {
-                // Convert Symfony's bracket path notation `parent[child][0]` to Spryker's
-                // dot notation `parent.child.0` to match legacy Glue REST error format.
-                $fieldName = $this->normalizePropertyPath($fieldName);
-            }
-
-            // Detect missing fields: "not blank/null" errors for fields not submitted in the request.
-            // Only top-level fields are considered submitted — nested paths bypass this check.
-            if (
-                $fieldName !== null
-                && $submittedFields !== null
-                && !str_contains($fieldName, '.')
-                && !in_array($fieldName, $submittedFields, true)
-            ) {
-                $message = $this->translateValidationMessage(static::MESSAGE_TEMPLATE_FIELD_MISSING);
-            }
-
-            $formattedDetail = $fieldName !== null
-                ? sprintf('%s => %s', $fieldName, $message)
-                : $message;
-
-            $errors[] = [
-                'code' => '901',
-                'status' => Response::HTTP_UNPROCESSABLE_ENTITY,
-                'detail' => $formattedDetail,
-            ];
-        }
-
-        $response->setContent((string)json_encode(
-            ['errors' => $errors],
-            JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES,
-        ));
-    }
-
-    /**
-     * Converts Symfony Validator's bracket property-path notation to Spryker's dot notation.
-     * Examples:
-     *  - `parent` → `parent`
-     *  - `parent[child]` → `parent.child`
-     *  - `parent[items][0][sku]` → `parent.items.0.sku`
-     */
-    protected function normalizePropertyPath(string $propertyPath): string
-    {
-        return rtrim(str_replace(['[', ']'], ['.', ''], $propertyPath), '.');
-    }
-
     /**
      * @return array<string>|null
      */
@@ -900,153 +550,6 @@ class GlueApiExceptionSubscriber implements EventSubscriberInterface
     }
 
     /**
-     * Detects numeric-typed properties on the resource class that have NotBlank errors
-     * but are missing Type and comparison constraint errors. This happens when API Platform
-     * converts empty strings to null for typed properties (e.g. ?int) before validation runs.
-     * The old REST API validated raw strings, so all constraints fired.
-     */
-    protected function augmentValidationErrorsForEmptyStringValues(Response $response, Request $request, string $resourceClass): void
-    {
-        if (!class_exists($resourceClass)) {
-            return;
-        }
-
-        $data = $this->decodeErrorResponse($response);
-
-        if ($data === null || !isset($data['errors'])) {
-            return;
-        }
-
-        $existingDetails = [];
-        $fieldsWithNotBlankOnly = [];
-
-        foreach ($data['errors'] as $error) {
-            $detail = $error['detail'] ?? '';
-            $existingDetails[$detail] = true;
-
-            if (preg_match(static::REGEX_NOT_BLANK_ONLY_FIELD, $detail, $matches)) {
-                $fieldsWithNotBlankOnly[$matches[1]] = true;
-            }
-        }
-
-        // Remove fields that already have additional errors beyond NotBlank
-        foreach ($data['errors'] as $error) {
-            $detail = $error['detail'] ?? '';
-
-            if (preg_match(static::REGEX_NON_NOT_BLANK_FIELD, $detail, $matches)) {
-                unset($fieldsWithNotBlankOnly[$matches[1]]);
-            }
-        }
-
-        if ($fieldsWithNotBlankOnly === []) {
-            return;
-        }
-
-        $groups = $this->getActiveValidationGroups($request);
-        $modified = false;
-
-        foreach (array_keys($fieldsWithNotBlankOnly) as $fieldName) {
-            if (!$this->isNumericProperty($resourceClass, $fieldName)) {
-                continue;
-            }
-
-            $messages = $this->buildSyntheticErrorsForEmptyNumericProperty($resourceClass, $fieldName, $groups);
-
-            if ($messages === []) {
-                $messages = $this->buildFallbackNumericMessages();
-            }
-
-            foreach ($messages as $errorMessage) {
-                $detail = sprintf('%s => %s', $fieldName, $errorMessage);
-
-                if (isset($existingDetails[$detail])) {
-                    continue;
-                }
-
-                $data['errors'][] = [
-                    'detail' => $detail,
-                    'code' => '901',
-                    'status' => Response::HTTP_UNPROCESSABLE_ENTITY,
-                ];
-
-                $existingDetails[$detail] = true;
-                $modified = true;
-            }
-        }
-
-        if ($modified) {
-            $response->setContent((string)json_encode($data, JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES));
-        }
-    }
-
-    /**
-     * Restores validation errors that the legacy REST API produced for non-empty string values
-     * submitted to typed integer fields. Two cases arise:
-     *
-     * 1. Numeric string (e.g. "-2"): AP coerces it to int before validation, so the Type constraint
-     *    passes on the already-cast value. "This value should be of type integer." is missing and
-     *    must be prepended to the existing comparison-constraint errors.
-     *
-     * 2. Non-numeric string (e.g. "test"): AP's PropertyAccessor cannot coerce the value and throws,
-     *    which the exception handler converts to a single "type numeric" error — bypassing Symfony
-     *    Validator entirely. "type numeric" must be replaced by "type integer", and any comparison
-     *    constraints that would have fired against the raw string (using PHP 8 semantics) are added.
-     */
-    protected function augmentValidationErrorsForStringNumericValues(Response $response, Request $request, string $resourceClass): void
-    {
-        if (!class_exists($resourceClass)) {
-            return;
-        }
-
-        $data = $this->decodeErrorResponse($response);
-
-        if ($data === null || !isset($data['errors'])) {
-            return;
-        }
-
-        $rawAttributes = $this->extractRawAttributes($request);
-        $groups = $this->getActiveValidationGroups($request);
-        $modified = false;
-
-        foreach (array_keys($rawAttributes) as $fieldName) {
-            $rawValue = $rawAttributes[$fieldName];
-
-            if (!$this->isStringOrIntegerOverflowValue($rawValue)) {
-                continue;
-            }
-
-            if (!$this->isNumericProperty($resourceClass, $fieldName)) {
-                continue;
-            }
-
-            $typeNumericDetail = sprintf('%s => %s', $fieldName, $this->buildFallbackNumericMessages()[0]);
-            $typeIntegerDetail = sprintf('%s => %s', $fieldName, $this->translateTypeMessage(static::TYPE_NAME_INTEGER));
-
-            $existingDetails = array_column($data['errors'], 'detail');
-            $hasTypeNumeric = in_array($typeNumericDetail, $existingDetails, true);
-            $hasTypeInteger = in_array($typeIntegerDetail, $existingDetails, true);
-
-            if ($hasTypeInteger) {
-                continue;
-            }
-
-            if ($hasTypeNumeric) {
-                $modified = $this->replaceTypeNumericWithTypeIntegerError($data['errors'], $resourceClass, $fieldName, (string)$rawValue, $groups, $typeNumericDetail, $typeIntegerDetail) || $modified;
-
-                continue;
-            }
-
-            if (is_string($rawValue) && $rawValue !== '') {
-                $modified = $this->prependTypeIntegerErrorForNumericString($data['errors'], $resourceClass, $fieldName, $rawValue, $groups) || $modified;
-            }
-        }
-
-        if ($modified) {
-            $response->setContent((string)json_encode($data, JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES));
-        }
-    }
-
-    /**
      * @return array<string, mixed>
      */
     protected function extractRawAttributes(Request $request): array
@@ -1056,185 +559,6 @@ class GlueApiExceptionSubscriber implements EventSubscriberInterface
         return is_array($rawBody) && isset($rawBody['data']['attributes']) && is_array($rawBody['data']['attributes'])
             ? $rawBody['data']['attributes']
             : [];
-    }
-
-    /**
-     * Returns true for non-empty strings and for floats that result from JSON integer overflow
-     * (e.g. 99999999999999999999 decoded as float). PropertyAccessor cannot assign a float to ?int,
-     * so the exception handler produces "type numeric" — both cases need the same replacement logic.
-     */
-    protected function isStringOrIntegerOverflowValue(mixed $value): bool
-    {
-        return (is_string($value) && $value !== '') || is_float($value);
-    }
-
-    /**
-     * Replaces the generic "type numeric" error with "type integer" and appends any
-     * comparison constraint violations for fields where the Type constraint declares integer.
-     *
-     * @param array<array<string, mixed>> $errors
-     * @param array<string> $groups
-     */
-    protected function replaceTypeNumericWithTypeIntegerError(
-        array &$errors,
-        string $resourceClass,
-        string $fieldName,
-        string $rawValue,
-        array $groups,
-        string $typeNumericDetail,
-        string $typeIntegerDetail,
-    ): bool {
-        $declaredType = $this->getTypeConstraintTypeName($resourceClass, $fieldName, $groups);
-
-        if ($declaredType !== 'integer' && $declaredType !== 'int') {
-            return false;
-        }
-
-        $errors = array_values(array_filter(
-            $errors,
-            static fn (array $e): bool => ($e['detail'] ?? '') !== $typeNumericDetail,
-        ));
-
-        array_unshift($errors, [
-            'detail' => $typeIntegerDetail,
-            'code' => static::ERROR_CODE_VALIDATION,
-            'status' => Response::HTTP_UNPROCESSABLE_ENTITY,
-        ]);
-
-        $this->appendComparisonConstraintErrors($errors, $resourceClass, $fieldName, $rawValue, $groups);
-
-        return true;
-    }
-
-    /**
-     * Prepends a "type integer" error when the raw numeric string (e.g. "-2") fails the
-     * Assert\Type constraint declared on the property. API Platform silently coerced the value
-     * before validation, so the constraint never fired — this restores the legacy behavior.
-     *
-     * @param array<array<string, mixed>> $errors
-     * @param array<string> $groups
-     */
-    protected function prependTypeIntegerErrorForNumericString(
-        array &$errors,
-        string $resourceClass,
-        string $fieldName,
-        string $rawValue,
-        array $groups,
-    ): bool {
-        $typeError = $this->buildTypeErrorForRawStringValue($resourceClass, $fieldName, $rawValue, $groups);
-
-        if ($typeError === null) {
-            return false;
-        }
-
-        array_unshift($errors, [
-            'detail' => sprintf('%s => %s', $fieldName, $typeError),
-            'code' => static::ERROR_CODE_VALIDATION,
-            'status' => Response::HTTP_UNPROCESSABLE_ENTITY,
-        ]);
-
-        return true;
-    }
-
-    /**
-     * @param array<array<string, mixed>> $errors
-     * @param array<string> $groups
-     */
-    protected function appendComparisonConstraintErrors(array &$errors, string $resourceClass, string $fieldName, string $rawValue, array $groups): void
-    {
-        foreach ($this->evaluateComparisonConstraints($resourceClass, $fieldName, $rawValue, $groups) as $errorDetail) {
-            $errors[] = [
-                'detail' => sprintf('%s => %s', $fieldName, $errorDetail),
-                'code' => static::ERROR_CODE_VALIDATION,
-                'status' => Response::HTTP_UNPROCESSABLE_ENTITY,
-            ];
-        }
-    }
-
-    /**
-     * @param array<string> $groups
-     */
-    protected function buildTypeErrorForRawStringValue(string $resourceClass, string $fieldName, string $rawValue, array $groups): ?string
-    {
-        $constraint = $this->getTypeConstraintInstance($resourceClass, $fieldName, $groups);
-
-        // @phpstan-ignore isset.property (kept for BC/defensiveness even though $message is currently non-nullable upstream)
-        if ($constraint === null || !isset($constraint->type, $constraint->message)) {
-            return null;
-        }
-
-        $type = is_array($constraint->type) ? $constraint->type[0] : (string)$constraint->type;
-
-        $passes = match ($type) {
-            'integer', 'int' => false,
-            'numeric' => is_numeric($rawValue),
-            'float', 'double' => false,
-            'string' => true,
-            'bool', 'boolean' => false,
-            default => true,
-        };
-
-        if ($passes) {
-            return null;
-        }
-
-        return strtr((string)$constraint->message, ['{{ type }}' => $type]);
-    }
-
-    /**
-     * Evaluates GreaterThan and LessThan constraints against the raw submitted string value
-     * using PHP 8 comparison semantics (non-numeric strings are compared as strings after
-     * converting the comparand to string). Returns the message for each failing constraint.
-     *
-     * @param array<string> $groups
-     *
-     * @return array<string>
-     */
-    protected function evaluateComparisonConstraints(string $resourceClass, string $fieldName, string $rawValue, array $groups): array
-    {
-        $errors = [];
-
-        foreach ($this->constraintReader->getConstraintsForGroups($resourceClass, $fieldName, $groups) as $constraint) {
-            if (!$constraint instanceof GreaterThan && !$constraint instanceof LessThan) {
-                continue;
-            }
-
-            if (!isset($constraint->value, $constraint->message)) {
-                continue;
-            }
-
-            $comparand = $constraint->value;
-            $violated = $constraint instanceof GreaterThan
-                ? !($rawValue > $comparand)
-                : !($rawValue < $comparand);
-
-            if (!$violated) {
-                continue;
-            }
-
-            $comparandString = is_scalar($constraint->value) ? (string)$constraint->value : '';
-            $msg = strtr((string)$constraint->message, ['{{ compared_value }}' => $comparandString]);
-
-            if (!in_array($msg, $errors, true)) {
-                $errors[] = $msg;
-            }
-        }
-
-        return $errors;
-    }
-
-    /**
-     * @param array<string> $groups
-     */
-    protected function getTypeConstraintTypeName(string $resourceClass, string $fieldName, array $groups): ?string
-    {
-        $constraint = $this->getTypeConstraintInstance($resourceClass, $fieldName, $groups);
-
-        if ($constraint === null || !isset($constraint->type)) {
-            return null;
-        }
-
-        return is_array($constraint->type) ? $constraint->type[0] : (string)$constraint->type;
     }
 
     /**
@@ -1252,231 +576,6 @@ class GlueApiExceptionSubscriber implements EventSubscriberInterface
     }
 
     /**
-     * @param array<string> $groups
-     */
-    protected function getTypeConstraintInstance(string $resourceClass, string $fieldName, array $groups): ?Type
-    {
-        foreach ($this->constraintReader->getConstraintsForGroups($resourceClass, $fieldName, $groups) as $constraint) {
-            if ($constraint instanceof Type) {
-                return $constraint;
-            }
-        }
-
-        return null;
-    }
-
-    protected function isNumericProperty(string $resourceClass, string $propertyName): bool
-    {
-        if (!property_exists($resourceClass, $propertyName)) {
-            return false;
-        }
-
-        /** @phpstan-var class-string $resourceClass */
-        $type = (new ReflectionProperty($resourceClass, $propertyName))->getType();
-
-        if (!$type instanceof ReflectionNamedType) {
-            return false;
-        }
-
-        return in_array($type->getName(), ['int', 'float'], true);
-    }
-
-    /**
-     * @param array<string> $groups
-     *
-     * @return array<int, string>
-     */
-    protected function buildSyntheticErrorsForEmptyNumericProperty(string $resourceClass, string $fieldName, array $groups): array
-    {
-        $errors = [];
-
-        foreach ($this->constraintReader->getConstraintsForGroups($resourceClass, $fieldName, $groups) as $constraint) {
-            $message = $this->renderConstraintMessage($constraint);
-
-            if ($message !== null) {
-                $errors[] = $message;
-            }
-        }
-
-        return $errors;
-    }
-
-    protected function renderConstraintMessage(Constraint $constraint): ?string
-    {
-        if ($constraint instanceof Type) {
-            $types = is_array($constraint->type) ? implode('|', $constraint->type) : (string)$constraint->type;
-
-            return $this->translateValidationMessage($constraint->message, ['{{ type }}' => $types]);
-        }
-
-        if ($constraint instanceof AbstractComparison) {
-            return $this->translateValidationMessage($constraint->message, [
-                '{{ compared_value }}' => $this->formatConstraintValue($constraint->value),
-            ]);
-        }
-
-        if ($constraint instanceof Range) {
-            return $this->translateValidationMessage($constraint->notInRangeMessage, [
-                '{{ min }}' => $this->formatConstraintValue($constraint->min),
-                '{{ max }}' => $this->formatConstraintValue($constraint->max),
-            ]);
-        }
-
-        return null;
-    }
-
-    /**
-     * What an empty string sent to a numeric property reports when the property declares no Type or
-     * comparison constraint of its own to render a message from.
-     *
-     * @return array<string>
-     */
-    protected function buildFallbackNumericMessages(): array
-    {
-        return [
-            $this->translateTypeMessage(static::TYPE_NAME_NUMERIC),
-            $this->translateValidationMessage(
-                static::MESSAGE_TEMPLATE_GREATER_THAN,
-                ['{{ compared_value }}' => static::COMPARED_VALUE_ZERO],
-            ),
-        ];
-    }
-
-    protected function translateTypeMessage(string $typeName): string
-    {
-        return $this->translateValidationMessage(static::MESSAGE_TEMPLATE_TYPE, ['{{ type }}' => $typeName]);
-    }
-
-    protected function formatConstraintValue(mixed $value): string
-    {
-        if (is_scalar($value)) {
-            return (string)$value;
-        }
-
-        return '';
-    }
-
-    protected function isRequiredApiProperty(ReflectionProperty $property): bool
-    {
-        foreach ($property->getAttributes() as $attribute) {
-            if ($attribute->getName() !== 'ApiPlatform\Metadata\ApiProperty') {
-                continue;
-            }
-
-            $args = $attribute->getArguments();
-
-            return isset($args['required']) && $args['required'] === true;
-        }
-
-        return false;
-    }
-
-    /**
-     * Augments 422 validation responses with missing errors for nullable bool properties.
-     */
-    protected function augmentValidationErrorsForBoolFields(Response $response, Request $request, string $resourceClass): void
-    {
-        if ($request->getMethod() !== 'POST') {
-            return;
-        }
-
-        if (!class_exists($resourceClass)) {
-            return;
-        }
-
-        $data = $this->decodeErrorResponse($response);
-
-        if ($data === null || !isset($data['errors'])) {
-            return;
-        }
-
-        $rawBody = json_decode((string)$request->getContent(), true);
-        $attributes = is_array($rawBody) && isset($rawBody['data']['attributes']) && is_array($rawBody['data']['attributes'])
-            ? $rawBody['data']['attributes']
-            : [];
-
-        $existingDetails = [];
-
-        foreach ($data['errors'] as $error) {
-            $existingDetails[$error['detail'] ?? ''] = true;
-        }
-
-        $modified = false;
-
-        $reflectionClass = new ReflectionClass($resourceClass);
-
-        foreach ($reflectionClass->getProperties() as $property) {
-            $type = $property->getType();
-
-            if (!$type instanceof ReflectionNamedType || $type->getName() !== 'bool' || !$type->allowsNull()) {
-                continue;
-            }
-
-            if (!$this->isRequiredApiProperty($property)) {
-                continue;
-            }
-
-            $fieldName = $property->getName();
-
-            if (!array_key_exists($fieldName, $attributes)) {
-                $detail = sprintf('%s => %s', $fieldName, $this->translateValidationMessage(static::MESSAGE_TEMPLATE_FIELD_MISSING));
-
-                if (!isset($existingDetails[$detail])) {
-                    $data['errors'][] = ['detail' => $detail, 'code' => static::ERROR_CODE_VALIDATION, 'status' => Response::HTTP_UNPROCESSABLE_ENTITY];
-                    $existingDetails[$detail] = true;
-                    $modified = true;
-                }
-
-                continue;
-            }
-
-            if ($attributes[$fieldName] === '' || $attributes[$fieldName] === null) {
-                $detail = sprintf('%s => %s', $fieldName, $this->translateValidationMessage(static::MESSAGE_TEMPLATE_SHOULD_BE_TRUE));
-
-                if (!isset($existingDetails[$detail])) {
-                    $data['errors'][] = ['detail' => $detail, 'code' => static::ERROR_CODE_VALIDATION, 'status' => Response::HTTP_UNPROCESSABLE_ENTITY];
-                    $existingDetails[$detail] = true;
-                    $modified = true;
-                }
-            }
-        }
-
-        if ($modified) {
-            $response->setContent((string)json_encode($data, JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES));
-        }
-    }
-
-    /**
-     * Delegates present-but-empty nested value-object augmentation to the augmenter, which is a pure
-     * transformer over the decoded error array. This subscriber owns all request/response I/O: it
-     * resolves the request-derived inputs, hands them to the augmenter, and rebuilds the response
-     * only when the augmenter reports a change. Synthesizing missing-field errors on an
-     * otherwise-passing request requires promoting the status to 422, so a modified result always
-     * yields a fresh 422 response with consistent headers/status.
-     */
-    protected function augmentValidationErrorsForNestedObjects(ResponseEvent $event, Request $request, string $resourceClass): void
-    {
-        $data = $this->decodeErrorResponse($event->getResponse());
-        $errors = is_array($data) && isset($data['errors']) && is_array($data['errors']) ? $data['errors'] : [];
-
-        $result = $this->nestedObjectAugmenter->augment(
-            $resourceClass,
-            $this->extractRawAttributes($request),
-            $this->getActiveValidationGroups($request),
-            $errors,
-        );
-
-        if (!$result->modified) {
-            return;
-        }
-
-        $event->setResponse($this->createJsonApiResponse(
-            ['errors' => $result->errors],
-            Response::HTTP_UNPROCESSABLE_ENTITY,
-        ));
-    }
-
-    /**
      * @return array<string, mixed>|null
      */
     protected function decodeErrorResponse(Response $response): ?array
@@ -1490,263 +589,6 @@ class GlueApiExceptionSubscriber implements EventSubscriberInterface
         $data = json_decode($content, true);
 
         return is_array($data) ? $data : null;
-    }
-
-    /**
-     * Matches the PropertyAccessor message
-     * `Expected argument of type "<type>", "<given>" given at property path "<path>".`
-     * and returns the legacy-formatted detail (or null when not a match).
-     *
-     * Numeric target types (`int`, `float`, optional variants) map to `should be of type numeric.`;
-     * other targets fall back to `should be of type <type>.` mirroring legacy Glue behaviour.
-     */
-    protected function matchPropertyTypeError(string $message): ?string
-    {
-        if (!preg_match(static::REGEX_PROPERTY_ACCESS_TYPE_ERROR, $message, $matches)) {
-            return null;
-        }
-
-        $expectedType = ltrim($matches[1], '?');
-        $propertyPath = $this->normalizePropertyPath($matches[2]);
-        $reportedType = match (true) {
-            in_array($expectedType, ['int', 'integer', 'float', 'double'], true) => 'numeric',
-            // A generated nested value object (e.g. `?PaymentSelection`) reaching this branch means
-            // one of its sub-fields failed type denormalization; under `disable_type_enforcement`
-            // the inner detail is lost and the whole object surfaces here. Report it as an object
-            // type error (422) instead of leaking the generated FQCN to the API consumer.
-            str_contains($expectedType, '\\') => 'object',
-            default => $expectedType,
-        };
-
-        return sprintf('%s => %s', $propertyPath, $this->translateTypeMessage($reportedType));
-    }
-
-    /**
-     * Transforms raw API Platform denormalization error messages into the Spryker
-     * validation format: "propertyName => This value should be of type numeric."
-     *
-     * For example, the raw message:
-     *   Failed to denormalize attribute "quantity" value for class "...": Expected argument of type "?int", "string" given ...
-     * Becomes:
-     *   quantity => This value should be of type numeric.
-     */
-    protected function transformDenormalizationMessage(string $message): string
-    {
-        if (!preg_match(static::REGEX_DENORMALIZE_ATTRIBUTE, $message, $matches)) {
-            return $message;
-        }
-
-        $propertyName = $matches[1];
-
-        return sprintf('%s => %s', $propertyName, $this->translateTypeMessage(static::TYPE_NAME_NUMERIC));
-    }
-
-    protected function createAccessDeniedResponse(ExceptionEvent $event): JsonResponse
-    {
-        $request = $event->getRequest();
-        $authorizationValue = (string)$request->headers->get(static::AUTHORIZATION_HEADER, '');
-        $hasValidBearerToken = str_starts_with($authorizationValue, 'Bearer ') && strlen($authorizationValue) > 7;
-        $hasAnonymousCustomerHeader = $request->headers->has(static::ANONYMOUS_CUSTOMER_HEADER);
-
-        $resourceClass = (string)$request->attributes->get(RequestAttribute::API_RESOURCE_CLASS, '');
-        $extraProperties = $this->resolveResourceExtraProperties($resourceClass);
-
-        // Resources that accept either bearer or anonymous customer auth (e.g. checkout)
-        // return 400 with a dedicated code when neither header is present — UNLESS the access denial
-        // was raised by the CustomerAccess voter (b2b projects restricting `order-place-submit`/`price`
-        // content types). In that case the legacy 403/002 "Missing access token." response takes
-        // precedence so customer-access protection keeps behaving the way Glue REST did before the
-        // API Platform migration. The flag is set in
-        // {@see \Spryker\Glue\CustomerAccessRestApi\Api\Storefront\Security\CustomerAccessVoter}.
-        $isCustomerAccessDenied = (bool)$request->attributes->get(RequestAttribute::CUSTOMER_ACCESS_DENIED, false);
-
-        if (!$hasValidBearerToken && !$hasAnonymousCustomerHeader && ($extraProperties['securityAnonymousAuthRequired'] ?? false) && !$isCustomerAccessDenied) {
-            return $this->createJsonApiResponse(
-                [
-                    'errors' => [
-                        [
-                            'code' => static::ERROR_CODE_CHECKOUT_AUTH_REQUIRED,
-                            'status' => Response::HTTP_BAD_REQUEST,
-                            'detail' => $this->translateValidationMessage(static::ERROR_DETAIL_CHECKOUT_AUTH_REQUIRED),
-                        ],
-                    ],
-                ],
-                Response::HTTP_BAD_REQUEST,
-            );
-        }
-
-        $resourceSecurityError = $this->resolveResourceSecurityError($extraProperties);
-
-        // Unauthenticated request to a resource with custom security that does not use
-        // bearer tokens (e.g. agent endpoints) — return 401 with the resource's error code.
-        // Resources requiring bearer auth skip this path and fall through
-        // to the standard "Missing access token" response below.
-        if ($resourceSecurityError !== null && !($extraProperties['securityBearerAuthRequired'] ?? false)) {
-            return $this->createJsonApiResponse(
-                [
-                    'errors' => [
-                        [
-                            'code' => $resourceSecurityError['code'],
-                            'status' => Response::HTTP_UNAUTHORIZED,
-                            'detail' => $resourceSecurityError['detail'],
-                            'message' => $resourceSecurityError['message'],
-                        ],
-                    ],
-                ],
-                Response::HTTP_UNAUTHORIZED,
-            );
-        }
-
-        // When no valid Bearer token is present, the user never authenticated.
-        // Backend API (Generated\Api\Backend\*) resources use "Unauthorized request." to match old Glue BAPI behavior.
-        // Storefront and other resources use "Missing access token."
-        if (!$hasValidBearerToken) {
-            $isBackendResource = str_contains($resourceClass, '\Api\Backend\\');
-
-            if (!$isBackendResource) {
-                return $this->createJsonApiResponse(
-                    [
-                        'errors' => [
-                            [
-                                'code' => static::ERROR_CODE_MISSING_ACCESS_TOKEN,
-                                'status' => Response::HTTP_FORBIDDEN,
-                                'detail' => $this->translateValidationMessage(static::ERROR_DETAIL_MISSING_ACCESS_TOKEN),
-                            ],
-                        ],
-                    ],
-                    Response::HTTP_FORBIDDEN,
-                );
-            }
-        }
-
-        // Authenticated user denied by a resource-specific voter (e.g. CUSTOMER_OWNER).
-        // For GET: hide resource existence with the provider's not-found error.
-        // For write operations: return the resource's configured security error with 403.
-        if ($resourceSecurityError !== null) {
-            return $this->createAuthorizationDeniedResponse($request, $resourceClass, $resourceSecurityError, $extraProperties);
-        }
-
-        // Authorization header was present but user lacks required role/permission
-        return $this->createJsonApiResponse(
-            [
-                'errors' => [
-                    [
-                        'code' => static::ERROR_CODE_UNAUTHORIZED_REQUEST,
-                        'status' => Response::HTTP_FORBIDDEN,
-                        'detail' => $this->translateValidationMessage(static::ERROR_DETAIL_UNAUTHORIZED_REQUEST),
-                        'message' => $this->translateValidationMessage(static::ERROR_DETAIL_UNAUTHORIZED_REQUEST),
-                    ],
-                ],
-            ],
-            Response::HTTP_FORBIDDEN,
-        );
-    }
-
-    /**
-     * Builds a domain-specific error response for an authenticated user who was denied
-     * by a resource-level security voter.
-     *
-     * For GET requests on resources with securityGetStatusCode (e.g. 404), the response
-     * hides resource existence by returning the provider's not-found error. For all other
-     * operations, the resource's configured securityCode is returned with 403.
-     *
-     * @param array{code: string, detail: string, message: string}|array $resourceSecurityError
-     * @param array<string, mixed> $extraProperties
-     * @param array<string, mixed> $resourceSecurityError
-     */
-    protected function createAuthorizationDeniedResponse(
-        Request $request,
-        string $resourceClass,
-        array $resourceSecurityError,
-        array $extraProperties,
-    ): JsonResponse {
-        if ($request->getMethod() === 'GET') {
-            $securityGetStatusCode = $extraProperties['securityGetStatusCode'] ?? null;
-
-            if ($securityGetStatusCode !== null) {
-                $notFoundError = $this->resolveProviderNotFoundError($resourceClass);
-
-                if ($notFoundError !== null) {
-                    return $this->createJsonApiResponse(
-                        ['errors' => [$notFoundError]],
-                        (int)$securityGetStatusCode,
-                    );
-                }
-            }
-        }
-
-        return $this->createJsonApiResponse(
-            [
-                'errors' => [
-                    [
-                        'code' => $resourceSecurityError['code'],
-                        'status' => Response::HTTP_FORBIDDEN,
-                        'detail' => $resourceSecurityError['detail'],
-                        'message' => $resourceSecurityError['message'],
-                    ],
-                ],
-            ],
-            Response::HTTP_FORBIDDEN,
-        );
-    }
-
-    /**
-     * Reads all security-related extra properties from the resource's #[ApiResource] attribute
-     * in a single reflection call, avoiding repeated attribute instantiation per request.
-     *
-     * @return array<string, mixed>
-     */
-    protected function resolveResourceExtraProperties(string $resourceClass): array
-    {
-        if ($resourceClass === '' || !class_exists($resourceClass)) {
-            return [];
-        }
-
-        try {
-            $reflection = new ReflectionClass($resourceClass);
-            $attributes = $reflection->getAttributes(ApiResource::class);
-
-            if ($attributes === []) {
-                return [];
-            }
-
-            $apiResource = $attributes[0]->newInstance();
-            $extraProperties = $apiResource->getExtraProperties() ?? [];
-
-            $securityMessage = $apiResource->getSecurityMessage();
-            if ($securityMessage !== null) {
-                $extraProperties['securityMessage'] = $securityMessage;
-            }
-
-            return $extraProperties;
-        } catch (Throwable) {
-            return [];
-        }
-    }
-
-    /**
-     * Resolves the domain-specific security error for an access-denied response.
-     * Returns null when the resource has no custom securityCode configured.
-     *
-     * @param array<string, mixed> $extraProperties
-     *
-     * @return array{code: string, detail: string, message: string}|null
-     */
-    protected function resolveResourceSecurityError(array $extraProperties): ?array
-    {
-        $securityCode = $extraProperties['securityCode'] ?? null;
-
-        if ($securityCode === null) {
-            return null;
-        }
-
-        $securityMessage = (string)($extraProperties['securityMessage'] ?? static::ERROR_DETAIL_UNAUTHORIZED_REQUEST);
-
-        return [
-            'code' => (string)$securityCode,
-            'detail' => $securityMessage,
-            'message' => rtrim($securityMessage, '.'),
-        ];
     }
 
     protected function getTranslator(): TranslatorInterface

@@ -21,6 +21,7 @@ use Spryker\ApiPlatform\OpenApi\ErrorResponse\GlueApiErrorSchema;
 use Spryker\ApiPlatform\OpenApi\ErrorResponse\OperationMetadataResolver;
 use Spryker\ApiPlatform\OpenApi\ErrorResponse\PathItemOperationAccessor;
 use Spryker\ApiPlatform\OpenApi\ErrorResponse\RequestAttributesResolver;
+use Spryker\ApiPlatform\PropertyAccess\LosslessIntegerPropertyAccessor;
 use Spryker\ApiPlatform\State\OptionalFieldFilteringValidateProvider;
 use Spryker\ApiPlatform\State\StrictBooleanCanonicalizingDeserializeProvider;
 use Spryker\ApiPlatform\Validation\ValidationConstraintReader;
@@ -44,6 +45,7 @@ use Symfony\Component\DependencyInjection\Reference;
  * - ErrorResponseOpenApiDecorator: Documents every error response with the Glue error schema and examples
  * - OptionalFieldFilteringValidateProvider: Drops violations for Optional fields absent from the body
  * - StrictBooleanCanonicalizingDeserializeProvider: Re-applies the boolean a client spelled as a string
+ * - LosslessIntegerPropertyAccessor: Rejects a fractional number written into an `int` property instead of truncating it
  */
 class ApiPlatformDecoratorPass implements CompilerPassInterface
 {
@@ -58,6 +60,19 @@ class ApiPlatformDecoratorPass implements CompilerPassInterface
     protected const string SERVICE_ID_SCHEMA_FACTORY = 'api_platform.json_schema.backward_compatible_schema_factory';
 
     protected const string SERVICE_ID_DESERIALIZE_STATE_PROVIDER = 'api_platform.state_provider.deserialize';
+
+    /**
+     * The property accessors the serializer writes request values through: API Platform's item
+     * normalizers use the first, the object normalizer behind nested value objects the second. Both
+     * are aliases of `property_accessor`, and decorating an alias re-points only that alias, so no
+     * other consumer of the property accessor is affected.
+     *
+     * @var array<string, string>
+     */
+    protected const array SERIALIZER_PROPERTY_ACCESSOR_DECORATORS = [
+        'api_platform.property_accessor' => 'spryker_api_platform.lossless_integer_property_accessor.api_platform',
+        'serializer.property_accessor' => 'spryker_api_platform.lossless_integer_property_accessor.serializer',
+    ];
 
     protected const string TAG_FORMAT_TRANSFORMER = 'spryker_api_platform.format_transformer';
 
@@ -132,6 +147,21 @@ class ApiPlatformDecoratorPass implements CompilerPassInterface
                     new Reference(static::REFERENCE_INNER),
                     new Reference(ValidationConstraintReader::class),
                 ]);
+        }
+
+        $this->decorateSerializerPropertyAccessors($container);
+    }
+
+    protected function decorateSerializerPropertyAccessors(ContainerBuilder $container): void
+    {
+        foreach (static::SERIALIZER_PROPERTY_ACCESSOR_DECORATORS as $propertyAccessorId => $decoratorId) {
+            if (!$container->has($propertyAccessorId)) {
+                continue;
+            }
+
+            $container->register($decoratorId, LosslessIntegerPropertyAccessor::class)
+                ->setDecoratedService($propertyAccessorId)
+                ->setArguments([new Reference(static::REFERENCE_INNER)]);
         }
     }
 }

@@ -11,6 +11,7 @@ namespace Spryker\ApiPlatform\Validation;
 
 use ReflectionClass;
 use ReflectionNamedType;
+use Spryker\ApiPlatform\Utility\FractionalNumberDetector;
 use Spryker\ApiPlatform\Validation\Trait\ValidationMessageTranslationTrait;
 use Symfony\Component\HttpFoundation\Response;
 use Symfony\Component\Validator\Constraints\Email;
@@ -59,6 +60,10 @@ class NestedObjectValidationErrorAugmenter
     protected const string TYPE_NAME_BOOLEAN = 'boolean';
 
     protected const string TYPE_NAME_OBJECT = 'object';
+
+    protected const string TYPE_NAME_INTEGER = 'integer';
+
+    protected const string PHP_TYPE_INT = 'int';
 
     /**
      * ApiType-agnostic on purpose: the same prefix
@@ -272,6 +277,7 @@ class NestedObjectValidationErrorAugmenter
      * The submitted leaves that cannot be assigned to their generated property, mapped to the type
      * name to report. That is the leaf's own `Assert\Type` type where the schema declares one -
      * `numeric` rather than `int`, which is what the resource documents - and its PHP type otherwise.
+     * A fractional number for an `int` leaf is numeric, so it reports `integer` instead.
      *
      * @param array<string, mixed> $submittedObject
      * @param array<string> $groups
@@ -298,6 +304,12 @@ class NestedObjectValidationErrorAugmenter
                 continue;
             }
 
+            if ($type->getName() === static::PHP_TYPE_INT && FractionalNumberDetector::isFractional($submittedObject[$leaf])) {
+                $leafTypes[$leaf] = static::TYPE_NAME_INTEGER;
+
+                continue;
+            }
+
             $leafTypes[$leaf] = $this->resolveDeclaredTypeName($valueObjectClass, $leaf, $groups) ?? $type->getName();
         }
 
@@ -315,7 +327,8 @@ class NestedObjectValidationErrorAugmenter
         }
 
         return match ($type->getName()) {
-            'int', 'float' => !is_numeric($value),
+            'int' => !is_numeric($value) || FractionalNumberDetector::isFractional($value),
+            'float' => !is_numeric($value),
             'bool' => !is_bool($value),
             'string' => !is_scalar($value),
             default => false,

@@ -18,6 +18,7 @@ use Spryker\ApiPlatform\Command\ApiCollectionsReportCommand;
 use Spryker\ApiPlatform\Command\ApiDebugCommand;
 use Spryker\ApiPlatform\Command\ApiGenerateCommand;
 use Spryker\ApiPlatform\Configuration\ApiPlatformConfig;
+use Spryker\ApiPlatform\Error\JsonApiErrorResponseFactory;
 use Spryker\ApiPlatform\EventSubscriber\AcceptHeaderFallbackSubscriber;
 use Spryker\ApiPlatform\EventSubscriber\AcceptLanguageLocaleSubscriber;
 use Spryker\ApiPlatform\EventSubscriber\BackendAcceptLanguageLocaleSubscriber;
@@ -72,6 +73,7 @@ use Spryker\ApiPlatform\Relationship\ApiPlatformRelationshipResolverInterface;
 use Spryker\ApiPlatform\ResponseTransform\JsonApiRelationshipNormalizerTransform;
 use Spryker\ApiPlatform\ResponseTransform\JsonApiResolvedRelationshipTransform;
 use Spryker\ApiPlatform\ResponseTransform\PaginationLinksTransform;
+use Spryker\ApiPlatform\ResponseTransform\RelativeLinkTransform;
 use Spryker\ApiPlatform\Schema\Directory\ApiDirectoryLocator;
 use Spryker\ApiPlatform\Schema\Finder\SchemaFinder;
 use Spryker\ApiPlatform\Schema\Finder\SchemaFinderInterface;
@@ -109,15 +111,20 @@ use Spryker\ApiPlatform\Schema\Validator\Rules\SchemaCompletenessValidationRule;
 use Spryker\ApiPlatform\Schema\Validator\Rules\SecurityExpressionValidationRule;
 use Spryker\ApiPlatform\Schema\Validator\SchemaValidator;
 use Spryker\ApiPlatform\Schema\Validator\SchemaValidatorInterface;
+use Spryker\ApiPlatform\Security\AccessDeniedErrorResponseBuilder;
 use Spryker\ApiPlatform\Serializer\Denormalizer\WriteOnlyOperationDenormalizer;
 use Spryker\ApiPlatform\Serializer\Encoder\CXmlEncoder;
 use Spryker\ApiPlatform\Serializer\Normalizer\CXmlNormalizer;
 use Spryker\ApiPlatform\Serializer\TranslatingConstraintViolationListNormalizer;
 use Spryker\ApiPlatform\State\TranslatingErrorProvider;
 use Spryker\ApiPlatform\Translation\ApiCsvFileLoader;
+use Spryker\ApiPlatform\Validation\BoolValidationErrorAugmenter;
 use Spryker\ApiPlatform\Validation\Constraint\StrictBooleanValidator;
+use Spryker\ApiPlatform\Validation\DenormalizationErrorMatcher;
 use Spryker\ApiPlatform\Validation\NestedObjectValidationErrorAugmenter;
+use Spryker\ApiPlatform\Validation\NumericValidationErrorAugmenter;
 use Spryker\ApiPlatform\Validation\ValidationConstraintReader;
+use Spryker\ApiPlatform\Validation\ValidationErrorFormatNormalizer;
 use Spryker\Zed\Locale\Business\LocaleFacade;
 use Spryker\Zed\Locale\Business\LocaleFacadeInterface;
 use Symfony\Component\DependencyInjection\ContainerInterface;
@@ -365,6 +372,15 @@ return static function (ContainerConfigurator $container): void {
     $services->set(NestedObjectValidationErrorAugmenter::class);
 
     $services->set(StrictBooleanValidator::class);
+
+    // The collaborators the exception subscriber delegates building and augmenting Glue errors to.
+    $services->set(JsonApiErrorResponseFactory::class);
+    $services->set(AccessDeniedErrorResponseBuilder::class);
+    $services->set(DenormalizationErrorMatcher::class);
+    $services->set(ValidationErrorFormatNormalizer::class);
+    $services->set(NumericValidationErrorAugmenter::class);
+    $services->set(BoolValidationErrorAugmenter::class);
+    $services->set(RelativeLinkTransform::class);
 
     // In production ($debug = false) the last-resort guard sanitises uncaught throwables
     // to a generic 500; in debug it steps aside so traces reach the error renderer.

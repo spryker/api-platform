@@ -40,6 +40,8 @@ class NestedObjectValidationErrorAugmenterTest extends Unit
 
     protected const string TYPED_LEAF_RESOURCE_CLASS = 'Generated\\Api\\Storefront\\TypedLeafResource';
 
+    protected const float FRACTIONAL_NUMBER = 1.5;
+
     /**
      * The augmenter only cascades into nested properties typed under a generated `Generated\Api\*`
      * namespace, so both the value-object fixtures and the resource fixtures that reference them
@@ -186,6 +188,28 @@ class NestedObjectValidationErrorAugmenterTest extends Unit
         $this->assertTrue($result->modified);
         $this->assertSame(
             ['idShipmentMethod => This value should be of type numeric.'],
+            array_column($result->errors, 'detail'),
+        );
+    }
+
+    public function testGivenAFractionalNumberForANestedIntegerLeafWhenAugmentingThenTheObjectLevelTypeErrorIsReplacedByAnIntegerTypeError(): void
+    {
+        // Arrange - the lossless-integer property accessor refuses 1.5 for the leaf's `?int`, which
+        // aborts the object's denormalization the same way a non-numeric string does. 1.5 is numeric,
+        // so the leaf's declared `numeric` type would not tell the client what is wrong with it.
+        $augmenter = $this->createAugmenter();
+        $rawAttributes = ['shipment' => ['idShipmentMethod' => static::FRACTIONAL_NUMBER]];
+        $errors = [
+            ['detail' => 'shipment => This value should be of type object.', 'code' => '901', 'status' => Response::HTTP_UNPROCESSABLE_ENTITY],
+        ];
+
+        // Act
+        $result = $augmenter->augment(static::TYPED_LEAF_RESOURCE_CLASS, $rawAttributes, [], $errors);
+
+        // Assert
+        $this->assertTrue($result->modified);
+        $this->assertSame(
+            ['idShipmentMethod => This value should be of type integer.'],
             array_column($result->errors, 'detail'),
         );
     }
