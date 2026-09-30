@@ -13,7 +13,7 @@ use Codeception\Test\Unit;
 use Spryker\ApiPlatform\Exception\LossyIntegerConversionException;
 use Spryker\ApiPlatform\PropertyAccess\LosslessIntegerPropertyAccessor;
 use SprykerTest\ApiPlatform\Fixture\LosslessIntegerFixture;
-use Symfony\Component\PropertyAccess\Exception\InvalidTypeException;
+use Symfony\Component\PropertyAccess\Exception\InvalidArgumentException;
 use Symfony\Component\PropertyAccess\PropertyAccess;
 use Symfony\Component\PropertyInfo\Extractor\ReflectionExtractor;
 use Symfony\Component\Serializer\Exception\NotNormalizableValueException;
@@ -157,7 +157,7 @@ class LosslessIntegerPropertyAccessorTest extends Unit
         $exception = $this->captureException(fn () => $this->createAccessor()->setValue($fixture, static::PROPERTY_QUANTITY, static::NON_NUMERIC_STRING));
 
         // Assert
-        $this->assertInstanceOf(InvalidTypeException::class, $exception);
+        $this->assertInstanceOf(InvalidArgumentException::class, $exception);
     }
 
     public function testGivenAFractionalValueWhenDenormalizingWithoutTypeEnforcementThenTheSerializerReportsTheAttribute(): void
