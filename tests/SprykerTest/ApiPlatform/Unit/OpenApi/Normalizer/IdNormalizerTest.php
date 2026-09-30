@@ -9,11 +9,14 @@ declare(strict_types=1);
 
 namespace SprykerTest\ApiPlatform\Unit\OpenApi\Normalizer;
 
+use ApiPlatform\Metadata\Exception\InvalidArgumentException;
 use ApiPlatform\Metadata\IdentifiersExtractorInterface;
 use Codeception\Test\Unit;
 use RuntimeException;
+use Spryker\ApiPlatform\Exception\GlueApiException;
 use Spryker\ApiPlatform\OpenApi\Normalizer\IdNormalizer;
 use stdClass;
+use Symfony\Component\HttpFoundation\Response;
 use Symfony\Component\Serializer\Normalizer\NormalizerInterface;
 
 /**
@@ -135,8 +138,7 @@ class IdNormalizerTest extends Unit
 
     public function testGivenIdentifierExtractionFailsWhenNormalizingThenFallsBackToTheResourceUuid(): void
     {
-        // Arrange — a sub-resource operation carries a parent uriVariable pointing at another
-        // resource class, so IdentifiersExtractor throws and yields nothing.
+        // Arrange
         $object = new class {
             public ?string $uuid = 'order-item-uuid';
         };
@@ -164,7 +166,7 @@ class IdNormalizerTest extends Unit
 
     public function testGivenASingletonResourceWhenNormalizingThenTheIdStaysNull(): void
     {
-        // Arrange — a singleton uses its type name as the synthetic identifier.
+        // Arrange
         $object = new stdClass();
         $identifiersExtractor = $this->createMock(IdentifiersExtractorInterface::class);
         $identifiersExtractor->method('getIdentifiersFromItem')
@@ -186,5 +188,59 @@ class IdNormalizerTest extends Unit
 
         // Assert
         $this->assertNull($result['data']['id']);
+    }
+
+    public function testGivenAnItemWithNoIdentifierWhenTheIriCannotBeBuiltThenItReportsTheBackFillAsTheRemedy(): void
+    {
+        // Arrange
+        $object = new stdClass();
+        $identifiersExtractor = $this->createMock(IdentifiersExtractorInterface::class);
+        $identifiersExtractor->method('getIdentifiersFromItem')
+            ->willThrowException(new RuntimeException('No identifier value found.'));
+
+        $innerNormalizer = $this->createMock(NormalizerInterface::class);
+        $innerNormalizer->method('normalize')
+            ->willThrowException(new InvalidArgumentException('Unable to generate an IRI for the item of type "Foo"'));
+
+        $normalizer = new IdNormalizer($identifiersExtractor);
+        $normalizer->setNormalizer($innerNormalizer);
+
+        // Act
+        try {
+            $normalizer->normalize($object, 'jsonapi');
+        } catch (GlueApiException $glueApiException) {
+            // Assert
+            $this->assertSame(Response::HTTP_INTERNAL_SERVER_ERROR, $glueApiException->getStatusCode());
+            $this->assertSame('012', $glueApiException->getErrorCode());
+            $this->assertStringContainsString(stdClass::class, $glueApiException->getMessage());
+            $this->assertStringContainsString('uuid:generate', $glueApiException->getMessage());
+
+            return;
+        }
+
+        $this->fail('Expected a GlueApiException naming the missing identifier.');
+    }
+
+    public function testGivenAnItemThatHasAnIdentifierWhenTheIriCannotBeBuiltThenTheOriginalErrorSurvives(): void
+    {
+        // Arrange
+        $object = new stdClass();
+        $identifiersExtractor = $this->createMock(IdentifiersExtractorInterface::class);
+        $identifiersExtractor->method('getIdentifiersFromItem')
+            ->willReturn(['uuid' => 'a-real-uuid']);
+
+        $innerNormalizer = $this->createMock(NormalizerInterface::class);
+        $innerNormalizer->method('normalize')
+            ->willThrowException(new InvalidArgumentException('Unable to generate an IRI for the item of type "Foo"'));
+
+        $normalizer = new IdNormalizer($identifiersExtractor);
+        $normalizer->setNormalizer($innerNormalizer);
+
+        // Expect
+        $this->expectException(InvalidArgumentException::class);
+        $this->expectExceptionMessage('Unable to generate an IRI for the item of type "Foo"');
+
+        // Act
+        $normalizer->normalize($object, 'jsonapi');
     }
 }

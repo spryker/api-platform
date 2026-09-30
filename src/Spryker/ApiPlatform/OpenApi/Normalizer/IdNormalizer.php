@@ -7,12 +7,16 @@
 
 namespace Spryker\ApiPlatform\OpenApi\Normalizer;
 
+use ApiPlatform\Metadata\Exception\InvalidArgumentException;
 use ApiPlatform\Metadata\GetCollection;
 use ApiPlatform\Metadata\IdentifiersExtractorInterface;
 use RuntimeException;
+use Spryker\ApiPlatform\Exception\GlueApiException;
+use Symfony\Component\HttpFoundation\Response;
 use Symfony\Component\Serializer\Normalizer\NormalizerAwareInterface;
 use Symfony\Component\Serializer\Normalizer\NormalizerAwareTrait;
 use Symfony\Component\Serializer\Normalizer\NormalizerInterface;
+use Throwable;
 
 /**
  * API Platform has the IRI as the id property in the response. For Backwards Compatibility reasons we want to have
@@ -22,6 +26,10 @@ class IdNormalizer implements NormalizerInterface, NormalizerAwareInterface
 {
     use NormalizerAwareTrait;
 
+    protected const string RESPONSE_CODE_RESOURCE_IDENTIFIER_MISSING = '012';
+
+    protected const string RESPONSE_DETAIL_RESOURCE_IDENTIFIER_MISSING = 'Cannot build a response for resource "%s": its identifier is empty. Rows exist whose identifier column was never filled - run `console uuid:generate <Module> <table>` for the module that owns this resource, then repeat the request.';
+
     public function __construct(
         protected readonly IdentifiersExtractorInterface $identifiersExtractor,
     ) {
@@ -29,6 +37,9 @@ class IdNormalizer implements NormalizerInterface, NormalizerAwareInterface
 
     /**
      * @param array<string, mixed> $context
+     *
+     * @throws \ApiPlatform\Metadata\Exception\InvalidArgumentException
+     * @throws \Spryker\ApiPlatform\Exception\GlueApiException
      *
      * @return \ArrayObject<array-key, mixed>|array<string, mixed>|string|float|int|bool|null
      */
@@ -53,7 +64,11 @@ class IdNormalizer implements NormalizerInterface, NormalizerAwareInterface
             }
         }
 
-        $data = $this->normalizer->normalize($object, $format, $context);
+        try {
+            $data = $this->normalizer->normalize($object, $format, $context);
+        } catch (InvalidArgumentException $invalidArgumentException) {
+            throw $this->resolveNormalizationFailure($object, $invalidArgumentException);
+        }
 
         if (!is_array($data)) {
             return $data;
@@ -118,6 +133,20 @@ class IdNormalizer implements NormalizerInterface, NormalizerAwareInterface
         }
 
         return $data;
+    }
+
+    protected function resolveNormalizationFailure(object $object, InvalidArgumentException $invalidArgumentException): Throwable
+    {
+        if ($this->extractIdentifiersSafely($object) !== [] || $this->extractFallbackIdentifier($object) !== null) {
+            return $invalidArgumentException;
+        }
+
+        return new GlueApiException(
+            Response::HTTP_INTERNAL_SERVER_ERROR,
+            static::RESPONSE_CODE_RESOURCE_IDENTIFIER_MISSING,
+            sprintf(static::RESPONSE_DETAIL_RESOURCE_IDENTIFIER_MISSING, $object::class),
+            $invalidArgumentException,
+        );
     }
 
     public function supportsNormalization(mixed $data, ?string $format = null, array $context = []): bool
