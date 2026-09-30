@@ -47,11 +47,9 @@ class LosslessIntegerPropertyAccessor implements PropertyAccessorInterface
     }
 
     /**
-     * @template T of object|array<mixed>
+     * @param-out object|array<mixed> $objectOrArray
      *
-     * @param-out ($objectOrArray is array ? array<mixed> : T) $objectOrArray
-     *
-     * @param T $objectOrArray
+     * @param object|array<mixed> $objectOrArray
      *
      * @throws \Spryker\ApiPlatform\Exception\LossyIntegerConversionException
      */
