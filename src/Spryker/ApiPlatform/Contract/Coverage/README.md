@@ -372,7 +372,13 @@ GLUE_APPLICATION=GLUE_STOREFRONT vendor/bin/glue api:contract:coverage
 
 It prints COVERED / UNCOVERED / STALE for operations and validation rules, lists NON-SERVABLE
 operations (item-GETs with no provider — they only mint IRIs, so they cannot be asserted on and are
-not gaps), and exits non-zero when the gate fails. CI runs it in the Standard Validation job.
+not gaps), and exits non-zero when the gate fails.
+
+CI runs it in the `API Platform Tests` job, once per Glue application, after the generation step.
+It writes the markdown report to the run's summary page. The tooling's own tests
+(`src/Spryker/ApiPlatform/tests/SprykerTest/ApiPlatform/Unit/Coverage`) run in the same job's
+module-suite step. They carry no coverage attributes because they test the gate, not a resource, and
+a failure fails the job like any unit test.
 
 Narrow it to the resources you are working on with `--module` / `-m`. Casing, separators and a
 trailing plural are all ignored, so the module name and the resource short name both work:
