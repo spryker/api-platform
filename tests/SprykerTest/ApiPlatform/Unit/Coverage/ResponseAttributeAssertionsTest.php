@@ -10,7 +10,8 @@ declare(strict_types=1);
 namespace SprykerTest\ApiPlatform\Unit\Coverage;
 
 use Codeception\Test\Unit;
-use PHPUnit\Framework\AssertionFailedError;
+use PHPUnit\Exception as PHPUnitException;
+use Spryker\ApiPlatform\Contract\Coverage\IncludedRelationshipRecorder;
 use Spryker\ApiPlatform\Contract\Coverage\ResponseAttributeRecorder;
 use SprykerTest\ApiPlatform\Test\JsonApiResponseAssertionsTrait;
 use Symfony\Component\HttpFoundation\Response;
@@ -30,6 +31,8 @@ class ResponseAttributeAssertionsTest extends Unit
     use JsonApiResponseAssertionsTrait;
 
     protected ?ResponseAttributeRecorder $responseAttributeRecorder = null;
+
+    protected ?IncludedRelationshipRecorder $includedRelationshipRecorder = null;
 
     protected function setUp(): void
     {
@@ -61,6 +64,20 @@ class ResponseAttributeAssertionsTest extends Unit
 
         // Assert
         $this->assertSame([], $this->responseAttributeRecorder?->verify(['customers[].firstName']));
+    }
+
+    public function testGivenAnEmptyArrayAttributeWhenAssertingItsPresenceUnderRejectionThenItIsNotRecorded(): void
+    {
+        // Arrange
+        $response = $this->createResponse([
+            'data' => ['type' => 'carts', 'id' => '1', 'attributes' => ['discounts' => []]],
+        ]);
+
+        // Act
+        $this->assertResponseAttributesPresent($response, ['discounts']);
+
+        // Assert
+        $this->assertSame(['discounts'], $this->responseAttributeRecorder?->verify(['discounts'], true));
     }
 
     public function testGivenAnItemDocumentWhenTheExpectedValueDiffersThenTheFailureNamesThePath(): void
@@ -250,8 +267,8 @@ class ResponseAttributeAssertionsTest extends Unit
     {
         try {
             $assertion();
-        } catch (AssertionFailedError $assertionFailedError) {
-            return $assertionFailedError->getMessage();
+        } catch (PHPUnitException $assertionFailure) {
+            return $assertionFailure->getMessage();
         }
 
         return null;

@@ -54,6 +54,8 @@ class ResponseAttributeTruthCollector
 
     protected const string PATH_WILDCARD = '[]';
 
+    protected const string TYPE_ARRAY = 'array';
+
     /**
      * @uses \Spryker\ApiPlatform\Contract\Coverage\SchemaTruthLoader::GENERATED_API_NAMESPACE_PREFIX
      */
@@ -101,6 +103,61 @@ class ResponseAttributeTruthCollector
         }
 
         return $responseAttributes;
+    }
+
+    /**
+     * The readable array attributes whose element shape the truth does not demand, because the
+     * schema declares no `items.required`: an empty array satisfies them. Informational - the
+     * runtime rejection of empty values is what enforces them.
+     *
+     * @param \ReflectionClass<object> $resourceClass
+     * @param array<\Spryker\ApiPlatform\Contract\Coverage\ApiOperation> $successOperations
+     *
+     * @return array<\Spryker\ApiPlatform\Contract\Coverage\ResponseAttribute>
+     */
+    public function collectArraysWithoutRequiredItems(ReflectionClass $resourceClass, array $successOperations): array
+    {
+        $paths = $this->collectArrayPathsWithoutRequiredItems($resourceClass, '', descend: true);
+        $responseAttributes = [];
+
+        foreach ($successOperations as $operation) {
+            foreach ($paths as $path) {
+                $responseAttributes[] = new ResponseAttribute($operation->dispatchKey(), $path);
+            }
+        }
+
+        return $responseAttributes;
+    }
+
+    /**
+     * @param \ReflectionClass<object> $class
+     *
+     * @return array<string>
+     */
+    protected function collectArrayPathsWithoutRequiredItems(ReflectionClass $class, string $prefix, bool $descend): array
+    {
+        $paths = [];
+        foreach ($class->getProperties(ReflectionProperty::IS_PUBLIC) as $property) {
+            $apiProperty = $this->apiProperty($property);
+            if ($this->isSkipped($property, $apiProperty)) {
+                continue;
+            }
+
+            $name = $prefix . $property->getName();
+            $nestedClass = $this->nestedObjectClass($property);
+            if ($nestedClass !== null && $descend) {
+                $paths = array_merge($paths, $this->collectArrayPathsWithoutRequiredItems($nestedClass, $name . static::PATH_SEPARATOR, descend: false));
+
+                continue;
+            }
+
+            $type = $property->getType();
+            if ($type instanceof ReflectionNamedType && $type->getName() === static::TYPE_ARRAY && $this->requiredItemFields($apiProperty) === []) {
+                $paths[] = $name;
+            }
+        }
+
+        return $paths;
     }
 
     /**

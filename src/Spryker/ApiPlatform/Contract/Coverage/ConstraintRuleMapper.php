@@ -10,6 +10,7 @@ declare(strict_types=1);
 namespace Spryker\ApiPlatform\Contract\Coverage;
 
 use Spryker\ApiPlatform\Contract\Attribute\Rule;
+use Symfony\Component\Validator\Constraints\Length;
 
 /**
  * Maps a Symfony validator constraint (by its short class name, plus the resolved bounds of a
@@ -22,6 +23,10 @@ use Spryker\ApiPlatform\Contract\Attribute\Rule;
 class ConstraintRuleMapper
 {
     protected const string CONSTRAINT_LENGTH = 'Length';
+
+    protected const string PARAMETER_VALUE_LENGTH = '{{ value_length }}';
+
+    protected const string PARAMETER_LIMIT = '{{ limit }}';
 
     /**
      * Constraints that do not map to the rule of the same name. `Length` is the only one so far: a
@@ -64,6 +69,42 @@ class ConstraintRuleMapper
         }
 
         return [$constraintShortName];
+    }
+
+    /**
+     * The one rule a raised violation stands for. A `Length` names its bound through the violation
+     * code, since one declaration carries both. An exact length (`min` equal to `max`) raises the
+     * same code for either side, so its parameters tell which bound the value missed.
+     *
+     * @param array<string, mixed> $violationParameters
+     */
+    public function ruleForViolation(string $constraintShortName, ?string $violationCode, array $violationParameters = []): string
+    {
+        if ($constraintShortName !== static::CONSTRAINT_LENGTH) {
+            return $constraintShortName;
+        }
+
+        return match ($violationCode) {
+            Length::TOO_SHORT_ERROR => Rule::LENGTH_MIN->value,
+            Length::TOO_LONG_ERROR => Rule::LENGTH_MAX->value,
+            Length::NOT_EQUAL_LENGTH_ERROR => $this->exactLengthRule($violationParameters) ?? $constraintShortName,
+            default => $constraintShortName,
+        };
+    }
+
+    /**
+     * @param array<string, mixed> $violationParameters
+     */
+    protected function exactLengthRule(array $violationParameters): ?string
+    {
+        $valueLength = $violationParameters[static::PARAMETER_VALUE_LENGTH] ?? null;
+        $limit = $violationParameters[static::PARAMETER_LIMIT] ?? null;
+
+        if (!is_numeric($valueLength) || !is_numeric($limit)) {
+            return null;
+        }
+
+        return (int)$valueLength < (int)$limit ? Rule::LENGTH_MIN->value : Rule::LENGTH_MAX->value;
     }
 
     /**

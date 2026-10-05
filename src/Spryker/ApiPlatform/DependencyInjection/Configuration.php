@@ -9,6 +9,7 @@ declare(strict_types=1);
 
 namespace Spryker\ApiPlatform\DependencyInjection;
 
+use Spryker\ApiPlatform\Contract\Coverage\ContractCoverageEnforcement;
 use Symfony\Component\Config\Definition\Builder\TreeBuilder;
 use Symfony\Component\Config\Definition\ConfigurationInterface;
 
@@ -60,6 +61,24 @@ class Configuration implements ConfigurationInterface
                 ->end()
                 ->arrayNode('contract_coverage_excluded_resources')
                     ->info('Resource short names the contract-coverage gate does not enforce; every generated resource is enforced when empty. The value is a project decision and belongs in the project\'s spryker_api_platform package configuration.')
+                    ->defaultValue([])
+                    ->scalarPrototype()->end()
+                ->end()
+                ->arrayNode('contract_coverage_enforced_dimensions')
+                    ->info('Contract-coverage dimensions beyond operations, validation rules and response attributes that fail the gate and the test runtime; every other dimension is reported only. "all" enforces every dimension. An application lists a dimension once its tests cover it.')
+                    ->defaultValue([])
+                    ->enumPrototype()->values(ContractCoverageEnforcement::acceptedValues())->end()
+                ->end()
+                ->variableNode('contract_coverage_baseline')
+                    ->info('Coverage items a known product bug keeps uncovered, keyed by dimension, then by the item key the report prints, each with the bug in plain language. A baselined item does not fail its dimension; an entry whose item is covered fails until it is removed.')
+                    ->defaultValue([])
+                    ->validate()
+                        ->ifTrue(static fn (mixed $value): bool => !is_array($value))
+                        ->thenInvalid('contract_coverage_baseline maps each dimension to its item keys and reasons, got %s.')
+                    ->end()
+                ->end()
+                ->arrayNode('contract_coverage_ownership_security_attributes')
+                    ->info('Security voter attributes whose grant depends on who owns the addressed resource; an operation guarded by one owes a test in which an authenticated caller is denied someone else\'s resource.')
                     ->defaultValue([])
                     ->scalarPrototype()->end()
                 ->end()

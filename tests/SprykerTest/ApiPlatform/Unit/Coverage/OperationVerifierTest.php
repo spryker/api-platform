@@ -10,8 +10,10 @@ declare(strict_types=1);
 namespace SprykerTest\ApiPlatform\Unit\Coverage;
 
 use Codeception\Test\Unit;
+use Spryker\ApiPlatform\Contract\Attribute\Scenario;
 use Spryker\ApiPlatform\Contract\Coverage\ApiOperation;
 use Spryker\ApiPlatform\Contract\Coverage\OperationVerifier;
+use Spryker\ApiPlatform\Contract\Coverage\RecordedExchange;
 
 /**
  * Auto-generated group annotations
@@ -218,5 +220,110 @@ class OperationVerifierTest extends Unit
 
         // Assert
         $this->assertSame([], $result->undeclaredObservations);
+    }
+
+    public function testGivenADeclaredCodeWhenTheResponseCarriesItThenTheDeclarationIsVerified(): void
+    {
+        // Arrange
+        $declared = [new ApiOperation('DELETE', '/a', 422, code: '3301')];
+        $exchange = new RecordedExchange(new ApiOperation('DELETE', '/a'), 422, errorCodes: ['901', '3301']);
+
+        // Act
+        $result = (new OperationVerifier())->verify($declared, [], [new ApiOperation('DELETE', '/a', 422)], ['DELETE /a' => [204, 422]], [$exchange]);
+
+        // Assert
+        $this->assertSame([], $result->unverified);
+    }
+
+    public function testGivenADeclaredCodeWhenOnlyAnotherCodeCameBackThenTheDeclarationIsUnverified(): void
+    {
+        // Arrange
+        $declared = [new ApiOperation('DELETE', '/a', 422, code: '3301')];
+        $exchange = new RecordedExchange(new ApiOperation('DELETE', '/a'), 422, errorCodes: ['3303']);
+
+        // Act
+        $result = (new OperationVerifier())->verify($declared, [], [new ApiOperation('DELETE', '/a', 422)], ['DELETE /a' => [204, 422]], [$exchange]);
+
+        // Assert
+        $this->assertSame(['DELETE /a 422 code 3301'], array_map(static fn (ApiOperation $operation): string => $operation->key(), $result->unverified));
+    }
+
+    public function testGivenAStatusDeclaringCodesWhenAnUndeclaredCodeIsObservedThenItIsReportedAsUndeclaredErrorCode(): void
+    {
+        // Arrange
+        $declared = [new ApiOperation('DELETE', '/a', 422)];
+        $exchange = new RecordedExchange(new ApiOperation('DELETE', '/a'), 422, errorCodes: ['3301', '4999']);
+
+        // Act
+        $result = (new OperationVerifier())->verify(
+            $declared,
+            [],
+            [new ApiOperation('DELETE', '/a', 422)],
+            ['DELETE /a' => [204, 422]],
+            [$exchange],
+            ['DELETE /a' => [422 => ['3301']]],
+        );
+
+        // Assert
+        $this->assertSame(['DELETE /a 422 code 4999'], array_map(static fn (ApiOperation $operation): string => $operation->key(), $result->undeclaredErrorCodes));
+    }
+
+    public function testGivenAStatusDeclaringNoCodesWhenAnyCodeIsObservedThenNothingIsJudged(): void
+    {
+        // Arrange
+        $declared = [new ApiOperation('DELETE', '/a', 422)];
+        $exchange = new RecordedExchange(new ApiOperation('DELETE', '/a'), 422, errorCodes: ['4999']);
+
+        // Act
+        $result = (new OperationVerifier())->verify(
+            $declared,
+            [],
+            [new ApiOperation('DELETE', '/a', 422)],
+            ['DELETE /a' => [204, 422]],
+            [$exchange],
+            ['DELETE /a' => [403 => ['002']]],
+        );
+
+        // Assert
+        $this->assertSame([], $result->undeclaredErrorCodes);
+    }
+
+    public function testGivenAForeignOwnerDeclarationWhenAnAuthenticatedRequestWasDeniedThenItIsVerified(): void
+    {
+        // Arrange
+        $declared = [new ApiOperation('GET', '/customers/{customerReference}/carts', 403, scenario: Scenario::FOREIGN_OWNER)];
+        $exchange = new RecordedExchange(new ApiOperation('GET', '/customers/{customerReference}/carts'), 403, isAccessDenied: true, isAuthenticated: true);
+
+        // Act
+        $result = (new OperationVerifier())->verify($declared, [], [new ApiOperation('GET', '/customers/{customerReference}/carts', 403)], [], [$exchange]);
+
+        // Assert
+        $this->assertSame([], $result->unverified);
+    }
+
+    public function testGivenAForeignOwnerDeclarationWhenTheDenialCameWithoutATokenThenItIsUnverified(): void
+    {
+        // Arrange
+        $declared = [new ApiOperation('GET', '/customers/{customerReference}/carts', 403, scenario: Scenario::FOREIGN_OWNER)];
+        $exchange = new RecordedExchange(new ApiOperation('GET', '/customers/{customerReference}/carts'), 403, isAccessDenied: true, isAuthenticated: false);
+
+        // Act
+        $result = (new OperationVerifier())->verify($declared, [], [new ApiOperation('GET', '/customers/{customerReference}/carts', 403)], [], [$exchange]);
+
+        // Assert
+        $this->assertCount(1, $result->unverified);
+    }
+
+    public function testGivenAForeignOwnerDeclarationWhenTheStatusCameFromANotFoundProviderThenItIsUnverified(): void
+    {
+        // Arrange
+        $declared = [new ApiOperation('GET', '/customers/{customerReference}/carts', 404, scenario: Scenario::FOREIGN_OWNER)];
+        $exchange = new RecordedExchange(new ApiOperation('GET', '/customers/{customerReference}/carts'), 404, isAccessDenied: false, isAuthenticated: true);
+
+        // Act
+        $result = (new OperationVerifier())->verify($declared, [], [new ApiOperation('GET', '/customers/{customerReference}/carts', 404)], [], [$exchange]);
+
+        // Assert
+        $this->assertSame(['GET /customers/{customerReference}/carts 404 scenario foreign-owner'], array_map(static fn (ApiOperation $operation): string => $operation->key(), $result->unverified));
     }
 }

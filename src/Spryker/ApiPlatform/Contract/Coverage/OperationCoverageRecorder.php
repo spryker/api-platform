@@ -31,8 +31,31 @@ class OperationCoverageRecorder
      */
     protected array $recordedResponses = [];
 
+    /**
+     * @var array<\Spryker\ApiPlatform\Contract\Coverage\RecordedExchange>
+     */
+    protected array $exchanges = [];
+
     public function __construct(protected OperationVerifier $operationVerifier)
     {
+    }
+
+    /**
+     * The one entry point of the response listener. The status also goes to the status-carrying
+     * recording, so the operation verification reads the same evidence as before.
+     */
+    public function recordExchange(RecordedExchange $exchange): void
+    {
+        $this->exchanges[] = $exchange;
+        $this->recordResponse($exchange->operation->verb, $exchange->operation->uriTemplate, $exchange->status);
+    }
+
+    /**
+     * @return array<\Spryker\ApiPlatform\Contract\Coverage\RecordedExchange>
+     */
+    public function exchanges(): array
+    {
+        return $this->exchanges;
     }
 
     public function record(string $verb, string $uriTemplate): void
@@ -48,10 +71,18 @@ class OperationCoverageRecorder
     /**
      * @param array<\Spryker\ApiPlatform\Contract\Coverage\ApiOperation> $declared
      * @param array<string, array<int>> $declaredResponses
+     * @param array<string, array<int, array<string>>> $declaredErrorCodes
      */
-    public function verify(array $declared, array $declaredResponses = []): OperationVerificationResult
+    public function verify(array $declared, array $declaredResponses = [], array $declaredErrorCodes = []): OperationVerificationResult
     {
-        return $this->operationVerifier->verify($declared, $this->recorded, $this->recordedResponses, $declaredResponses);
+        return $this->operationVerifier->verify(
+            $declared,
+            $this->recorded,
+            $this->recordedResponses,
+            $declaredResponses,
+            $this->exchanges,
+            $declaredErrorCodes,
+        );
     }
 
     /**

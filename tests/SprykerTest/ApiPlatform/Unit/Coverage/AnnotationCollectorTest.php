@@ -13,8 +13,14 @@ use Codeception\Test\Unit;
 use LogicException;
 use Spryker\ApiPlatform\Contract\Coverage\AnnotationCollector;
 use SprykerTest\ApiPlatform\Unit\Coverage\Fixture\AnnotatedCoverageFixture;
+use SprykerTest\ApiPlatform\Unit\Coverage\Fixture\CodeWithoutStatusCoverageFixture;
+use SprykerTest\ApiPlatform\Unit\Coverage\Fixture\IncludesMarkedCoverageFixture;
+use SprykerTest\ApiPlatform\Unit\Coverage\Fixture\NamelessIncludesCoverageFixture;
+use SprykerTest\ApiPlatform\Unit\Coverage\Fixture\ReplayingCoverageFixture;
+use SprykerTest\ApiPlatform\Unit\Coverage\Fixture\RequestAttributesMarkedCoverageFixture;
 use SprykerTest\ApiPlatform\Unit\Coverage\Fixture\SharedOperationFirstDeclarerFixture;
 use SprykerTest\ApiPlatform\Unit\Coverage\Fixture\SharedOperationSecondDeclarerFixture;
+use SprykerTest\ApiPlatform\Unit\Coverage\Fixture\UnboundRequestAttributeMarkerFixture;
 use SprykerTest\ApiPlatform\Unit\Coverage\Fixture\UnboundResponseAttributeMarkerFixture;
 use SprykerTest\ApiPlatform\Unit\Coverage\Fixture\UnboundValidationCoverageFixture;
 
@@ -61,6 +67,79 @@ class AnnotationCollectorTest extends Unit
 
         // Act
         $collector->collect([UnboundValidationCoverageFixture::class]);
+    }
+
+    public function testGivenACodeWithoutAnErrorStatusWhenCollectingThenCollectionFailsNamingTheMethod(): void
+    {
+        // Arrange
+        $collector = new AnnotationCollector();
+
+        // Assert
+        $this->expectException(LogicException::class);
+        $this->expectExceptionMessage('CodeWithoutStatusCoverageFixture::testGivenACodeWithoutAStatusWhenCollectingThenItIsRejected() names code 3301 without an error status');
+
+        // Act
+        $collector->collect([CodeWithoutStatusCoverageFixture::class]);
+    }
+
+    public function testGivenARequestAttributeMarkerWithoutAnInputOperationWhenCollectingThenCollectionFailsNamingTheMethod(): void
+    {
+        // Arrange
+        $collector = new AnnotationCollector();
+
+        // Assert
+        $this->expectException(LogicException::class);
+        $this->expectExceptionMessage('UnboundRequestAttributeMarkerFixture::testGivenAReadWhenCollectingThenTheMarkerIsRejected() needs a success #[CoversApiOperation] of a POST, PUT or PATCH');
+
+        // Act
+        $collector->collect([UnboundRequestAttributeMarkerFixture::class]);
+    }
+
+    public function testGivenAMarkerWithoutPathsWhenCollectingThenItClaimsTheWholeOperation(): void
+    {
+        // Act
+        $annotations = (new AnnotationCollector())->collect([RequestAttributesMarkedCoverageFixture::class]);
+
+        // Assert
+        $this->assertSame(
+            ['POST /carts' => true, 'PATCH /carts/{cartUuid}' => ['currency', 'priceMode', 'name']],
+            $annotations->requestAttributeClaims,
+        );
+    }
+
+    public function testGivenAnIncludeClaimWithoutASuccessOperationWhenCollectingThenCollectionFailsNamingTheMethod(): void
+    {
+        // Arrange
+        $collector = new AnnotationCollector();
+
+        // Assert
+        $this->expectException(LogicException::class);
+        $this->expectExceptionMessage('IncludesMarkedCoverageFixture::testGivenAnErrorOperationWhenIncludingThenTheClaimIsRejected() needs a success #[CoversApiOperation]');
+
+        // Act
+        $collector->collect([IncludesMarkedCoverageFixture::class]);
+    }
+
+    public function testGivenAnIncludeClaimWithoutNamesWhenCollectingThenCollectionFails(): void
+    {
+        // Arrange
+        $collector = new AnnotationCollector();
+
+        // Assert
+        $this->expectException(LogicException::class);
+        $this->expectExceptionMessage('at least one relationship name');
+
+        // Act
+        $collector->collect([NamelessIncludesCoverageFixture::class]);
+    }
+
+    public function testGivenAReplayAttributeOnATestClassWhenCollectingThenItsResourcesAreReplayed(): void
+    {
+        // Act
+        $annotations = (new AnnotationCollector())->collect([ReplayingCoverageFixture::class]);
+
+        // Assert
+        $this->assertSame(['carts', 'guest-carts'], $annotations->replayedResources);
     }
 
     public function testGivenASingleMethodWhenCollectingItsOperationsThenOnlyThatMethodsDeclarationsAreReturned(): void

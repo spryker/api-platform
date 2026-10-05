@@ -23,52 +23,50 @@ namespace Spryker\ApiPlatform\Contract\Coverage;
  */
 class CoverageCalculator
 {
+    /**
+     * @param array<string, array<\Spryker\ApiPlatform\Contract\Coverage\ErrorMappingEntry>> $errorMappingEntries
+     *   The resolved entries of each error mapping the enforced truth registers, keyed by source.
+     */
     public function calculate(
         TruthSet $enforcedTruth,
         TruthSet $existenceTruth,
-        CollectedAnnotations $annotations
+        CollectedAnnotations $annotations,
+        array $errorMappingEntries = []
     ): CoverageReport {
-        $declaredOperationKeys = $this->keyed($annotations->declaredOperations);
-        $existingOperationKeys = $this->keyed($existenceTruth->allOperations());
+        $claimedOperationKeys = $this->coverageKeyed($annotations->declaredOperations);
 
-        $coveredOperations = [];
-        $uncoveredOperations = [];
-        foreach ($this->unique($enforcedTruth->servableOperations) as $operation) {
-            if (isset($declaredOperationKeys[$operation->key()])) {
-                $coveredOperations[] = $operation;
-
-                continue;
-            }
-            $uncoveredOperations[] = $operation;
-        }
-
-        $staleOperations = [];
-        foreach ($this->unique($annotations->declaredOperations) as $operation) {
-            if (!isset($existingOperationKeys[$operation->key()])) {
-                $staleOperations[] = $operation;
-            }
-        }
-
-        $declaredValidationKeys = $this->keyed($annotations->declaredValidations);
-        $existingValidationKeys = $this->keyed($existenceTruth->validationConstraints);
-
-        $coveredValidations = [];
-        $uncoveredValidations = [];
-        foreach ($this->unique($enforcedTruth->validationConstraints) as $validation) {
-            if (isset($declaredValidationKeys[$validation->key()])) {
-                $coveredValidations[] = $validation;
-
-                continue;
-            }
-            $uncoveredValidations[] = $validation;
-        }
-
-        $staleValidations = [];
-        foreach ($this->unique($annotations->declaredValidations) as $validation) {
-            if (!isset($existingValidationKeys[$validation->key()])) {
-                $staleValidations[] = $validation;
-            }
-        }
+        // A code claim is judged stale by the error-code dimension; for the operation dimension it
+        // only has to narrow an error response the schema declares.
+        $operations = $this->diff(
+            $enforcedTruth->servableOperations,
+            $this->keyed($existenceTruth->allOperations()),
+            $claimedOperationKeys,
+            array_map(static fn (ApiOperation $operation): ApiOperation => $operation->withoutFacets(), $annotations->declaredOperations),
+        );
+        $errorCodes = $this->diff(
+            $enforcedTruth->errorCodeOperations,
+            $this->keyed($existenceTruth->errorCodeOperations),
+            $claimedOperationKeys,
+            array_map(
+                static fn (ApiOperation $operation): ApiOperation => $operation->errorCodeItem(),
+                array_values(array_filter($annotations->declaredOperations, static fn (ApiOperation $operation): bool => $operation->code !== null)),
+            ),
+        );
+        $ownershipScenarios = $this->diff(
+            $enforcedTruth->ownershipScenarioOperations,
+            $this->keyed($existenceTruth->ownershipScenarioOperations),
+            $claimedOperationKeys,
+            array_map(
+                static fn (ApiOperation $operation): ApiOperation => $operation->scenarioItem(),
+                array_values(array_filter($annotations->declaredOperations, static fn (ApiOperation $operation): bool => $operation->scenario !== null)),
+            ),
+        );
+        $validations = $this->diff(
+            $enforcedTruth->validationConstraints,
+            $this->keyed($existenceTruth->validationConstraints),
+            $this->keyed($annotations->declaredValidations),
+            $annotations->declaredValidations,
+        );
 
         $markedOperationKeys = array_flip($annotations->responseAttributeCoveredOperations);
 
@@ -84,19 +82,194 @@ class CoverageCalculator
         }
 
         return new CoverageReport(
-            $coveredOperations,
-            $uncoveredOperations,
-            $staleOperations,
-            $coveredValidations,
-            $uncoveredValidations,
-            $staleValidations,
+            $operations->covered,
+            $operations->uncovered,
+            $operations->stale,
+            $validations->covered,
+            $validations->uncovered,
+            $validations->stale,
             $coveredResponseAttributes,
             $uncoveredResponseAttributes,
+            [
+                ContractCoverageDimension::ERROR_CODES->value => $errorCodes,
+                ContractCoverageDimension::OWNERSHIP_SCENARIOS->value => $ownershipScenarios,
+                ContractCoverageDimension::ERROR_MAPPINGS->value => $this->diffErrorMappings($enforcedTruth, $existenceTruth, $errorMappingEntries),
+                ContractCoverageDimension::REQUEST_ATTRIBUTES->value => $this->diffRequestAttributes($enforcedTruth, $existenceTruth, $annotations),
+                ContractCoverageDimension::INCLUDES->value => $this->diffIncludes($enforcedTruth, $existenceTruth, $annotations),
+                ContractCoverageDimension::OPENAPI_EXAMPLE_REPLAY->value => $this->diff(
+                    $enforcedTruth->replayableResources,
+                    $this->keyed($existenceTruth->replayableResources),
+                    array_fill_keys($annotations->replayedResources, true),
+                    array_map(static fn (string $resourceShortName): ReplayedResource => new ReplayedResource($resourceShortName), $annotations->replayedResources),
+                ),
+            ],
         );
     }
 
     /**
-     * @param array<\Spryker\ApiPlatform\Contract\Coverage\ApiOperation|\Spryker\ApiPlatform\Contract\Coverage\ValidationConstraint> $entries
+     * Reads owe their includes; a claim on a write is accepted without being owed, so it is never
+     * stale while the resource declares the relationship.
+     *
+     * @return \Spryker\ApiPlatform\Contract\Coverage\DimensionCoverage<\Spryker\ApiPlatform\Contract\Coverage\IncludeRelationship>
+     */
+    protected function diffIncludes(TruthSet $enforcedTruth, TruthSet $existenceTruth, CollectedAnnotations $annotations): DimensionCoverage
+    {
+        $claims = [];
+        foreach ($annotations->includeClaims as $dispatchKey => $relationshipNames) {
+            foreach ($relationshipNames as $relationshipName) {
+                $claims[] = new IncludeRelationship($dispatchKey, $relationshipName);
+            }
+        }
+
+        return $this->diff(
+            $enforcedTruth->includeRelationships,
+            $this->keyed([...$existenceTruth->includeRelationships, ...$existenceTruth->writeIncludeRelationships]),
+            $this->keyed($claims),
+            $claims,
+        );
+    }
+
+    /**
+     * A request attribute is covered when a marker on its operation claims all attributes or names
+     * it. A named path the schema does not accept on that operation is stale.
+     *
+     * @return \Spryker\ApiPlatform\Contract\Coverage\DimensionCoverage<\Spryker\ApiPlatform\Contract\Coverage\RequestAttribute>
+     */
+    protected function diffRequestAttributes(TruthSet $enforcedTruth, TruthSet $existenceTruth, CollectedAnnotations $annotations): DimensionCoverage
+    {
+        $claimedKeys = [];
+        $claims = [];
+        foreach ($annotations->requestAttributeClaims as $dispatchKey => $paths) {
+            if ($paths === true) {
+                $claimedKeys[$dispatchKey] = true;
+
+                continue;
+            }
+
+            foreach ($paths as $path) {
+                $claim = new RequestAttribute($dispatchKey, $path);
+                $claims[] = $claim;
+                $claimedKeys[$claim->key()] = true;
+            }
+        }
+
+        $covered = [];
+        $uncovered = [];
+        foreach ($this->unique($enforcedTruth->requestAttributes) as $requestAttribute) {
+            if (isset($claimedKeys[$requestAttribute->dispatchKey]) || isset($claimedKeys[$requestAttribute->key()])) {
+                $covered[] = $requestAttribute;
+
+                continue;
+            }
+            $uncovered[] = $requestAttribute;
+        }
+
+        $existingKeys = $this->keyed($existenceTruth->requestAttributes);
+        $stale = array_values(array_filter(
+            $this->unique($claims),
+            static fn (RequestAttribute $claim): bool => !isset($existingKeys[$claim->key()]),
+        ));
+
+        return new DimensionCoverage($covered, $uncovered, $stale);
+    }
+
+    /**
+     * A mapped entry is answered when an operation of a resource registering its mapping declares
+     * the entry's code under the entry's status, or the registration says the API never answers it.
+     * A `notAnswered` code the mapping does not contain protects nothing, so it is stale. Whether an
+     * entry is answered is read from every registering resource, not only the ones this run enforces.
+     *
+     * @param array<string, array<\Spryker\ApiPlatform\Contract\Coverage\ErrorMappingEntry>> $errorMappingEntries
+     *
+     * @return \Spryker\ApiPlatform\Contract\Coverage\DimensionCoverage<\Spryker\ApiPlatform\Contract\Coverage\ErrorMappingEntry>
+     */
+    protected function diffErrorMappings(TruthSet $enforcedTruth, TruthSet $existenceTruth, array $errorMappingEntries): DimensionCoverage
+    {
+        $covered = [];
+        $uncovered = [];
+        $stale = [];
+
+        foreach ($enforcedTruth->errorMappingRegistrations as $source => $enforcedRegistration) {
+            $registration = $existenceTruth->errorMappingRegistrations[$source] ?? $enforcedRegistration;
+            $mappedCodes = [];
+
+            foreach ($this->unique($errorMappingEntries[$source] ?? []) as $entry) {
+                $mappedCodes[$entry->code] = true;
+                $isAnswered = in_array($entry->code, $registration['declaredErrorCodes'][(int)$entry->status] ?? [], true);
+
+                if ($isAnswered || isset($registration['notAnswered'][$entry->code])) {
+                    $covered[] = $entry;
+
+                    continue;
+                }
+                $uncovered[] = $entry;
+            }
+
+            foreach (array_keys($registration['notAnswered']) as $code) {
+                if (!isset($mappedCodes[(string)$code])) {
+                    $stale[] = new ErrorMappingEntry($source, ErrorMappingEntry::NOT_ANSWERED, (string)$code, null);
+                }
+            }
+        }
+
+        return new DimensionCoverage($covered, $uncovered, $stale);
+    }
+
+    /**
+     * @param array<\Spryker\ApiPlatform\Contract\Coverage\ApiOperation> $declaredOperations
+     *
+     * @return array<string, true>
+     */
+    protected function coverageKeyed(array $declaredOperations): array
+    {
+        $keys = [];
+        foreach ($declaredOperations as $declaredOperation) {
+            foreach ($declaredOperation->coverageKeys() as $key) {
+                $keys[$key] = true;
+            }
+        }
+
+        return $keys;
+    }
+
+    /**
+     * The one diff every dimension runs: an enforced item is covered when a claim names its key,
+     * and a claim is stale when nothing the schema defines anywhere carries its key.
+     *
+     * @template T of \Spryker\ApiPlatform\Contract\Coverage\CoverageItem
+     *
+     * @param array<T> $enforced
+     * @param array<string, true> $existingKeys
+     * @param array<string, true> $claimedKeys
+     * @param array<T> $claims The claims judged for staleness.
+     *
+     * @return \Spryker\ApiPlatform\Contract\Coverage\DimensionCoverage<T>
+     */
+    protected function diff(array $enforced, array $existingKeys, array $claimedKeys, array $claims): DimensionCoverage
+    {
+        $covered = [];
+        $uncovered = [];
+        foreach ($this->unique($enforced) as $item) {
+            if (isset($claimedKeys[$item->key()])) {
+                $covered[] = $item;
+
+                continue;
+            }
+            $uncovered[] = $item;
+        }
+
+        $stale = [];
+        foreach ($this->unique($claims) as $claim) {
+            if (!isset($existingKeys[$claim->key()])) {
+                $stale[] = $claim;
+            }
+        }
+
+        return new DimensionCoverage($covered, $uncovered, $stale);
+    }
+
+    /**
+     * @param array<\Spryker\ApiPlatform\Contract\Coverage\CoverageItem> $entries
      *
      * @return array<string, true>
      */
@@ -111,7 +284,7 @@ class CoverageCalculator
     }
 
     /**
-     * @template T of \Spryker\ApiPlatform\Contract\Coverage\ApiOperation|\Spryker\ApiPlatform\Contract\Coverage\ValidationConstraint|\Spryker\ApiPlatform\Contract\Coverage\ResponseAttribute
+     * @template T of \Spryker\ApiPlatform\Contract\Coverage\CoverageItem
      *
      * @param array<T> $entries
      *

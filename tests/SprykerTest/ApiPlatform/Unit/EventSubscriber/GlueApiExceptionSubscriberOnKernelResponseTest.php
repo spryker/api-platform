@@ -10,10 +10,14 @@ declare(strict_types=1);
 namespace SprykerTest\ApiPlatform\Unit\EventSubscriber;
 
 use ApiPlatform\Metadata\ApiProperty;
+use ApiPlatform\Metadata\Post;
 use ApiPlatform\Metadata\Resource\Factory\ResourceMetadataCollectionFactoryInterface;
 use Codeception\Test\Unit;
+use ReflectionMethod;
 use Spryker\ApiPlatform\EventSubscriber\GlueApiExceptionSubscriber;
+use Spryker\ApiPlatform\Request\RequestAttribute;
 use Spryker\ApiPlatform\Validation\NestedObjectValidationErrorAugmenter;
+use Spryker\ApiPlatform\Validation\SynthesizedViolation;
 use Spryker\ApiPlatform\Validation\ValidationConstraintReader;
 use SprykerTest\ApiPlatform\ApiUnitTester;
 use Symfony\Component\HttpFoundation\Request;
@@ -22,6 +26,9 @@ use Symfony\Component\HttpKernel\Event\ResponseEvent;
 use Symfony\Component\HttpKernel\HttpKernelInterface;
 use Symfony\Component\Translation\IdentityTranslator;
 use Symfony\Component\Validator\Constraints\GreaterThan;
+use Symfony\Component\Validator\Constraints\IsTrue;
+use Symfony\Component\Validator\Constraints\LessThan;
+use Symfony\Component\Validator\Constraints\NotNull;
 use Symfony\Component\Validator\Constraints\Type;
 
 /**
@@ -248,6 +255,163 @@ class GlueApiExceptionSubscriberOnKernelResponseTest extends Unit
 
         // Assert
         $this->assertContains('accepted => This value should be true.', $details);
+    }
+
+    public function testGivenEmptyStringQuantityWhenOnKernelResponseThenTheSynthesizedViolationsAreKeptOnTheRequestAndOffTheWire(): void
+    {
+        // Arrange
+        $resource = new class {
+            #[Type('integer')]
+            #[GreaterThan(0)]
+            public ?int $quantity = null;
+        };
+
+        $request = $this->createRequest(get_class($resource), ['quantity' => '']);
+        $event = $this->createResponseEvent($request, $this->createUnprocessableResponse([
+            ['code' => '901', 'status' => Response::HTTP_UNPROCESSABLE_ENTITY, 'detail' => 'quantity => This value should not be blank.'],
+        ]));
+
+        // Act
+        $this->createSubscriber()->onKernelResponse($event);
+
+        // Assert
+        $this->assertEquals(
+            [new SynthesizedViolation('quantity', 'Type'), new SynthesizedViolation('quantity', 'GreaterThan')],
+            $request->attributes->get(RequestAttribute::SYNTHESIZED_VIOLATIONS),
+        );
+        $this->assertStringNotContainsString(SynthesizedViolation::ERROR_KEY, (string)$event->getResponse()->getContent());
+    }
+
+    public function testGivenNonBooleanNestedLeafOnPatchWhenOnKernelResponseThenTheSynthesizedViolationNamesTheFullPath(): void
+    {
+        // Arrange
+        $request = $this->createRequest(
+            static::NESTED_BOOL_RESOURCE_CLASS,
+            ['productConfigurationInstance' => ['isComplete' => 'yes']],
+            Request::METHOD_PATCH,
+        );
+        $event = $this->createResponseEvent($request, new Response('{}', Response::HTTP_OK, ['Content-Type' => 'application/json']));
+
+        // Act
+        $this->createSubscriber()->onKernelResponse($event);
+
+        // Assert
+        $this->assertEquals(
+            [new SynthesizedViolation('productConfigurationInstance.isComplete', 'Type')],
+            $request->attributes->get(RequestAttribute::SYNTHESIZED_VIOLATIONS),
+        );
+        $this->assertStringNotContainsString(SynthesizedViolation::ERROR_KEY, (string)$event->getResponse()->getContent());
+    }
+
+    public function testGivenAnUnassignableNestedLeafWhenOnKernelResponseThenTheUnprefixedDetailKeepsTheFullPathInItsSynthesizedViolation(): void
+    {
+        // Arrange
+        $request = $this->createRequest(static::NESTED_BOOL_RESOURCE_CLASS, ['productConfigurationInstance' => ['isComplete' => 'yes']]);
+        $event = $this->createResponseEvent($request, $this->createUnprocessableResponse([
+            ['code' => '901', 'status' => Response::HTTP_UNPROCESSABLE_ENTITY, 'detail' => 'productConfigurationInstance => This value should be of type object.'],
+        ]));
+
+        // Act
+        $this->createSubscriber()->onKernelResponse($event);
+
+        // Assert
+        $this->assertContains('isComplete => This value should be of type bool.', $this->extractDetails($event));
+        $paths = array_map(
+            static fn (SynthesizedViolation $violation): string => $violation->propertyPath,
+            $request->attributes->get(RequestAttribute::SYNTHESIZED_VIOLATIONS),
+        );
+        $this->assertSame(['productConfigurationInstance.isComplete'], array_values(array_unique($paths)));
+    }
+
+    public function testGivenRequiredBoolFieldAbsentWhenOnKernelResponseThenOnlyTheDeclaredConstraintsANullFailsAreSynthesized(): void
+    {
+        // Arrange
+        $resource = new class {
+            #[ApiProperty(required: true)]
+            #[NotNull]
+            #[IsTrue]
+            public ?bool $accepted = null;
+        };
+
+        $request = $this->createRequest(get_class($resource), ['sku' => 'test-sku']);
+        $event = $this->createResponseEvent($request, $this->createUnprocessableResponse([
+            ['code' => '901', 'status' => Response::HTTP_UNPROCESSABLE_ENTITY, 'detail' => 'sku => This value should not be blank.'],
+        ]));
+
+        // Act
+        $this->createSubscriber()->onKernelResponse($event);
+
+        // Assert
+        $this->assertEquals(
+            [new SynthesizedViolation('accepted', 'NotNull')],
+            $request->attributes->get(RequestAttribute::SYNTHESIZED_VIOLATIONS),
+        );
+    }
+
+    public function testGivenEmptyStringQuantityWhenOnKernelResponseThenOnlyTheComparisonsTheEmptyStringFailsAreSynthesized(): void
+    {
+        // Arrange: '' > 0 is false under PHP 8 string comparison, '' < 10 is true.
+        $resource = new class {
+            #[Type('integer')]
+            #[GreaterThan(0)]
+            #[LessThan(10)]
+            public ?int $quantity = null;
+        };
+
+        $request = $this->createRequest(get_class($resource), ['quantity' => '']);
+        $event = $this->createResponseEvent($request, $this->createUnprocessableResponse([
+            ['code' => '901', 'status' => Response::HTTP_UNPROCESSABLE_ENTITY, 'detail' => 'quantity => This value should not be blank.'],
+        ]));
+
+        // Act
+        $this->createSubscriber()->onKernelResponse($event);
+
+        // Assert
+        $this->assertContains('quantity => This value should be less than 10.', $this->extractDetails($event));
+        $this->assertEquals(
+            [new SynthesizedViolation('quantity', 'Type'), new SynthesizedViolation('quantity', 'GreaterThan')],
+            $request->attributes->get(RequestAttribute::SYNTHESIZED_VIOLATIONS),
+        );
+    }
+
+    public function testGivenRequiredBoolFieldAbsentWithANotNullOfAnotherGroupWhenOnKernelResponseThenNothingIsSynthesized(): void
+    {
+        // Arrange
+        $resource = new class {
+            #[ApiProperty(required: true)]
+            #[NotNull(groups: ['other'])]
+            public ?bool $accepted = null;
+        };
+
+        $request = $this->createRequest(get_class($resource), ['sku' => 'test-sku']);
+        $request->attributes->set('_api_operation', new Post(validationContext: ['groups' => ['create']]));
+        $event = $this->createResponseEvent($request, $this->createUnprocessableResponse([
+            ['code' => '901', 'status' => Response::HTTP_UNPROCESSABLE_ENTITY, 'detail' => 'sku => This value should not be blank.'],
+        ]));
+
+        // Act
+        $this->createSubscriber()->onKernelResponse($event);
+
+        // Assert
+        $this->assertContains('accepted => This field is missing.', $this->extractDetails($event));
+        $this->assertSame([], $request->attributes->get(RequestAttribute::SYNTHESIZED_VIOLATIONS));
+    }
+
+    public function testGivenNoRequestWhenRewritingErrorsThenTheSynthesizedViolationsAreStillKeptOffTheWire(): void
+    {
+        // Arrange
+        $response = $this->createUnprocessableResponse([['code' => '901', 'detail' => 'quantity => This value should not be blank.']]);
+        $augment = static fn (array $errors): array => [
+            ...$errors,
+            ['code' => '901', 'detail' => 'quantity => x', SynthesizedViolation::ERROR_KEY => [new SynthesizedViolation('quantity', 'Type')]],
+        ];
+
+        // Act
+        (new ReflectionMethod(GlueApiExceptionSubscriber::class, 'rewriteErrors'))->invoke($this->createSubscriber(), $response, $augment);
+
+        // Assert
+        $this->assertStringNotContainsString(SynthesizedViolation::ERROR_KEY, (string)$response->getContent());
+        $this->assertStringContainsString('quantity => x', (string)$response->getContent());
     }
 
     public function testGivenConcatenatedErrorDetailWhenOnKernelResponseThenErrorIsSplitIntoSeparateObjects(): void

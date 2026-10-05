@@ -15,7 +15,7 @@ namespace Spryker\ApiPlatform\Contract\Coverage;
  * truth set, the annotations and the runtime recording — the response-attribute counterpart to how
  * {@see ApiOperation::key()} compares operations.
  */
-readonly class ResponseAttribute
+readonly class ResponseAttribute implements CoverageItem
 {
     protected const string KEY_SEPARATOR = '  ';
 

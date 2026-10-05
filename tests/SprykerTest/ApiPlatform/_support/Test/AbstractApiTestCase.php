@@ -18,10 +18,16 @@ use LogicException;
 use ReflectionProperty;
 use Spryker\ApiPlatform\Contract\Coverage\AnnotationCollector;
 use Spryker\ApiPlatform\Contract\Coverage\ApiOperation;
+use Spryker\ApiPlatform\Contract\Coverage\ContractCoverageBaseline;
+use Spryker\ApiPlatform\Contract\Coverage\ContractCoverageDimension;
+use Spryker\ApiPlatform\Contract\Coverage\ContractCoverageEnforcement;
 use Spryker\ApiPlatform\Contract\Coverage\ContractCoverageRunner;
+use Spryker\ApiPlatform\Contract\Coverage\IncludedRelationshipRecorder;
 use Spryker\ApiPlatform\Contract\Coverage\OperationCoverageRecorder;
+use Spryker\ApiPlatform\Contract\Coverage\ResponseAttribute;
 use Spryker\ApiPlatform\Contract\Coverage\ResponseAttributeRecorder;
 use Spryker\ApiPlatform\Contract\Coverage\UriTemplateNormalizer;
+use Spryker\ApiPlatform\Contract\Coverage\ValidationConstraint;
 use Spryker\ApiPlatform\Contract\Envelope\JsonApiEnvelopeRecorder;
 use Spryker\ApiPlatform\SprykerApiPlatformBundle;
 use Spryker\Service\Container\ContainerDelegator;
@@ -39,6 +45,7 @@ use Symfony\Component\EventDispatcher\EventDispatcherInterface;
 use Symfony\Component\HttpFoundation\Request;
 use Symfony\Component\HttpFoundation\RequestStack;
 use Symfony\Component\HttpFoundation\Response;
+use Symfony\Component\HttpKernel\Event\ExceptionEvent;
 use Symfony\Component\HttpKernel\Event\RequestEvent;
 use Symfony\Component\HttpKernel\Event\ResponseEvent;
 use Symfony\Component\HttpKernel\KernelEvents;
@@ -46,6 +53,7 @@ use Symfony\Component\HttpKernel\KernelInterface;
 use Symfony\Contracts\Service\ResetInterface;
 use Throwable;
 use TypeError;
+use WeakMap;
 
 /**
  * Base test case for API-Platform functional tests.
@@ -82,6 +90,8 @@ abstract class AbstractApiTestCase extends Unit
 
     protected const string SERVICE_ID_REQUEST_STACK = 'request_stack';
 
+    protected const string SERVICE_ID_EVENT_DISPATCHER = 'event_dispatcher';
+
     /**
      * @var array<\Symfony\Component\DependencyInjection\Compiler\CompilerPassInterface>
      */
@@ -102,6 +112,13 @@ abstract class AbstractApiTestCase extends Unit
      * firewall (8), so a request the firewall rejects is recorded too.
      */
     protected const int OPERATION_RECORDING_LISTENER_PRIORITY = 16;
+
+    /**
+     * Above the exception subscriber (256), which replaces the exception with the JSON:API error
+     * envelope, so the original exception - the validator's violation list, an access decision - is
+     * still visible.
+     */
+    protected const int EXCEPTION_RECORDING_LISTENER_PRIORITY = 512;
 
     protected const string API_OPERATION_NAME_ATTRIBUTE = '_api_operation_name';
 
@@ -125,6 +142,14 @@ abstract class AbstractApiTestCase extends Unit
      */
     protected static ?OperationCoverageRecorder $activeOperationRecorder = null;
 
+    /**
+     * The exception each in-flight request raised, keyed by the request's object id, until its
+     * response is recorded.
+     *
+     * @var array<int, \Throwable>
+     */
+    protected static array $pendingExceptions = [];
+
     protected ?JsonApiEnvelopeRecorder $envelopeRecorder = null;
 
     /**
@@ -138,6 +163,12 @@ abstract class AbstractApiTestCase extends Unit
      * no shared-kernel indirection to bridge.
      */
     protected ?ResponseAttributeRecorder $responseAttributeRecorder = null;
+
+    /**
+     * Records the relationships the current method asserted through `assertIncludedRelationship()`.
+     * Not static, for the same reason {@see AbstractApiTestCase::$responseAttributeRecorder} is not.
+     */
+    protected ?IncludedRelationshipRecorder $includedRelationshipRecorder = null;
 
     /**
      * Route-name → [verb, canonical uriTemplate] map per booted kernel, keyed by kernel object id.
@@ -155,9 +186,19 @@ abstract class AbstractApiTestCase extends Unit
     protected static array $schemaDeclaredResponses = [];
 
     /**
+     * @var array<string, array<string, array<int, array<string>>>>
+     */
+    protected static array $schemaDeclaredErrorCodes = [];
+
+    /**
      * @var array<string, array<string, array<string>>>
      */
     protected static array $schemaResponseAttributes = [];
+
+    /**
+     * @var array<string, array<string, array<string>>>
+     */
+    protected static array $schemaRequestAttributes = [];
 
     /**
      * @var array<string, array<string>>
@@ -170,9 +211,41 @@ abstract class AbstractApiTestCase extends Unit
     protected static array $schemaIdentifierDeclaringResourceShortNames = [];
 
     /**
+     * Keyed by API type, like {@see AbstractApiTestCase::$schemaDeclaredResponses}.
+     *
+     * @var array<string, \Spryker\ApiPlatform\Contract\Coverage\ContractCoverageEnforcement>
+     */
+    protected static array $contractCoverageEnforcements = [];
+
+    /**
+     * A comma-separated list of dimensions, or `all`, enforced on top of the application's
+     * `contract_coverage_enforced_dimensions` — the runtime twin of `api:contract:coverage --enforce`.
+     */
+    protected const string ENVIRONMENT_CONTRACT_COVERAGE_ENFORCE = 'API_CONTRACT_COVERAGE_ENFORCE';
+
+    protected const string PARAMETER_CONTRACT_COVERAGE_ENFORCED_DIMENSIONS = 'spryker_api_platform.contract_coverage_enforced_dimensions';
+
+    protected const string PARAMETER_CONTRACT_COVERAGE_BASELINE = 'spryker_api_platform.contract_coverage_baseline';
+
+    /**
+     * Keyed by API type, like {@see AbstractApiTestCase::$contractCoverageEnforcements}.
+     *
+     * @var array<string, \Spryker\ApiPlatform\Contract\Coverage\ContractCoverageBaseline>
+     */
+    protected static array $contractCoverageBaselines = [];
+
+    /**
      * @var array<string, \Symfony\Component\HttpKernel\KernelInterface>
      */
     protected static array $sharedKernels = [];
+
+    /**
+     * The dispatchers the recording listeners are installed on, so a shared kernel checked again on
+     * every boot never receives them twice.
+     *
+     * @var \WeakMap<\Symfony\Component\EventDispatcher\EventDispatcherInterface, true>|null
+     */
+    protected static ?WeakMap $recordingDispatchers = null;
 
     protected static int $bootCount = 0;
 
@@ -262,6 +335,8 @@ abstract class AbstractApiTestCase extends Unit
 
         static::$sharedKernels = [];
         static::$operationRouteMaps = [];
+        static::$contractCoverageEnforcements = [];
+        static::$contractCoverageBaselines = [];
         static::$bootCount = 0;
     }
 
@@ -272,6 +347,7 @@ abstract class AbstractApiTestCase extends Unit
             $this->booted = true;
 
             $this->registerKernelService();
+            $this->registerOperationRecordingListener($this->kernel);
             $this->applyServiceMocks();
 
             return $this->kernel;
@@ -327,14 +403,19 @@ abstract class AbstractApiTestCase extends Unit
     /**
      * Installs a kernel.request listener that records the operation each request matches, so the
      * runtime verifier ({@see assertPostConditions()}) can prove every declared operation was
-     * actually exercised. Registered once per freshly booted kernel; under `bootOnce` the listener
-     * outlives individual methods and records into the active method's recorder.
+     * actually exercised. Under `bootOnce` the listener outlives individual methods and records into
+     * the active method's recorder.
+     *
+     * It is installed on the dispatcher the kernel's HTTP kernel runs requests through, and checked
+     * again on every boot of the shared kernel. The container reset between methods rebuilds
+     * `event_dispatcher`, while the HTTP kernel stays the first one that was resolved: installing on
+     * the container's dispatcher of the first boot only reached requests when the first method sent
+     * one, and left every later method recording nothing when it did not.
      */
     protected function registerOperationRecordingListener(KernelInterface $kernel): void
     {
         try {
-            $container = $kernel->getContainer();
-            $dispatcher = $container->has('event_dispatcher') ? $container->get('event_dispatcher') : null;
+            $dispatcher = $this->resolveRequestEventDispatcher($kernel);
         } catch (Throwable $throwable) {
             $this->assertOperationRecordingOptional('the kernel exposes no container', $throwable);
 
@@ -346,6 +427,12 @@ abstract class AbstractApiTestCase extends Unit
 
             return;
         }
+
+        static::$recordingDispatchers ??= new WeakMap();
+        if (isset(static::$recordingDispatchers[$dispatcher])) {
+            return;
+        }
+        static::$recordingDispatchers[$dispatcher] = true;
 
         $dispatcher->addListener(
             KernelEvents::REQUEST,
@@ -372,37 +459,30 @@ abstract class AbstractApiTestCase extends Unit
         );
 
         $dispatcher->addListener(
-            KernelEvents::RESPONSE,
-            static function (ResponseEvent $event) use ($kernel): void {
-                $recorder = static::$activeOperationRecorder;
-                if ($recorder === null) {
+            KernelEvents::EXCEPTION,
+            static function (ExceptionEvent $event): void {
+                if (static::$activeOperationRecorder === null) {
                     return;
                 }
 
-                $routeName = $event->getRequest()->attributes->get(static::API_OPERATION_NAME_ATTRIBUTE);
-                if (!is_string($routeName)) {
-                    return;
-                }
-
-                $routeMap = static::operationRouteMap($kernel);
-                if (!isset($routeMap[$routeName])) {
-                    return;
-                }
-
-                [$verb, $uriTemplate] = $routeMap[$routeName];
-                $recorder->recordResponse($verb, $uriTemplate, $event->getResponse()->getStatusCode());
+                static::$pendingExceptions[spl_object_id($event->getRequest())] = $event->getThrowable();
             },
+            static::EXCEPTION_RECORDING_LISTENER_PRIORITY,
         );
 
         $dispatcher->addListener(
             KernelEvents::RESPONSE,
             static function (ResponseEvent $event) use ($kernel): void {
-                $envelopeRecorder = static::$activeEnvelopeRecorder;
-                if ($envelopeRecorder === null) {
+                $request = $event->getRequest();
+                $exception = static::$pendingExceptions[spl_object_id($request)] ?? null;
+                unset(static::$pendingExceptions[spl_object_id($request)]);
+
+                $recorder = static::$activeOperationRecorder;
+                if ($recorder === null) {
                     return;
                 }
 
-                $routeName = $event->getRequest()->attributes->get(static::API_OPERATION_NAME_ATTRIBUTE);
+                $routeName = $request->attributes->get(static::API_OPERATION_NAME_ATTRIBUTE);
                 if (!is_string($routeName)) {
                     return;
                 }
@@ -412,25 +492,50 @@ abstract class AbstractApiTestCase extends Unit
                     return;
                 }
 
-                $operation = $event->getRequest()->attributes->get(static::API_OPERATION_ATTRIBUTE);
-                if (!$operation instanceof Operation) {
-                    return;
-                }
-
-                $shortName = (string)$operation->getShortName();
-                if ($shortName === '') {
-                    return;
-                }
-
                 [$verb, $uriTemplate] = $routeMap[$routeName];
+                $apiOperation = new ApiOperation($verb, $uriTemplate);
 
-                $envelopeRecorder->record(
-                    new ApiOperation($verb, $uriTemplate),
-                    $event->getResponse(),
-                    $shortName,
+                $recorder->recordExchange(
+                    ContractCoverageFactory::createRecordedExchangeFactory()->create($apiOperation, $request, $event->getResponse(), $exception),
                 );
+
+                static::recordEnvelope($apiOperation, $event);
             },
         );
+    }
+
+    protected function resolveRequestEventDispatcher(KernelInterface $kernel): ?object
+    {
+        if ($kernel instanceof ApiTestKernel) {
+            $dispatcher = $kernel->getRequestEventDispatcher();
+            if ($dispatcher !== null) {
+                return $dispatcher;
+            }
+        }
+
+        $container = $kernel->getContainer();
+
+        return $container->has(static::SERVICE_ID_EVENT_DISPATCHER) ? $container->get(static::SERVICE_ID_EVENT_DISPATCHER) : null;
+    }
+
+    protected static function recordEnvelope(ApiOperation $apiOperation, ResponseEvent $event): void
+    {
+        $envelopeRecorder = static::$activeEnvelopeRecorder;
+        if ($envelopeRecorder === null) {
+            return;
+        }
+
+        $operation = $event->getRequest()->attributes->get(static::API_OPERATION_ATTRIBUTE);
+        if (!$operation instanceof Operation) {
+            return;
+        }
+
+        $shortName = (string)$operation->getShortName();
+        if ($shortName === '') {
+            return;
+        }
+
+        $envelopeRecorder->record($apiOperation, $event->getResponse(), $shortName);
     }
 
     /**
@@ -460,6 +565,22 @@ abstract class AbstractApiTestCase extends Unit
     }
 
     /**
+     * The error codes every generated resource declares per status. Static for the same reason
+     * {@see AbstractApiTestCase::schemaDeclaredResponses()} is: one reflection sweep per process.
+     *
+     * @return array<string, array<int, array<string>>>
+     */
+    protected function schemaDeclaredErrorCodes(): array
+    {
+        if (!isset(static::$schemaDeclaredErrorCodes[static::API_TYPE])) {
+            static::$schemaDeclaredErrorCodes[static::API_TYPE] = $this->createContractCoverageRunner()
+                ->declaredErrorCodes($this->getProjectRoot());
+        }
+
+        return static::$schemaDeclaredErrorCodes[static::API_TYPE];
+    }
+
+    /**
      * The schema-derived response attribute paths the given operations must carry, unioned and
      * de-duplicated. Static for the same reason {@see AbstractApiTestCase::schemaDeclaredResponses()}
      * is: one reflection sweep per process.
@@ -481,6 +602,88 @@ abstract class AbstractApiTestCase extends Unit
         }
 
         return array_values(array_unique($paths));
+    }
+
+    /**
+     * The coverage dimensions the runtime checks fail on: the application's
+     * `contract_coverage_enforced_dimensions`, read from the booted container so the gate and the
+     * tests share one switch, widened by {@see AbstractApiTestCase::ENVIRONMENT_CONTRACT_COVERAGE_ENFORCE}
+     * for a local preview.
+     *
+     * Read lazily from the kernel the test already booted: booting one here would run before the
+     * test registers its compiler passes. A method that never booted one dispatched no request, so
+     * only the environment applies to it.
+     */
+    protected function contractCoverageEnforcement(): ContractCoverageEnforcement
+    {
+        if (isset(static::$contractCoverageEnforcements[static::API_TYPE])) {
+            return static::$contractCoverageEnforcements[static::API_TYPE];
+        }
+
+        $environmentEnforcement = static::environmentContractCoverageEnforcement();
+        if ($this->kernel === null || !$this->booted) {
+            return $environmentEnforcement;
+        }
+
+        $container = $this->kernel->getContainer();
+        $configuredEnforcement = $container->hasParameter(static::PARAMETER_CONTRACT_COVERAGE_ENFORCED_DIMENSIONS)
+            ? ContractCoverageEnforcement::fromValues((array)$container->getParameter(static::PARAMETER_CONTRACT_COVERAGE_ENFORCED_DIMENSIONS))
+            : ContractCoverageEnforcement::none();
+
+        return static::$contractCoverageEnforcements[static::API_TYPE] = $configuredEnforcement->withAdditional($environmentEnforcement);
+    }
+
+    /**
+     * The items a known product bug keeps uncovered: the application's `contract_coverage_baseline`,
+     * read from the booted container like {@see AbstractApiTestCase::contractCoverageEnforcement()}.
+     */
+    protected function contractCoverageBaseline(): ContractCoverageBaseline
+    {
+        if (isset(static::$contractCoverageBaselines[static::API_TYPE])) {
+            return static::$contractCoverageBaselines[static::API_TYPE];
+        }
+
+        if ($this->kernel === null || !$this->booted) {
+            return ContractCoverageBaseline::none();
+        }
+
+        $container = $this->kernel->getContainer();
+        if (!$container->hasParameter(static::PARAMETER_CONTRACT_COVERAGE_BASELINE)) {
+            return static::$contractCoverageBaselines[static::API_TYPE] = ContractCoverageBaseline::none();
+        }
+
+        return static::$contractCoverageBaselines[static::API_TYPE] = ContractCoverageBaseline::fromConfiguration(
+            (array)$container->getParameter(static::PARAMETER_CONTRACT_COVERAGE_BASELINE),
+        );
+    }
+
+    protected static function environmentContractCoverageEnforcement(): ContractCoverageEnforcement
+    {
+        $value = getenv(static::ENVIRONMENT_CONTRACT_COVERAGE_ENFORCE);
+        if (!is_string($value) || trim($value) === '') {
+            return ContractCoverageEnforcement::none();
+        }
+
+        return ContractCoverageEnforcement::fromValues(array_values(array_filter(
+            array_map('trim', explode(',', $value)),
+            static fn (string $dimension): bool => $dimension !== '',
+        )));
+    }
+
+    /**
+     * The request attribute paths each input operation accepts. Static for the same reason
+     * {@see AbstractApiTestCase::schemaDeclaredResponses()} is: one reflection sweep per process.
+     *
+     * @return array<string, array<string>>
+     */
+    protected function schemaRequestAttributePaths(): array
+    {
+        if (!isset(static::$schemaRequestAttributes[static::API_TYPE])) {
+            static::$schemaRequestAttributes[static::API_TYPE] = $this->createContractCoverageRunner()
+                ->requestAttributes($this->getProjectRoot());
+        }
+
+        return static::$schemaRequestAttributes[static::API_TYPE];
     }
 
     /**
@@ -1041,14 +1244,16 @@ abstract class AbstractApiTestCase extends Unit
         $this->operationRecorder = null;
         $this->envelopeRecorder = null;
         $this->responseAttributeRecorder = null;
+        $this->includedRelationshipRecorder = null;
         static::$activeOperationRecorder = null;
         static::$activeEnvelopeRecorder = null;
+        static::$pendingExceptions = [];
 
         if (!method_exists($this, 'name')) {
             return;
         }
 
-        $this->declaredOperations = AnnotationCollector::operationsForMethod(static::class, $this->name());
+        $this->declaredOperations = AnnotationCollector::operationsForMethod(static::class, $this->runningTestMethodName());
         if ($this->declaredOperations === []) {
             return;
         }
@@ -1063,6 +1268,16 @@ abstract class AbstractApiTestCase extends Unit
         static::$activeEnvelopeRecorder = $this->envelopeRecorder;
 
         $this->responseAttributeRecorder = new ResponseAttributeRecorder();
+        $this->includedRelationshipRecorder = new IncludedRelationshipRecorder();
+    }
+
+    /**
+     * The running test method, which every per-test coverage claim is keyed by. PHPUnit offers no
+     * public accessor for it, so this is the one place that reads the internal one.
+     */
+    protected function runningTestMethodName(): string
+    {
+        return $this->name();
     }
 
     /**
@@ -1079,12 +1294,23 @@ abstract class AbstractApiTestCase extends Unit
             return;
         }
 
-        $verification = $this->operationRecorder->verify($this->declaredOperations, $this->schemaDeclaredResponses());
+        $verification = $this->operationRecorder->verify(
+            $this->declaredOperations,
+            $this->schemaDeclaredResponses(),
+            $this->schemaDeclaredErrorCodes(),
+        );
+        $enforcement = $this->contractCoverageEnforcement();
 
         $this->failOnUnverifiedDeclarations($verification->unverified);
         $this->failOnUndeclaredObservations($verification->undeclaredObservations);
+        if ($enforcement->isEnforced(ContractCoverageDimension::ERROR_CODES)) {
+            $this->failOnUndeclaredErrorCodes($verification->undeclaredErrorCodes);
+        }
+        $this->failOnUnverifiedValidations($enforcement->isEnforced(ContractCoverageDimension::VALIDATION_EVIDENCE));
         $this->failOnEnvelopeViolations($this->envelopeRecorder?->violations() ?? []);
         $this->failOnUnassertedResponseAttributes();
+        $this->failOnUnsentRequestAttributes();
+        $this->failOnUnprovenIncludes();
     }
 
     /**
@@ -1098,13 +1324,20 @@ abstract class AbstractApiTestCase extends Unit
             return;
         }
 
-        if (!AnnotationCollector::coversRequiredResponseAttributes(static::class, $this->name())) {
+        if (!AnnotationCollector::coversRequiredResponseAttributes(static::class, $this->runningTestMethodName())) {
             return;
         }
 
+        $this->failOnStaleNonEmptyArrayBaseline();
+
         $missing = $this->responseAttributeRecorder->verify(
             $this->schemaResponseAttributePaths($this->declaredSuccessDispatchKeys()),
+            $this->contractCoverageEnforcement()->isEnforced(ContractCoverageDimension::NON_EMPTY_ARRAYS),
         );
+        $assertedOnlyEmpty = array_values(array_intersect($missing, $this->responseAttributeRecorder->emptyAssertedPaths()));
+        $baselinedEmpty = array_values(array_filter($assertedOnlyEmpty, fn (string $path): bool => $this->isNonEmptyArrayBaselined($path)));
+        $missing = array_values(array_diff($missing, $baselinedEmpty));
+        $assertedOnlyEmpty = array_values(array_diff($assertedOnlyEmpty, $baselinedEmpty));
         if ($missing === []) {
             return;
         }
@@ -1113,10 +1346,66 @@ abstract class AbstractApiTestCase extends Unit
             '%s::%s is marked #[CoversApiRequiredResponseAttributes] but never asserted: %s. Assert each through '
             . 'assertResponseAttributes() against the fixture the test created; a value the server mints '
             . '(uuid, timestamps) goes through assertResponseAttributesPresent(). An attribute that is '
-            . 'legitimately absent here opts out with responseOptional: true in the .resource.yml.',
+            . 'legitimately absent here opts out with responseOptional: true in the .resource.yml.%s',
             static::class,
-            $this->name(),
+            $this->runningTestMethodName(),
             implode(', ', $missing),
+            $assertedOnlyEmpty === [] ? '' : sprintf(
+                ' Asserted only as an empty value: %s. Give the fixture one element, or declare items.required in '
+                . 'the .resource.yml so each element field is demanded instead.',
+                implode(', ', $assertedOnlyEmpty),
+            ),
+        ));
+    }
+
+    /**
+     * A baselined path asserted with a value only as `[]` or `null` is the known bug, not a gap.
+     */
+    protected function isNonEmptyArrayBaselined(string $path): bool
+    {
+        $baseline = $this->contractCoverageBaseline();
+
+        foreach ($this->declaredSuccessDispatchKeys() as $dispatchKey) {
+            if ($baseline->isBaselined(ContractCoverageDimension::NON_EMPTY_ARRAYS, (new ResponseAttribute($dispatchKey, $path))->key())) {
+                return true;
+            }
+        }
+
+        return false;
+    }
+
+    /**
+     * A test that asserted a baselined path with a real value has proven the bug fixed, so the entry
+     * has to leave the baseline before it excuses a regression.
+     */
+    protected function failOnStaleNonEmptyArrayBaseline(): void
+    {
+        if ($this->responseAttributeRecorder === null) {
+            return;
+        }
+
+        $baseline = $this->contractCoverageBaseline();
+        $stale = [];
+        foreach ($this->declaredSuccessDispatchKeys() as $dispatchKey) {
+            foreach ($this->schemaResponseAttributePaths([$dispatchKey]) as $path) {
+                $itemKey = (new ResponseAttribute($dispatchKey, $path))->key();
+                if ($baseline->isBaselined(ContractCoverageDimension::NON_EMPTY_ARRAYS, $itemKey) && $this->responseAttributeRecorder->isAssertedNonEmpty($path)) {
+                    $stale[] = $itemKey;
+                }
+            }
+        }
+
+        if ($stale === []) {
+            return;
+        }
+
+        $this->fail(sprintf(
+            '%s::%s asserted a value for %s, which contract_coverage_baseline lists under %s as always empty. '
+            . 'The bug is fixed: remove the entry from the baseline.',
+            static::class,
+            $this->runningTestMethodName(),
+            implode(', ', $stale),
+            ContractCoverageDimension::NON_EMPTY_ARRAYS->value,
         ));
     }
 
@@ -1133,7 +1422,7 @@ abstract class AbstractApiTestCase extends Unit
             "%s::%s produced responses that break the JSON:API envelope:\n- %s\nThe envelope is part of "
             . 'every resource\'s contract, so fix the response rather than the test.',
             static::class,
-            $this->name(),
+            $this->runningTestMethodName(),
             implode("\n- ", $violations),
         ));
     }
@@ -1152,7 +1441,7 @@ abstract class AbstractApiTestCase extends Unit
             . 'schema is the contract: either the schema is wrong (edit the .resource.yml and rerun '
             . 'vendor/bin/glue api:generate) or the implementation is. Decide and fix one of them.',
             static::class,
-            $this->name(),
+            $this->runningTestMethodName(),
             implode(', ', array_map(static fn ($operation): string => $operation->key(), $unverified)),
         ));
     }
@@ -1182,8 +1471,173 @@ abstract class AbstractApiTestCase extends Unit
             . 'of truth — either declare this response in the .resource.yml and rerun '
             . 'vendor/bin/glue api:generate, or fix the implementation to return a declared response.',
             static::class,
-            $this->name(),
+            $this->runningTestMethodName(),
             implode('; ', $details),
+        ));
+    }
+
+    /**
+     * Holds a `#[CoversApiIncludes]` test to both halves of each claim: a successful request asked
+     * for the relationship, and the test asserted it. A marker is a new declaration, so it is always
+     * verified.
+     */
+    protected function failOnUnprovenIncludes(): void
+    {
+        if ($this->operationRecorder === null) {
+            return;
+        }
+
+        $claims = AnnotationCollector::includeClaimsForMethod(static::class, $this->runningTestMethodName());
+        if ($claims === []) {
+            return;
+        }
+
+        $unproven = ContractCoverageFactory::createIncludeEvidenceVerifier()->verify(
+            $claims,
+            $this->operationRecorder->exchanges(),
+            $this->includedRelationshipRecorder?->assertedRelationshipNames() ?? [],
+        );
+        if ($unproven === []) {
+            return;
+        }
+
+        $this->fail(sprintf(
+            "%s::%s is marked #[CoversApiIncludes] but did not prove:\n- %s",
+            static::class,
+            $this->runningTestMethodName(),
+            implode("\n- ", $unproven),
+        ));
+    }
+
+    /**
+     * Holds a `#[CoversApiRequestAttributes]` test to what its successful requests sent. A marker is
+     * a new declaration, so it is always verified, whatever the application enforces.
+     */
+    protected function failOnUnsentRequestAttributes(): void
+    {
+        if ($this->operationRecorder === null) {
+            return;
+        }
+
+        $claims = AnnotationCollector::requestAttributeClaimsForMethod(static::class, $this->runningTestMethodName());
+        if ($claims === []) {
+            return;
+        }
+
+        $schemaPaths = $this->schemaRequestAttributePaths();
+        $expected = [];
+        foreach ($claims as $dispatchKey => $paths) {
+            $expected[$dispatchKey] = $paths === true ? ($schemaPaths[$dispatchKey] ?? []) : $paths;
+        }
+
+        $missing = ContractCoverageFactory::createRequestAttributeVerifier()->verify($expected, $this->operationRecorder->exchanges());
+        if ($missing === []) {
+            return;
+        }
+
+        $this->fail(sprintf(
+            '%s::%s is marked #[CoversApiRequestAttributes] but no successful request sent: %s. Send each one with a '
+            . 'real value; a property this operation ignores declares writableOn in the .resource.yml.',
+            static::class,
+            $this->runningTestMethodName(),
+            implode('; ', array_map(
+                static fn (string $dispatchKey, array $paths): string => sprintf('%s: %s', $dispatchKey, implode(', ', $paths)),
+                array_keys($missing),
+                $missing,
+            )),
+        ));
+    }
+
+    /**
+     * Holds each `#[CoversApiValidation]` of the method to the violations its requests raised: a
+     * 422 for another attribute, or for the declared attribute under another rule, does not prove
+     * the declared rule. A declaration the baseline lists is excused while unproven, and fails once
+     * a response proves it, whether or not the dimension is enforced.
+     */
+    protected function failOnUnverifiedValidations(bool $isEnforced = true): void
+    {
+        $declaredValidations = AnnotationCollector::validationsForMethod(static::class, $this->runningTestMethodName());
+        if ($declaredValidations === [] || $this->operationRecorder === null) {
+            return;
+        }
+
+        $baseline = $this->contractCoverageBaseline();
+        $baselinedKeys = array_values(array_filter(
+            array_map(static fn (ValidationConstraint $validation): string => $validation->key(), $declaredValidations),
+            static fn (string $key): bool => $baseline->isBaselined(ContractCoverageDimension::VALIDATION_EVIDENCE, $key),
+        ));
+        if (!$isEnforced && $baselinedKeys === []) {
+            return;
+        }
+
+        $exchanges = $this->operationRecorder->exchanges();
+        $verifier = ContractCoverageFactory::createValidationEvidenceVerifier();
+        $unverified = $verifier->verify($declaredValidations, $exchanges);
+        $unverifiedKeys = array_map(static fn (ValidationConstraint $validation): string => $validation->key(), $unverified);
+
+        $provenBaselinedKeys = array_values(array_diff($baselinedKeys, $unverifiedKeys));
+        if ($provenBaselinedKeys !== []) {
+            $this->fail(sprintf(
+                '%s::%s proved %s, which contract_coverage_baseline lists under %s. The bug is fixed: remove the entry from the baseline.',
+                static::class,
+                $this->runningTestMethodName(),
+                implode(', ', $provenBaselinedKeys),
+                ContractCoverageDimension::VALIDATION_EVIDENCE->value,
+            ));
+        }
+
+        $unverified = array_values(array_filter(
+            $unverified,
+            static fn (ValidationConstraint $validation): bool => !$baseline->isBaselined(ContractCoverageDimension::VALIDATION_EVIDENCE, $validation->key()),
+        ));
+        if (!$isEnforced || $unverified === []) {
+            return;
+        }
+
+        $this->fail(sprintf(
+            "%s::%s declares validations no response proved:\n- %s\nA declaration is proven by a 422 on its operation that reports "
+            . 'the declared rule for the declared attribute. Trigger exactly that rule, or declare the rule that fires.',
+            static::class,
+            $this->runningTestMethodName(),
+            implode("\n- ", array_map(
+                static fn (ValidationConstraint $validation): string => sprintf(
+                    "#[CoversApiValidation('%s', '%s', '%s')]: no 422 on %s %s reported a %s violation for %s (seen: %s)",
+                    $validation->resource,
+                    $validation->attribute,
+                    $validation->rule,
+                    strtoupper($validation->verb),
+                    $validation->uriTemplate,
+                    $validation->rule,
+                    $validation->attribute,
+                    implode(', ', $verifier->observedViolations($validation, $exchanges)) ?: 'nothing',
+                ),
+                $unverified,
+            )),
+        ));
+    }
+
+    protected function isValidationEvidenceEnforced(): bool
+    {
+        return $this->contractCoverageEnforcement()->isEnforced(ContractCoverageDimension::VALIDATION_EVIDENCE);
+    }
+
+    /**
+     * @param array<\Spryker\ApiPlatform\Contract\Coverage\ApiOperation> $undeclaredErrorCodes
+     */
+    protected function failOnUndeclaredErrorCodes(array $undeclaredErrorCodes): void
+    {
+        if ($undeclaredErrorCodes === []) {
+            return;
+        }
+
+        $this->fail(sprintf(
+            '%s::%s observed %s, which the resource schema does not declare for that status. A status that '
+            . 'declares codes lists all of them: add the code under openapiContext.responses.<status>.codes '
+            . '(or the resource\'s commonErrorCodes) in the .resource.yml and rerun vendor/bin/glue api:generate, '
+            . 'or fix the implementation to answer a declared code.',
+            static::class,
+            $this->runningTestMethodName(),
+            implode('; ', array_map(static fn (ApiOperation $operation): string => $operation->key(), $undeclaredErrorCodes)),
         ));
     }
 
@@ -1224,6 +1678,7 @@ abstract class AbstractApiTestCase extends Unit
         $this->operationRecorder = null;
         $this->envelopeRecorder = null;
         $this->responseAttributeRecorder = null;
+        $this->includedRelationshipRecorder = null;
         static::$activeOperationRecorder = null;
         static::$activeEnvelopeRecorder = null;
 

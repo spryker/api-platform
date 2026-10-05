@@ -74,12 +74,42 @@ class ResourceAttributeGenerator
     protected const string EXTRA_PROPERTY_DECLARED_RESPONSES = 'declaredResponses';
 
     /**
+     * @uses \Spryker\ApiPlatform\Contract\Coverage\SchemaTruthLoader::EXTRA_PROPERTY_DECLARED_ERROR_CODES
+     */
+    protected const string EXTRA_PROPERTY_DECLARED_ERROR_CODES = 'declaredErrorCodes';
+
+    /**
+     * @uses \Spryker\ApiPlatform\Contract\Coverage\SchemaTruthLoader::EXTRA_PROPERTY_ERROR_MAPPINGS
+     */
+    protected const string EXTRA_PROPERTY_ERROR_MAPPINGS = 'errorMappings';
+
+    protected const string SCHEMA_KEY_ERROR_MAPPINGS = 'errorMappings';
+
+    /**
+     * @uses \Spryker\ApiPlatform\Contract\Coverage\SchemaTruthLoader::EXTRA_PROPERTY_DECLARED_INCLUDES
+     */
+    protected const string EXTRA_PROPERTY_DECLARED_INCLUDES = 'declaredIncludes';
+
+    protected const string SCHEMA_KEY_INCLUDES = 'includes';
+
+    protected const string INCLUDE_KEY_RELATIONSHIP_NAME = 'relationshipName';
+
+    /**
+     * The operation types an include is demanded of when it names none: the reads.
+     *
+     * @var array<string>
+     */
+    protected const array DEFAULT_INCLUDED_ON_OPERATION_TYPES = ['Get', 'GetCollection'];
+
+    /**
      * @uses \Spryker\ApiPlatform\Contract\Coverage\SchemaTruthLoader::EXTRA_PROPERTY_INTERNAL
      */
     protected const string EXTRA_PROPERTY_INTERNAL = 'internal';
 
-    public function __construct(protected OpenApiOperationBuilder $openApiOperationBuilder)
-    {
+    public function __construct(
+        protected OpenApiOperationBuilder $openApiOperationBuilder,
+        protected DeclaredErrorCodeResolver $declaredErrorCodeResolver,
+    ) {
     }
 
     /**
@@ -208,6 +238,17 @@ class ResourceAttributeGenerator
             $extraProperties['includedSortPriority'] = (int)$schema['includedSortPriority'];
         }
 
+        // The Zed error mappings the resource answers, which the contract coverage holds against
+        // the codes its operations declare.
+        if (isset($schema[static::SCHEMA_KEY_ERROR_MAPPINGS]) && is_array($schema[static::SCHEMA_KEY_ERROR_MAPPINGS]) && $schema[static::SCHEMA_KEY_ERROR_MAPPINGS] !== []) {
+            $extraProperties[static::EXTRA_PROPERTY_ERROR_MAPPINGS] = array_values($schema[static::SCHEMA_KEY_ERROR_MAPPINGS]);
+        }
+
+        $declaredIncludes = $this->collectDeclaredIncludes($schema);
+        if ($declaredIncludes !== []) {
+            $extraProperties[static::EXTRA_PROPERTY_DECLARED_INCLUDES] = $declaredIncludes;
+        }
+
         if ($extraProperties !== []) {
             $attributeParts[] = sprintf('extraProperties: %s', $this->formatArrayParameter($extraProperties));
         }
@@ -226,6 +267,44 @@ class ResourceAttributeGenerator
         $content = $indent1 . implode(",\n" . $indent1, $attributeParts);
 
         return sprintf("#[ApiResource(\n%s,\n)]", $content);
+    }
+
+    /**
+     * Each declared include, mapped to the operation types of the resource it is demanded of: its
+     * `includedOn`, or else every read the resource declares. The contract coverage reads it back,
+     * because the relationships themselves never reach the generated class.
+     *
+     * @param array<string, mixed> $schema
+     *
+     * @return array<string, array<string>>
+     */
+    protected function collectDeclaredIncludes(array $schema): array
+    {
+        $includes = $schema[static::SCHEMA_KEY_INCLUDES] ?? null;
+        if (!is_array($includes) || $includes === []) {
+            return [];
+        }
+
+        $operationTypes = [];
+        foreach ((array)($schema['operations'] ?? []) as $key => $operation) {
+            $operationTypes[] = (string)(is_array($operation) ? ($operation['type'] ?? $key) : $key);
+        }
+        $readTypes = array_values(array_intersect(static::DEFAULT_INCLUDED_ON_OPERATION_TYPES, $operationTypes));
+
+        $declaredIncludes = [];
+        foreach ($includes as $include) {
+            $relationshipName = is_array($include) ? ($include[static::INCLUDE_KEY_RELATIONSHIP_NAME] ?? null) : null;
+            if (!is_string($relationshipName)) {
+                continue;
+            }
+
+            $includedOn = $include[SchemaKey::INCLUDED_ON] ?? null;
+            $declaredIncludes[$relationshipName] = is_array($includedOn)
+                ? array_values(array_map('strval', $includedOn))
+                : $readTypes;
+        }
+
+        return $declaredIncludes;
     }
 
     protected function extractShortClassName(string $fullyQualifiedClassName): string
@@ -488,6 +567,8 @@ class ResourceAttributeGenerator
             $baseParameters['validationContext'] = ['groups' => $validationGroups];
         }
 
+        $baseParameters = $this->addDeclaredErrorCodesExtraProperty($schema, $operation, $operationClass, $baseParameters);
+
         if (($operation[SchemaKey::OPEN_API] ?? null) === false) {
             $baseParameters['openapi'] = false;
             $baseParameters['extraProperties'] = $this->addDeclaredResponsesExtraProperty(
@@ -548,6 +629,40 @@ class ResourceAttributeGenerator
         $extraProperties[static::EXTRA_PROPERTY_DECLARED_RESPONSES] = array_values(array_unique($statuses));
 
         return $extraProperties;
+    }
+
+    /**
+     * The codes each error status declares ride in `extraProperties` on every operation, hidden or
+     * not: `OpenApi\Model\Response` has no slot a generated attribute could fill with them, and the
+     * contract coverage reads them back from there -
+     * {@see \Spryker\ApiPlatform\Contract\Coverage\SchemaTruthLoader::declaredErrorCodes()}.
+     *
+     * @param array<string, mixed> $schema
+     * @param array<string, mixed> $operation
+     * @param array<string, mixed> $parameters
+     *
+     * @return array<string, mixed>
+     */
+    protected function addDeclaredErrorCodesExtraProperty(array $schema, array $operation, string $operationClass, array $parameters): array
+    {
+        $declaredErrorCodes = $this->declaredErrorCodeResolver->resolve(
+            $schema,
+            $operation,
+            sprintf('%s %s (%s)', (string)($schema[SchemaKey::SHORT_NAME] ?? ''), $operationClass, (string)($schema[SchemaKey::SOURCE_FILE] ?? '')),
+        );
+
+        if ($declaredErrorCodes === []) {
+            return $parameters;
+        }
+
+        $extraProperties = is_array($parameters['extraProperties'] ?? null) ? $parameters['extraProperties'] : [];
+        $extraProperties[static::EXTRA_PROPERTY_DECLARED_ERROR_CODES] = array_map(
+            static fn (array $codes): array => array_map('strval', array_keys($codes)),
+            $declaredErrorCodes,
+        );
+        $parameters['extraProperties'] = $extraProperties;
+
+        return $parameters;
     }
 
     /**

@@ -34,6 +34,7 @@ use Spryker\ApiPlatform\EventSubscriber\PathNormalizationRequestSubscriber;
 use Spryker\ApiPlatform\Generator\CanonicalObjectRegistry;
 use Spryker\ApiPlatform\Generator\ClassGenerator;
 use Spryker\ApiPlatform\Generator\ConstraintFormatter;
+use Spryker\ApiPlatform\Generator\DeclaredErrorCodeResolver;
 use Spryker\ApiPlatform\Generator\FqcnConstraintResolver;
 use Spryker\ApiPlatform\Generator\MediaType\MediaTypeFormatterRegistry;
 use Spryker\ApiPlatform\Generator\NestedObjectClassGenerator;
@@ -99,7 +100,10 @@ use Spryker\ApiPlatform\Schema\Validation\Merger\ValidationSchemaMerger;
 use Spryker\ApiPlatform\Schema\Validation\Merger\ValidationSchemaMergerInterface;
 use Spryker\ApiPlatform\Schema\Validator\PreMergeValidator;
 use Spryker\ApiPlatform\Schema\Validator\PreMergeValidatorInterface;
+use Spryker\ApiPlatform\Schema\Validator\Rules\ErrorCodesValidationRule;
+use Spryker\ApiPlatform\Schema\Validator\Rules\ErrorMappingsValidationRule;
 use Spryker\ApiPlatform\Schema\Validator\Rules\MergeValidationRule;
+use Spryker\ApiPlatform\Schema\Validator\Rules\OperationTypeReferenceValidationRule;
 use Spryker\ApiPlatform\Schema\Validator\Rules\PaginationValidationRule;
 use Spryker\ApiPlatform\Schema\Validator\Rules\ProcessorValidationRule;
 use Spryker\ApiPlatform\Schema\Validator\Rules\PropertyValidationRule;
@@ -211,6 +215,15 @@ return static function (ContainerConfigurator $container): void {
     $services->set(SecurityExpressionValidationRule::class)
         ->tag('spryker_api_platform.validation_rule.post_merge');
 
+    $services->set(ErrorCodesValidationRule::class)
+        ->tag('spryker_api_platform.validation_rule.post_merge');
+
+    $services->set(ErrorMappingsValidationRule::class)
+        ->tag('spryker_api_platform.validation_rule.post_merge');
+
+    $services->set(OperationTypeReferenceValidationRule::class)
+        ->tag('spryker_api_platform.validation_rule.post_merge');
+
     $services->set(RelationshipValidationRule::class)
         ->tag('spryker_api_platform.validation_rule.post_merge');
 
@@ -256,6 +269,9 @@ return static function (ContainerConfigurator $container): void {
     $services->set(OpenApiOperationBuilder::class)
         ->arg('$formatterRegistry', service(MediaTypeFormatterRegistry::class))
         ->arg('$apiPlatformFormats', param('api_platform.formats'));
+
+    // Generator: Declared Error Code Resolver
+    $services->set(DeclaredErrorCodeResolver::class);
 
     // Generator: Resource Attribute Generator
     $services->set(ResourceAttributeGenerator::class);

@@ -80,6 +80,16 @@ class OpenApiOperationBuilder
 
     protected const string EXAMPLE_KEY_VALUE = 'value';
 
+    protected const string MEDIA_TYPE_JSON_API = 'application/vnd.api+json';
+
+    protected const string ERROR_DOCUMENT_KEY_ERRORS = 'errors';
+
+    protected const string ERROR_KEY_CODE = 'code';
+
+    protected const string ERROR_KEY_STATUS = 'status';
+
+    protected const string ERROR_KEY_DETAIL = 'detail';
+
     /**
      * @var array<string>
      */
@@ -96,6 +106,7 @@ class OpenApiOperationBuilder
     public function __construct(
         protected readonly MediaTypeFormatterRegistry $formatterRegistry,
         protected readonly array $apiPlatformFormats,
+        protected readonly DeclaredErrorCodeResolver $declaredErrorCodeResolver,
     ) {
     }
 
@@ -132,7 +143,15 @@ class OpenApiOperationBuilder
             $operationParts[] = $parameters;
         }
 
-        $responses = $this->formatResponses($openapiContext[static::CONTEXT_KEY_RESPONSES] ?? null, $indentLevel);
+        $responses = $this->formatResponses(
+            $openapiContext[static::CONTEXT_KEY_RESPONSES] ?? null,
+            $indentLevel,
+            $this->declaredErrorCodeResolver->resolve(
+                $parsedSchema,
+                $operation,
+                $this->describeOperation($parsedSchema, $operation, $operationType),
+            ),
+        );
 
         if ($responses !== '') {
             $operationParts[] = $responses;
@@ -285,9 +304,12 @@ class OpenApiOperationBuilder
 
     /**
      * The schema's declared responses are the API contract: they drive both the OpenAPI document and
-     * the contract coverage gate, so every declared status is carried through verbatim.
+     * the contract coverage gate, so every declared status is carried through verbatim. A status that
+     * declares error codes also publishes one JSON:API error example per code.
+     *
+     * @param array<int, array<string, string>> $declaredErrorCodes Status => code => description.
      */
-    protected function formatResponses(mixed $responses, int $indentLevel): string
+    protected function formatResponses(mixed $responses, int $indentLevel, array $declaredErrorCodes = []): string
     {
         if (!is_array($responses)) {
             return '';
@@ -303,10 +325,49 @@ class OpenApiOperationBuilder
             }
 
             $statusKey = is_int($status) ? (string)$status : sprintf("'%s'", addslashes((string)$status));
+            $errorCodes = $declaredErrorCodes[(int)$status] ?? [];
+
+            if ($errorCodes !== []) {
+                $responseParts[] = sprintf(
+                    "%s => new Response(description: '%s', content: %s)",
+                    $statusKey,
+                    $this->escapeSingleQuoted($description),
+                    $this->formatErrorCodeExamples((int)$status, $errorCodes),
+                );
+
+                continue;
+            }
+
             $responseParts[] = sprintf("%s => new Response(description: '%s')", $statusKey, $this->escapeSingleQuoted($description));
         }
 
         return $this->formatNamedList(static::CONTEXT_KEY_RESPONSES, $responseParts, $indentLevel);
+    }
+
+    /**
+     * @param array<string, string> $errorCodes Code => description.
+     */
+    protected function formatErrorCodeExamples(int $status, array $errorCodes): string
+    {
+        $examples = [];
+
+        foreach ($errorCodes as $code => $description) {
+            $examples[(string)$code] = [
+                static::EXAMPLE_KEY_SUMMARY => $description,
+                static::EXAMPLE_KEY_VALUE => [
+                    static::ERROR_DOCUMENT_KEY_ERRORS => [[
+                        static::ERROR_KEY_CODE => (string)$code,
+                        static::ERROR_KEY_STATUS => $status,
+                        static::ERROR_KEY_DETAIL => $description,
+                    ]],
+                ],
+            ];
+        }
+
+        return sprintf(
+            'new ArrayObject(%s)',
+            $this->formatOpenapiContextArray([static::MEDIA_TYPE_JSON_API => [static::PARAMETER_KEY_EXAMPLES => $examples]]),
+        );
     }
 
     /**
@@ -439,7 +500,7 @@ class OpenApiOperationBuilder
         }
 
         if (is_string($value)) {
-            return sprintf("'%s'", addslashes($value));
+            return sprintf("'%s'", $this->escapeSingleQuoted($value));
         }
 
         if (is_bool($value)) {
@@ -471,7 +532,7 @@ class OpenApiOperationBuilder
         $parts = [];
 
         foreach ($array as $key => $value) {
-            $parts[] = sprintf("'%s' => %s", $key, $this->formatOpenapiContextValue($value));
+            $parts[] = sprintf("'%s' => %s", $this->escapeSingleQuoted((string)$key), $this->formatOpenapiContextValue($value));
         }
 
         return '[' . implode(', ', $parts) . ']';

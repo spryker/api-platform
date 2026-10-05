@@ -78,4 +78,11 @@ class RequestAttribute
     public const string PAGINATION = '_spryker_api_platform_pagination';
 
     public const string CUSTOMER_ACCESS_DENIED = '_customer_access_denied';
+
+    /**
+     * The constraints the synthesized validation errors of the response stand for.
+     *
+     * @see \Spryker\ApiPlatform\Validation\SynthesizedViolation
+     */
+    public const string SYNTHESIZED_VIOLATIONS = '_spryker_synthesized_violations';
 }

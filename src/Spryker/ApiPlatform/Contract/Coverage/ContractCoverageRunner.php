@@ -37,6 +37,8 @@ class ContractCoverageRunner
 
     protected const string TEST_FILE_SUFFIX = 'Test.php';
 
+    protected const string PATTERN_TRAILING_STATUS = '/ \d{3}$/';
+
     /**
      * @param string $apiType The API type this run measures, in any casing — `Storefront`,
      *   `Backend`. It selects the generated resource namespace and directory and the test path
@@ -45,6 +47,11 @@ class ContractCoverageRunner
      *   enforces every generated resource of this API type. Owned by the application's
      *   `spryker_api_platform` package configuration, which is per application and therefore
      *   already per API type.
+     * @param \Spryker\ApiPlatform\Contract\Coverage\ContractCoverageEnforcement $enforcement The dimensions beyond
+     *   operations, validation rules and response attributes whose gaps fail the run, from the
+     *   application's `contract_coverage_enforced_dimensions`.
+     * @param \Spryker\ApiPlatform\Contract\Coverage\ContractCoverageBaseline $baseline The items known product bugs keep
+     *   uncovered, from the application's `contract_coverage_baseline`.
      */
     public function __construct(
         protected readonly string $apiType,
@@ -56,14 +63,23 @@ class ContractCoverageRunner
         protected readonly ResourceNameMatcher $resourceNameMatcher,
         protected readonly SchemaSourceResolver $schemaSourceResolver,
         protected readonly DeclaredClassNameResolver $declaredClassNameResolver,
+        protected readonly ContractCoverageEnforcement $enforcement,
+        protected readonly ErrorMappingResolver $errorMappingResolver,
+        protected readonly ErrorMappingDiscovery $errorMappingDiscovery,
+        protected readonly ContractCoverageBaseline $baseline,
     ) {
     }
 
     /**
      * @param array<string> $moduleFilters Module or resource names; empty runs over every in-scope resource.
+     * @param \Spryker\ApiPlatform\Contract\Coverage\ContractCoverageEnforcement|null $additionalEnforcement Widens the
+     *   configured enforcement for this run only, e.g. to preview a dimension before switching it on.
      */
-    public function run(string $applicationRoot, array $moduleFilters = []): ContractCoverageResult
-    {
+    public function run(
+        string $applicationRoot,
+        array $moduleFilters = [],
+        ?ContractCoverageEnforcement $additionalEnforcement = null,
+    ): ContractCoverageResult {
         $this->assertResourcesGenerated($applicationRoot);
 
         $classesByShortName = $this->groupResourceClassesByShortName($this->generatedResourcePath($applicationRoot));
@@ -78,7 +94,15 @@ class ContractCoverageRunner
         );
 
         $scope = $this->scopeResolver->resolve($truthByResource, $selectedResources);
-        $report = $this->coverageCalculator->calculate($scope->enforcedTruth, $scope->existenceTruth, $annotations);
+        $report = $this->applyBaseline(
+            $this->coverageCalculator->calculate(
+                $scope->enforcedTruth,
+                $scope->existenceTruth,
+                $annotations,
+                $this->resolveErrorMappingEntries($scope->enforcedTruth),
+            ),
+            $moduleFilters === [],
+        );
 
         return new ContractCoverageResult(
             $report,
@@ -86,10 +110,112 @@ class ContractCoverageRunner
             $selectedResources,
             $unmatchedFilters,
             count($truthByResource),
+            $additionalEnforcement === null ? $this->enforcement : $this->enforcement->withAdditional($additionalEnforcement),
             $this->collectSchemaDefects($truthByResource, $classesByShortName, $selectedResources, $applicationRoot),
             $annotations->operationDeclarers,
             $this->collectUnknownExclusions(array_keys($classesByShortName)),
+            $this->collectEntryDeclarers($report, $annotations),
+            $this->collectUnregisteredErrorMappings($classesByShortName, $selectedResources, $scope->existenceTruth, $applicationRoot),
         );
+    }
+
+    /**
+     * A run narrowed with `--module` sees only part of the gaps, so it cannot tell an entry naming no
+     * gap from one naming a gap of another resource; only a covered item proves an entry stale there.
+     */
+    protected function applyBaseline(CoverageReport $report, bool $isFullScope): CoverageReport
+    {
+        $dimensionCoverages = [];
+        foreach (ContractCoverageDimension::cases() as $dimension) {
+            $dimensionCoverages[$dimension->value] = $this->baseline->apply($dimension, $report->dimensionCoverage($dimension->value), $isFullScope);
+        }
+
+        return $report->withDimensionCoverages($dimensionCoverages);
+    }
+
+    /**
+     * @return array<string, array<\Spryker\ApiPlatform\Contract\Coverage\ErrorMappingEntry>>
+     */
+    protected function resolveErrorMappingEntries(TruthSet $enforcedTruth): array
+    {
+        $entries = [];
+
+        foreach (array_keys($enforcedTruth->errorMappingRegistrations) as $source) {
+            $entries[$source] = $this->errorMappingResolver->resolve($source);
+        }
+
+        return $entries;
+    }
+
+    /**
+     * @param array<string, array<class-string>> $classesByShortName
+     * @param array<string> $selectedResources
+     *
+     * @return array<string>
+     */
+    protected function collectUnregisteredErrorMappings(
+        array $classesByShortName,
+        array $selectedResources,
+        TruthSet $existenceTruth,
+        string $applicationRoot,
+    ): array {
+        $schemaFiles = [];
+        foreach ($selectedResources as $resource) {
+            $schemaFiles = array_merge($schemaFiles, $this->schemaSourceResolver->schemaFilesForAll($classesByShortName[$resource] ?? []));
+        }
+
+        return $this->errorMappingDiscovery->unregisteredMappings(
+            array_values(array_unique($schemaFiles)),
+            array_keys($existenceTruth->errorMappingRegistrations),
+        );
+    }
+
+    /**
+     * The tests that already declare what an uncovered entry narrows, which is where its claim
+     * belongs: an uncovered code goes on a test of its status.
+     *
+     * @return array<string, array<string>>
+     */
+    protected function collectEntryDeclarers(CoverageReport $report, CollectedAnnotations $annotations): array
+    {
+        $entryDeclarers = [];
+
+        foreach ($report->dimensionCoverage(ContractCoverageDimension::ERROR_CODES->value)->uncovered as $errorCodeOperation) {
+            if (!$errorCodeOperation instanceof ApiOperation) {
+                continue;
+            }
+
+            $declarers = $annotations->errorResponseDeclarers[$errorCodeOperation->withoutFacets()->key()] ?? [];
+            if ($declarers !== []) {
+                $entryDeclarers[$errorCodeOperation->key()] = $declarers;
+            }
+        }
+
+        $errorDeclarersByDispatchKey = [];
+        foreach ($annotations->errorResponseDeclarers as $errorResponseKey => $declarers) {
+            $dispatchKey = (string)preg_replace(static::PATTERN_TRAILING_STATUS, '', $errorResponseKey);
+            $errorDeclarersByDispatchKey[$dispatchKey] = array_merge($errorDeclarersByDispatchKey[$dispatchKey] ?? [], $declarers);
+        }
+
+        foreach ($report->dimensionCoverage(ContractCoverageDimension::OWNERSHIP_SCENARIOS->value)->uncovered as $scenarioOperation) {
+            if ($scenarioOperation instanceof ApiOperation && isset($errorDeclarersByDispatchKey[$scenarioOperation->dispatchKey()])) {
+                $entryDeclarers[$scenarioOperation->key()] = array_values(array_unique($errorDeclarersByDispatchKey[$scenarioOperation->dispatchKey()]));
+            }
+        }
+
+        foreach ($report->dimensionCoverage(ContractCoverageDimension::INCLUDES->value)->uncovered as $includeRelationship) {
+            if ($includeRelationship instanceof IncludeRelationship && isset($annotations->operationDeclarers[$includeRelationship->dispatchKey])) {
+                $entryDeclarers[$includeRelationship->key()] = $annotations->operationDeclarers[$includeRelationship->dispatchKey];
+            }
+        }
+
+        foreach ($report->dimensionCoverage(ContractCoverageDimension::REQUEST_ATTRIBUTES->value)->uncovered as $requestAttribute) {
+            if ($requestAttribute instanceof RequestAttribute && isset($annotations->operationDeclarers[$requestAttribute->dispatchKey])) {
+                $entryDeclarers[$requestAttribute->key()] = $annotations->operationDeclarers[$requestAttribute->dispatchKey];
+            }
+        }
+
+        return $entryDeclarers;
     }
 
     /**
@@ -167,6 +293,26 @@ class ContractCoverageRunner
     }
 
     /**
+     * The error codes every generated resource declares per status, keyed by dispatch key. Spans all
+     * resources rather than the enforced selection, like
+     * {@see ContractCoverageRunner::declaredResponses()}.
+     *
+     * @return array<string, array<int, array<string>>>
+     */
+    public function declaredErrorCodes(string $applicationRoot): array
+    {
+        $declaredErrorCodes = [];
+
+        $classesByShortName = $this->groupResourceClassesByShortName($this->generatedResourcePath($applicationRoot));
+
+        foreach ($this->loadTruthFromClasses($classesByShortName) as $truthSet) {
+            $declaredErrorCodes = TruthSet::mergeDeclaredErrorCodes($declaredErrorCodes, $truthSet->declaredErrorCodes);
+        }
+
+        return $declaredErrorCodes;
+    }
+
+    /**
      * The schema-derived response attribute paths of every generated resource, unioned per dispatch
      * key. Spans all resources rather than the enforced selection, like
      * {@see ContractCoverageRunner::declaredResponses()}.
@@ -182,6 +328,31 @@ class ContractCoverageRunner
         foreach ($this->loadTruthFromClasses($classesByShortName) as $truthSet) {
             foreach ($truthSet->responseAttributes as $responseAttribute) {
                 $pathsByDispatchKey[$responseAttribute->dispatchKey][] = $responseAttribute->path;
+            }
+        }
+
+        return array_map(
+            static fn (array $paths): array => array_values(array_unique($paths)),
+            $pathsByDispatchKey,
+        );
+    }
+
+    /**
+     * The request attribute paths each input operation of every generated resource accepts, keyed
+     * by dispatch key. Spans all resources rather than the enforced selection, like
+     * {@see ContractCoverageRunner::declaredResponses()}.
+     *
+     * @return array<string, array<string>>
+     */
+    public function requestAttributes(string $applicationRoot): array
+    {
+        $pathsByDispatchKey = [];
+
+        $classesByShortName = $this->groupResourceClassesByShortName($this->generatedResourcePath($applicationRoot));
+
+        foreach ($this->loadTruthFromClasses($classesByShortName) as $truthSet) {
+            foreach ($truthSet->requestAttributes as $requestAttribute) {
+                $pathsByDispatchKey[$requestAttribute->dispatchKey][] = $requestAttribute->path;
             }
         }
 

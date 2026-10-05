@@ -28,6 +28,18 @@ class ContractCoverageConsoleRenderer
 
     protected const string COUNTER_FORMAT_SCHEMA_DEFECTS = '  %-19s %5d without declared responses';
 
+    protected const string COUNTER_FORMAT_DIMENSION = '  %-19s %5s covered · %d uncovered · %d stale%s  (%s)';
+
+    protected const string COUNTER_FORMAT_RUNTIME_ONLY_DIMENSION = '  %-19s runtime-only%s  (%s)';
+
+    protected const string COUNTER_FORMAT_BASELINED = ' · %d baselined';
+
+    protected const string COUNTER_FORMAT_ARRAYS_WITHOUT_REQUIRED_ITEMS = '  %s %d (element shape not demanded)';
+
+    protected const string ENFORCEMENT_ENFORCED = 'enforced';
+
+    protected const string ENFORCEMENT_REPORTED = 'reported';
+
     protected const string DECLARER_FORMAT = '      covered by: %s';
 
     protected const string NO_DECLARER_PLACEHOLDER = '(no test declares this operation yet)';
@@ -53,8 +65,10 @@ class ContractCoverageConsoleRenderer
             ...$this->renderSections($summary->warningSections),
             ...$this->renderSections(
                 $summary->gapSections,
-                $this->declarersByResponseAttributeKey($summary, $result->operationDeclarers),
+                [...$result->entryDeclarers, ...$this->declarersByResponseAttributeKey($summary, $result->operationDeclarers)],
             ),
+            ...$this->renderReportedSections($summary->reportedSections, $result->entryDeclarers),
+            ...$this->renderBaselinedSections($summary->baselinedSections),
         ];
 
         if ($verbose) {
@@ -121,7 +135,70 @@ class ContractCoverageConsoleRenderer
                 $summary->uncoveredResponseAttributeCount,
             ),
             sprintf(static::COUNTER_FORMAT_SCHEMA_DEFECTS, 'Schema defects', $summary->schemaDefectCount),
+            ...$this->renderDimensionCounters($summary),
+            sprintf(static::COUNTER_FORMAT_ARRAYS_WITHOUT_REQUIRED_ITEMS, 'Arrays without items.required', $summary->arraysWithoutRequiredItemsCount),
         ];
+    }
+
+    /**
+     * @return array<string>
+     */
+    protected function renderDimensionCounters(ContractCoverageSummary $summary): array
+    {
+        $lines = [];
+
+        foreach ($summary->dimensionCounters as $counter) {
+            $enforcement = $counter['isEnforced'] ? static::ENFORCEMENT_ENFORCED : static::ENFORCEMENT_REPORTED;
+
+            $baselined = $counter['baselined'] === 0 ? '' : sprintf(static::COUNTER_FORMAT_BASELINED, $counter['baselined']);
+
+            if ($counter['isRuntimeOnly']) {
+                $lines[] = sprintf(static::COUNTER_FORMAT_RUNTIME_ONLY_DIMENSION, $counter['label'], $baselined, $enforcement);
+
+                continue;
+            }
+
+            $lines[] = sprintf(
+                static::COUNTER_FORMAT_DIMENSION,
+                $counter['label'],
+                sprintf('%d/%d', $counter['covered'], $counter['covered'] + $counter['uncovered'] + $counter['baselined']),
+                $counter['uncovered'],
+                $counter['stale'],
+                $baselined,
+                $enforcement,
+            );
+        }
+
+        return $lines;
+    }
+
+    /**
+     * @param array<string, array<string>> $reportedSections
+     * @param array<string, array<string>> $declarersByKey
+     *
+     * @return array<string>
+     */
+    protected function renderReportedSections(array $reportedSections, array $declarersByKey): array
+    {
+        if ($reportedSections === []) {
+            return [];
+        }
+
+        return ['', ContractCoverageSummary::HEADING_REPORTED_SECTIONS, ...$this->renderSections($reportedSections, $declarersByKey)];
+    }
+
+    /**
+     * @param array<string, array<string>> $baselinedSections
+     *
+     * @return array<string>
+     */
+    protected function renderBaselinedSections(array $baselinedSections): array
+    {
+        if ($baselinedSections === []) {
+            return [];
+        }
+
+        return ['', ContractCoverageSummary::HEADING_BASELINED_SECTIONS, ...$this->renderSections($baselinedSections)];
     }
 
     /**

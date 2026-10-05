@@ -12,8 +12,12 @@ namespace Spryker\ApiPlatform\Validation;
 use ReflectionClass;
 use ReflectionNamedType;
 use ReflectionProperty;
+use Spryker\ApiPlatform\Validation\Trait\SynthesizedViolationTrait;
 use Spryker\ApiPlatform\Validation\Trait\ValidationMessageTranslationTrait;
 use Symfony\Component\HttpFoundation\Response;
+use Symfony\Component\Validator\Constraints\IsTrue;
+use Symfony\Component\Validator\Constraints\NotBlank;
+use Symfony\Component\Validator\Constraints\NotNull;
 use Symfony\Contracts\Translation\TranslatorInterface;
 
 /**
@@ -25,6 +29,7 @@ use Symfony\Contracts\Translation\TranslatorInterface;
  */
 class BoolValidationErrorAugmenter
 {
+    use SynthesizedViolationTrait;
     use ValidationMessageTranslationTrait;
 
     protected const string ERROR_CODE_VALIDATION = '901';
@@ -33,17 +38,20 @@ class BoolValidationErrorAugmenter
 
     protected const string MESSAGE_TEMPLATE_SHOULD_BE_TRUE = 'This value should be true.';
 
-    public function __construct(protected TranslatorInterface $translator)
-    {
+    public function __construct(
+        protected TranslatorInterface $translator,
+        protected ValidationConstraintReader $constraintReader = new ValidationConstraintReader(),
+    ) {
     }
 
     /**
      * @param array<string, mixed> $rawAttributes
      * @param array<int, array<string, mixed>> $errors
+     * @param array<string> $groups The active validation groups; empty means all.
      *
      * @return array<int, array<string, mixed>>
      */
-    public function augment(string $resourceClass, array $rawAttributes, array $errors): array
+    public function augment(string $resourceClass, array $rawAttributes, array $errors, array $groups = []): array
     {
         if (!class_exists($resourceClass)) {
             return $errors;
@@ -74,7 +82,11 @@ class BoolValidationErrorAugmenter
                 $detail = sprintf('%s => %s', $fieldName, $this->translateValidationMessage(static::MESSAGE_TEMPLATE_FIELD_MISSING));
 
                 if (!isset($existingDetails[$detail])) {
-                    $errors[] = ['detail' => $detail, 'code' => static::ERROR_CODE_VALIDATION, 'status' => Response::HTTP_UNPROCESSABLE_ENTITY];
+                    $errors[] = $this->withSynthesizedViolations(
+                        ['detail' => $detail, 'code' => static::ERROR_CODE_VALIDATION, 'status' => Response::HTTP_UNPROCESSABLE_ENTITY],
+                        $fieldName,
+                        $this->declaredConstraintsViolatedBy($resourceClass, $fieldName, null, $groups),
+                    );
                     $existingDetails[$detail] = true;
                 }
 
@@ -85,13 +97,46 @@ class BoolValidationErrorAugmenter
                 $detail = sprintf('%s => %s', $fieldName, $this->translateValidationMessage(static::MESSAGE_TEMPLATE_SHOULD_BE_TRUE));
 
                 if (!isset($existingDetails[$detail])) {
-                    $errors[] = ['detail' => $detail, 'code' => static::ERROR_CODE_VALIDATION, 'status' => Response::HTTP_UNPROCESSABLE_ENTITY];
+                    $errors[] = $this->withSynthesizedViolations(
+                        ['detail' => $detail, 'code' => static::ERROR_CODE_VALIDATION, 'status' => Response::HTTP_UNPROCESSABLE_ENTITY],
+                        $fieldName,
+                        $this->declaredConstraintsViolatedBy($resourceClass, $fieldName, $rawAttributes[$fieldName], $groups),
+                    );
                     $existingDetails[$detail] = true;
                 }
             }
         }
 
         return $errors;
+    }
+
+    /**
+     * The presence constraints the property declares in the active groups that the submitted value
+     * fails; an absent field is judged as null. The synthesized error stands for exactly these, and
+     * for nothing the property does not declare.
+     *
+     * @param array<string> $groups
+     *
+     * @return array<string>
+     */
+    protected function declaredConstraintsViolatedBy(string $resourceClass, string $fieldName, ?string $submittedValue, array $groups): array
+    {
+        $violated = [];
+
+        foreach ($this->constraintReader->getConstraintsForGroups($resourceClass, $fieldName, $groups) as $constraint) {
+            $isViolated = match (true) {
+                $constraint instanceof NotNull => $submittedValue === null,
+                $constraint instanceof NotBlank => $submittedValue !== null || !$constraint->allowNull,
+                $constraint instanceof IsTrue => $submittedValue !== null,
+                default => false,
+            };
+
+            if ($isViolated) {
+                $violated[] = $this->constraintShortName($constraint);
+            }
+        }
+
+        return $violated;
     }
 
     protected function isRequiredApiProperty(ReflectionProperty $property): bool

@@ -40,33 +40,6 @@ class ScopeResolver
      */
     protected function merge(array $truthSets): TruthSet
     {
-        $servableOperations = [];
-        $nonServableOperations = [];
-        $internalOperations = [];
-        $validationConstraints = [];
-        $undeclaredResponseOperations = [];
-        $declaredResponses = [];
-        $responseAttributes = [];
-
-        foreach ($truthSets as $truthSet) {
-            $servableOperations = array_merge($servableOperations, $truthSet->servableOperations);
-            $nonServableOperations = array_merge($nonServableOperations, $truthSet->nonServableOperations);
-            $internalOperations = array_merge($internalOperations, $truthSet->internalOperations);
-            $validationConstraints = array_merge($validationConstraints, $truthSet->validationConstraints);
-            $undeclaredResponseOperations = array_merge($undeclaredResponseOperations, $truthSet->undeclaredResponseOperations);
-            $responseAttributes = array_merge($responseAttributes, $truthSet->responseAttributes);
-
-            $declaredResponses = TruthSet::mergeDeclaredResponses($declaredResponses, $truthSet->declaredResponses);
-        }
-
-        return new TruthSet(
-            $servableOperations,
-            $nonServableOperations,
-            $validationConstraints,
-            $undeclaredResponseOperations,
-            $declaredResponses,
-            $internalOperations,
-            $responseAttributes,
-        );
+        return TruthSet::merge(...$truthSets);
     }
 }

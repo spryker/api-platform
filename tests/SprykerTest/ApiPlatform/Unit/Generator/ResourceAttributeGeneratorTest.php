@@ -10,6 +10,7 @@ declare(strict_types=1);
 namespace SprykerTest\ApiPlatform\Unit\Generator;
 
 use Codeception\Test\Unit;
+use Spryker\ApiPlatform\Generator\DeclaredErrorCodeResolver;
 use Spryker\ApiPlatform\Generator\MediaType\MediaTypeFormatterRegistry;
 use Spryker\ApiPlatform\Generator\OpenApiOperationBuilder;
 use Spryker\ApiPlatform\Generator\ResourceAttributeGenerator;
@@ -754,6 +755,121 @@ class ResourceAttributeGeneratorTest extends Unit
         $this->assertStringContainsString('controller: NotFoundAction::class', $result);
     }
 
+    public function testGivenDeclaredCodesWhenGeneratingAVisibleOperationThenTheyRideInExtraProperties(): void
+    {
+        // Arrange
+        $schema = [
+            'name' => 'Carts',
+            'shortName' => 'carts',
+            'tags' => ['carts'],
+            'operations' => [
+                'Patch' => [
+                    'type' => 'Patch',
+                    'openapiContext' => [
+                        'responses' => [
+                            200 => ['description' => 'Updated.'],
+                            422 => ['description' => 'Rejected.', 'codes' => ['3303', '3301']],
+                        ],
+                    ],
+                ],
+            ],
+        ];
+        $uses = [];
+
+        // Act
+        $result = $this->createResourceAttributeGenerator()->generate($schema, $uses);
+
+        // Assert
+        $this->assertStringContainsString("extraProperties: ['declaredErrorCodes' => ['422' => ['0' => '3301', '1' => '3303']]]", $result);
+        $this->assertStringContainsString('new Operation(', $result);
+    }
+
+    public function testGivenDeclaredCodesWhenGeneratingAHiddenOperationThenTheyRideInExtraPropertiesNextToDeclaredResponses(): void
+    {
+        // Arrange
+        $schema = [
+            'name' => 'Carts',
+            'shortName' => 'carts',
+            'operations' => [
+                'Get' => [
+                    'type' => 'Get',
+                    'openapi' => false,
+                    'openapiContext' => [
+                        'responses' => [
+                            400 => ['description' => 'Missing id.', 'codes' => ['104']],
+                        ],
+                    ],
+                ],
+            ],
+        ];
+        $uses = [];
+
+        // Act
+        $result = $this->createResourceAttributeGenerator()->generate($schema, $uses);
+
+        // Assert
+        $this->assertStringContainsString("extraProperties: ['declaredErrorCodes' => ['400' => ['0' => '104']], 'declaredResponses' => ['0' => 400]]", $result);
+    }
+
+    public function testGivenErrorMappingsWhenGeneratingThenTheyRideInTheResourceExtraProperties(): void
+    {
+        // Arrange
+        $schema = [
+            'name' => 'Carts',
+            'shortName' => 'carts',
+            'errorMappings' => [
+                ['source' => 'Spryker\\Glue\\CartsRestApi\\CartsRestApiConfig::getErrorIdentifierToRestErrorMapping', 'notAnswered' => ['1507' => 'Legacy merge only.']],
+            ],
+            'operations' => ['Get' => ['type' => 'Get']],
+        ];
+        $uses = [];
+
+        // Act
+        $result = $this->createResourceAttributeGenerator()->generate($schema, $uses);
+
+        // Assert
+        $this->assertStringContainsString(
+            "extraProperties: ['errorMappings' => ['0' => ['source' => 'Spryker\\Glue\\CartsRestApi\\CartsRestApiConfig::getErrorIdentifierToRestErrorMapping', 'notAnswered' => ['1507' => 'Legacy merge only.']]]]",
+            $result,
+        );
+    }
+
+    public function testGivenIncludesWhenGeneratingThenEachRelationshipRidesInResourceExtraPropertiesWithItsGetOperations(): void
+    {
+        // Arrange
+        $schema = [
+            'name' => 'Carts',
+            'shortName' => 'carts',
+            'includes' => [['relationshipName' => 'items', 'targetResource' => 'CartItems']],
+            'operations' => ['Get' => ['type' => 'Get'], 'GetCollection' => ['type' => 'GetCollection'], 'Post' => ['type' => 'Post']],
+        ];
+        $uses = [];
+
+        // Act
+        $result = $this->createResourceAttributeGenerator()->generate($schema, $uses);
+
+        // Assert
+        $this->assertStringContainsString("extraProperties: ['declaredIncludes' => ['items' => ['0' => 'Get', '1' => 'GetCollection']]]", $result);
+    }
+
+    public function testGivenIncludedOnWhenGeneratingThenOnlyTheNamedOperationTypesAreListed(): void
+    {
+        // Arrange
+        $schema = [
+            'name' => 'Carts',
+            'shortName' => 'carts',
+            'includes' => [['relationshipName' => 'vouchers', 'targetResource' => 'Vouchers', 'includedOn' => ['Get']]],
+            'operations' => ['Get' => ['type' => 'Get'], 'GetCollection' => ['type' => 'GetCollection']],
+        ];
+        $uses = [];
+
+        // Act
+        $result = $this->createResourceAttributeGenerator()->generate($schema, $uses);
+
+        // Assert
+        $this->assertStringContainsString("extraProperties: ['declaredIncludes' => ['vouchers' => ['0' => 'Get']]]", $result);
+    }
+
     protected function createResourceAttributeGenerator(): ResourceAttributeGenerator
     {
         $mediaTypeFormatterRegistry = $this->createMock(MediaTypeFormatterRegistry::class);
@@ -761,7 +877,7 @@ class ResourceAttributeGeneratorTest extends Unit
 
         $this->tester->getContainer()->set(
             OpenApiOperationBuilder::class,
-            new OpenApiOperationBuilder($mediaTypeFormatterRegistry, []),
+            new OpenApiOperationBuilder($mediaTypeFormatterRegistry, [], new DeclaredErrorCodeResolver()),
         );
 
         return $this->tester->getContainer()->get(ResourceAttributeGenerator::class);

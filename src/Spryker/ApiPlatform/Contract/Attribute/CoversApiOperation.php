@@ -15,7 +15,11 @@ use Attribute;
  * Declares the API Platform operation a test method asserts on, by HTTP verb and OpenAPI
  * uriTemplate (e.g. `/wishlists/{wishlistUuid}/wishlist-items`) — the one operation under test, not
  * the arrange requests. The optional status names a declared error response; without it the
- * declaration covers the operation's success response.
+ * declaration covers the operation's success response. The optional code narrows an error response
+ * to one of the codes its status declares under `openapiContext.responses.<status>.codes`, and then
+ * covers that status as well. The optional scenario says which situation the error response stands
+ * for, e.g. {@see Scenario::FOREIGN_OWNER} for an authenticated caller addressing someone else's
+ * resource.
  *
  * The runtime verifier fails the test if a declared operation is never dispatched; asserting the
  * response status stays the test body's job.
@@ -27,6 +31,8 @@ readonly class CoversApiOperation
         public string $verb,
         public string $uriTemplate,
         public ?int $status = null,
+        public ?string $code = null,
+        public ?Scenario $scenario = null,
     ) {
     }
 }

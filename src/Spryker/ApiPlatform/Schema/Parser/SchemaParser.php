@@ -89,6 +89,8 @@ class SchemaParser implements SchemaParserInterface
             'resourceAttributesClassName' => $this->getValue($resource, 'resourceAttributesClassName', null),
             'includedSortPriority' => $this->getValue($resource, 'includedSortPriority', null),
             'includes' => $includes,
+            'commonErrorCodes' => $this->getValue($resource, 'commonErrorCodes', null),
+            'errorMappings' => $this->getValue($resource, 'errorMappings', null),
             'sourceFile' => $filePath,
             'sourceLayer' => $this->detectSourceLayer($filePath),
         ];
@@ -483,6 +485,12 @@ class SchemaParser implements SchemaParserInterface
                 $normalized[$propertyName][SchemaKey::ITEM_ONLY] = $property[SchemaKey::ITEM_ONLY];
             }
 
+            if (isset($property[SchemaKey::WRITABLE_ON])) {
+                $normalized[$propertyName][SchemaKey::WRITABLE_ON] = is_array($property[SchemaKey::WRITABLE_ON])
+                    ? array_values($property[SchemaKey::WRITABLE_ON])
+                    : $property[SchemaKey::WRITABLE_ON];
+            }
+
             if (isset($property['default'])) {
                 $normalized[$propertyName]['default'] = $property['default'];
             }
@@ -640,6 +648,12 @@ class SchemaParser implements SchemaParserInterface
 
             if (isset($include['resolverClass']) && (is_string($include['resolverClass']) || $include['resolverClass'] === true)) {
                 $normalizedInclude['resolverClass'] = $include['resolverClass'];
+            }
+
+            if (isset($include[SchemaKey::INCLUDED_ON])) {
+                $normalizedInclude[SchemaKey::INCLUDED_ON] = is_array($include[SchemaKey::INCLUDED_ON])
+                    ? array_values($include[SchemaKey::INCLUDED_ON])
+                    : $include[SchemaKey::INCLUDED_ON];
             }
 
             $normalized[] = $normalizedInclude;

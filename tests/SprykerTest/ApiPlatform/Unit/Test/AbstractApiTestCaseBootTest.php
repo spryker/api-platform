@@ -22,6 +22,8 @@ use stdClass;
 use Symfony\Component\DependencyInjection\Container;
 use Symfony\Component\DependencyInjection\ContainerInterface;
 use Symfony\Component\DependencyInjection\Exception\InvalidArgumentException;
+use Symfony\Component\EventDispatcher\EventDispatcher;
+use Symfony\Component\HttpKernel\KernelEvents;
 use Symfony\Component\HttpKernel\KernelInterface;
 
 /**
@@ -36,6 +38,8 @@ use Symfony\Component\HttpKernel\KernelInterface;
  */
 class AbstractApiTestCaseBootTest extends Unit
 {
+    protected const string SERVICE_ID_EVENT_DISPATCHER = 'event_dispatcher';
+
     protected TestMode $suiteMode;
 
     protected function setUp(): void
@@ -245,6 +249,49 @@ class AbstractApiTestCaseBootTest extends Unit
 
         // Assert — each instance boots its own kernel
         $this->assertSame(2, AbstractApiTestCase::getBootCount());
+
+        AbstractApiTestCase::resetSharedKernel();
+    }
+
+    public function testGivenBootOnceAndAFirstMethodThatSentNoRequestWhenTheContainerRebuiltItsDispatcherThenTheNextMethodStillRecords(): void
+    {
+        // Arrange - the container reset between methods rebuilds `event_dispatcher`; the first
+        // method booted the shared kernel and sent nothing through the one it booted with.
+        TestModeConfiguration::setBootOnce(true);
+        AbstractApiTestCase::resetSharedKernel();
+        $container = new Container();
+        $container->set(static::SERVICE_ID_EVENT_DISPATCHER, new EventDispatcher());
+        $fakeKernel = Stub::makeEmpty(KernelInterface::class, ['getContainer' => $container]);
+        $this->createFakeKernelCase($fakeKernel)->exposeBoot();
+        $rebuiltDispatcher = new EventDispatcher();
+        $container->set(static::SERVICE_ID_EVENT_DISPATCHER, $rebuiltDispatcher);
+
+        // Act
+        $this->createFakeKernelCase($fakeKernel)->exposeBoot();
+
+        // Assert
+        $this->assertTrue($rebuiltDispatcher->hasListeners(KernelEvents::REQUEST));
+        $this->assertTrue($rebuiltDispatcher->hasListeners(KernelEvents::RESPONSE));
+
+        AbstractApiTestCase::resetSharedKernel();
+    }
+
+    public function testGivenBootOnceAndAnUnchangedDispatcherWhenTheSharedKernelBootsAgainThenTheRecordingListenersAreInstalledOnce(): void
+    {
+        // Arrange
+        TestModeConfiguration::setBootOnce(true);
+        AbstractApiTestCase::resetSharedKernel();
+        $dispatcher = new EventDispatcher();
+        $container = new Container();
+        $container->set(static::SERVICE_ID_EVENT_DISPATCHER, $dispatcher);
+        $fakeKernel = Stub::makeEmpty(KernelInterface::class, ['getContainer' => $container]);
+        $this->createFakeKernelCase($fakeKernel)->exposeBoot();
+
+        // Act
+        $this->createFakeKernelCase($fakeKernel)->exposeBoot();
+
+        // Assert
+        $this->assertCount(1, $dispatcher->getListeners(KernelEvents::REQUEST));
 
         AbstractApiTestCase::resetSharedKernel();
     }

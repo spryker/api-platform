@@ -9,7 +9,9 @@ declare(strict_types=1);
 
 namespace Spryker\ApiPlatform\Command;
 
+use LogicException;
 use Spryker\ApiPlatform\Contract\Coverage\ContractCoverageConsoleRenderer;
+use Spryker\ApiPlatform\Contract\Coverage\ContractCoverageEnforcement;
 use Spryker\ApiPlatform\Contract\Coverage\ContractCoverageMarkdownRenderer;
 use Spryker\ApiPlatform\Contract\Coverage\ContractCoverageRunner;
 use Spryker\ApiPlatform\Contract\Coverage\Exception\ResourcesNotGeneratedException;
@@ -38,6 +40,8 @@ class ApiContractCoverageCommand extends Command
     protected const string OPTION_MODULE_SHORTCUT = 'm';
 
     protected const string OPTION_SUMMARY_OUT = 'summary-out';
+
+    protected const string OPTION_ENFORCE = 'enforce';
 
     protected const int CODE_SUCCESS = 0;
 
@@ -72,6 +76,17 @@ class ApiContractCoverageCommand extends Command
                 'Append a markdown report of the gaps to this file, on top of the console output. '
                 . 'Pass "$GITHUB_STEP_SUMMARY" on GitHub Actions to publish it on the run summary page.',
             )
+            ->addOption(
+                static::OPTION_ENFORCE,
+                null,
+                InputOption::VALUE_REQUIRED | InputOption::VALUE_IS_ARRAY,
+                sprintf(
+                    'Also fail on this coverage dimension for this run, on top of the configured '
+                    . 'contract_coverage_enforced_dimensions: %s. Repeat the option for more than one. It widens '
+                    . 'the configured set and never narrows it, so it previews what switching a dimension on costs.',
+                    implode(', ', ContractCoverageEnforcement::acceptedValues()),
+                ),
+            )
             ->setHelp(<<<'HELP'
 Reflects the generated API Platform resources against the #[CoversApiOperation],
 #[CoversApiValidation] and #[CoversApiRequiredResponseAttributes] annotations on the API test
@@ -82,6 +97,7 @@ claim.
   <info>%command.full_name% -m Wishlist</info>                  check the wishlists resource
   <info>%command.full_name% -m wishlist-items -m wishlists</info>  check both
   <info>%command.full_name% -v</info>                           also list every covered entry
+  <info>%command.full_name% --enforce=all</info>                preview every reported dimension as enforced
 
 Runs for the API type of the application it is registered in, and needs that type's resources
 generated first: <info>GLUE_APPLICATION=GLUE_STOREFRONT vendor/bin/glue api:generate</info> (or
@@ -93,11 +109,14 @@ HELP);
     {
         /** @var array<string> $moduleFilters */
         $moduleFilters = (array)$input->getOption(static::OPTION_MODULE);
+        /** @var array<string> $enforcedDimensionValues */
+        $enforcedDimensionValues = (array)$input->getOption(static::OPTION_ENFORCE);
 
         try {
-            $result = $this->contractCoverageRunner->run($this->applicationRoot, $moduleFilters);
-        } catch (ResourcesNotGeneratedException $resourcesNotGeneratedException) {
-            $output->writeln(sprintf('<error>%s</error>', $resourcesNotGeneratedException->getMessage()));
+            $additionalEnforcement = ContractCoverageEnforcement::fromValues($enforcedDimensionValues);
+            $result = $this->contractCoverageRunner->run($this->applicationRoot, $moduleFilters, $additionalEnforcement);
+        } catch (LogicException | ResourcesNotGeneratedException $exception) {
+            $output->writeln(sprintf('<error>%s</error>', $exception->getMessage()));
 
             return static::CODE_ERROR;
         }

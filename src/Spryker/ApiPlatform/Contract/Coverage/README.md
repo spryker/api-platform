@@ -144,6 +144,213 @@ filtered collection, an upsert — but the Then-clause never does. This is a con
 review, not by tooling: the gate keys on the `#[CoversApiRequiredResponseAttributes]` attribute,
 never on a method name, so renaming a test can never silently drop its coverage.
 
+## Enforcing a dimension
+
+Operations, validation rules and response attributes are always enforced. The dimensions below are
+computed and reported on every run, and fail the gate and the test runtime only once the
+application lists them:
+
+```php
+// config/GlueStorefront/packages/spryker_api_platform.php
+$sprykerApiPlatform->contractCoverageEnforcedDimensions(['error-codes', 'request-attributes']);
+$sprykerApiPlatform->contractCoverageEnforcedDimensions(['all']); // every dimension
+```
+
+| Dimension | Truth | Claim |
+|-----------|-------|-------|
+| `error-codes` | each code a status declares | `#[CoversApiOperation(..., status:, code:)]` |
+| `error-mappings` | each entry of a registered Zed error mapping | a declared code, or `notAnswered` |
+| `validation-evidence` | runtime only: each `#[CoversApiValidation]` | a 422 reporting that rule for that attribute |
+| `request-attributes` | each writable attribute of an input operation | `#[CoversApiRequestAttributes]` |
+| `includes` | each declared include of a read | `#[CoversApiIncludes]` |
+| `ownership-scenarios` | each operation guarded by an ownership voter | `#[CoversApiOperation(..., status:, scenario: Scenario::FOREIGN_OWNER)]` |
+| `non-empty-arrays` | runtime only: every asserted response attribute | a non-empty value |
+| `openapi-example-replay` | each resource with a servable operation | `#[ReplaysOpenApiExamples]` on a replay class |
+
+A dimension that is not enforced lists its gaps under `Reported, not enforced
+(contract_coverage_enforced_dimensions)`, so they stay visible on every CI run. Preview one before
+enforcing it: `vendor/bin/glue api:contract:coverage --enforce=<dimension>` (repeatable, or `all`)
+for the gate, and `API_CONTRACT_COVERAGE_ENFORCE=<dimension>,<dimension>` for a test run. Both widen
+the configured set and never narrow it.
+
+A claim of a new kind (`code:`, `scenario:`, `#[CoversApiRequestAttributes]`, `#[CoversApiIncludes]`,
+a replay class) is verified at runtime whatever is enforced: a declaration is verified, never merely
+claimed. Only the checks that newly bite existing declarations - validation evidence, non-empty
+arrays, codes a status does not declare - wait for their dimension.
+
+## Baseline of known product bugs
+
+Some items stay uncovered because the product has a bug that is known and will be fixed later: an
+include that is never loaded, an array that is always empty. The application lists them, per
+dimension, with the bug in plain language, so the dimension can be enforced while the bug is open:
+
+```php
+// config/GlueStorefront/packages/spryker_api_platform.php
+$sprykerApiPlatform->contractCoverageBaseline([
+    'includes' => [
+        'GET /orders  include merchants' => 'The merchants include names a relationship resolver that does not exist, so it is never loaded.',
+    ],
+    'non-empty-arrays' => [
+        'GET /orders/{orderReference}  items[].calculatedDiscounts' => 'Order items never carry their calculated discounts.',
+    ],
+]);
+```
+
+- The key is the item as the report prints it under the dimension's gap section; the dimension is
+  one of the table above. Operations, validation rules and response attributes take no baseline.
+- A baselined item does not fail its dimension. The report lists it under `Baselined, known product
+  bugs (contract_coverage_baseline)` with its reason, apart from the gaps.
+- An entry fails the gate, enforced or not, once a claim covers its item (`… baseline entries now
+  covered`) or, on a run without `--module`, once it names no uncovered item (`… naming no uncovered
+  item`). The fix of the bug therefore removes the entry, and the baseline only shrinks.
+- The reason describes the bug, not a ticket. A `%` in a reason is written `%%`, because the list is
+  a container parameter.
+- The runtime-only dimensions are judged by the test runtime. A `non-empty-arrays` entry,
+  `<dispatch key>  <path>`, excuses a path a marked test asserted only as `[]` or `null`, and fails
+  the test that asserts a value for it. A `validation-evidence` entry, the `#[CoversApiValidation]`
+  key `<resource>.<attribute>.<rule> on <VERB> <uriTemplate>`, excuses a declaration no 422 proves,
+  and fails the test whose response proves it.
+
+## Declared error codes
+
+A status lists the codes it answers under `codes`, in the `.resource.yml`; a string entry is the
+shorthand for a code without a description. The resource's `commonErrorCodes` join every status of it
+that declares codes, so the framework codes are not repeated per operation. A common code joins a
+status, it never creates one: `api:generate` rejects a common code whose status no operation of the
+merged resource declares codes on, which also catches a project operation that replaced a core one
+without its codes:
+
+```yaml
+commonErrorCodes:
+    - status: 422
+      code: '901'
+      description: 'Request validation failed.'
+operations:
+    - type: Delete
+      openapiContext:
+          responses:
+              422:
+                  description: 'Cart code could not be removed.'
+                  codes:
+                      - code: '3301'
+                        description: 'Cart code not found in the cart.'
+                      - '3303'
+```
+
+Each code becomes a JSON:API error example in the published document and one coverage item,
+`DELETE /carts/{cartUuid}/cart-codes/{code} 422 code 3301`. A test claims one with
+`#[CoversApiOperation('DELETE', '/carts/{cartUuid}/cart-codes/{code}', status: 422, code: '3301')]`,
+which covers its status item too, and is proven only by a response that carried the code. Once
+`error-codes` is enforced, a response carrying a code its status does not declare fails the test.
+
+## Error mappings
+
+A resource registers the Zed error mappings it answers; the mapping resolves to the project's
+override of the config first:
+
+```yaml
+errorMappings:
+    - source: 'Spryker\Glue\CartsRestApi\CartsRestApiConfig::getErrorIdentifierToRestErrorMapping'
+      notAnswered:
+          '1507': 'Raised only by the legacy shopping-list merge endpoint.'
+```
+
+Each mapped code and status has to be declared on an operation of a registering resource, or be
+`notAnswered` with a reason. A `notAnswered` code the mapping does not contain is stale. Mapping
+methods of a module's Glue config that no resource registers are listed as `Unregistered error
+mappings (review)` - a name-based guess, never a failure.
+
+## Validation evidence
+
+Once `validation-evidence` is enforced, each `#[CoversApiValidation]` needs a 422 on its operation
+that reports the declared rule for the declared attribute's full path. Only a structured violation
+counts, from one of three sources:
+
+- the validator's violation list, read before it becomes the error envelope;
+- a denormalization type error in the exception chain, which counts as `Type` for the path the
+  serializer reports, or, where only the path inside a nested object is known, for the one
+  submitted path that ends in it;
+- an error the exception subscriber's augmenters synthesise, each tagged with the declared
+  constraints it stands for and its full path (`SynthesizedViolation`).
+
+The error detail is never read for it: it names no rule, and a nested leaf error names the leaf
+without its parent. A type error does not prove a `GreaterThan` on the same attribute, and a
+`quantity` error does not prove `prices.volumePrices.quantity`. `assertValidationFailedForAttribute()`
+still demands a detail that starts with `<attribute> => `.
+
+An exact `Length` (`min` equal to `max`) raises one code for both sides, so the violation counts as
+`Length.min` for a value too short and `Length.max` for one too long; each needs its own test. A
+violation on a map entry (`unitPriceMap[any-group-key]`) or a list element counts for the attribute
+that declares the `All`, as the truth keys it; a `Collection` field keeps its segment.
+
+## Ownership scenarios
+
+An operation whose security - its own, else the resource's - grants through a voter attribute listed
+in `contractCoverageOwnershipSecurityAttributes([...])` (Storefront: `CUSTOMER_OWNER`) owes a
+foreign-owner test:
+
+```php
+#[CoversApiOperation('GET', '/customers/{customerReference}/carts', status: Response::HTTP_FORBIDDEN, scenario: Scenario::FOREIGN_OWNER)]
+```
+
+It is proven only by an authenticated request an access decision denied, not by a missing token or an
+unknown id. The scenario item carries no status, so the test declares whichever one the schema says.
+
+## Request attributes
+
+Every writable attribute of an input operation - the writable children of a nested value object, the
+fields of an `Assert\Collection` including optional ones, the fields of a list of collections as
+`shipments[].items` - has to be sent by a successful request of some test. One level deep, like the
+response side. `#[CoversApiRequestAttributes]` claims all of them for the operation on the same
+method, `#[CoversApiRequestAttributes('currency', 'priceMode')]` exactly those; tests can split the
+set. A property one operation ignores declares `writableOn: ['Post']`.
+
+## Includes
+
+Every declared include is owed by the servable reads of its resource, or by the operation types its
+`includedOn` names. `#[CoversApiIncludes('vouchers')]` is proven by a successful request with
+`?include=vouchers` together with `assertIncludedRelationship($response, 'vouchers', [$voucherCode])`,
+which checks the referenced ids and their presence in `included`. A claim on a write is accepted but
+never owed.
+
+## Non-empty arrays
+
+An array asserted as `[]` has no element, so its element paths (`discounts[].code`) are not owed by
+that test; a test whose fixture has an element proves them. Once `non-empty-arrays` is enforced, an
+attribute asserted only as `[]` or `null` no longer counts as asserted, and the element paths of an
+array asserted only as `[]` are owed by that test too. The report counts the
+readable arrays that declare no `items.required`, whose element shape nothing demands.
+
+## Example replay
+
+A replay class sends the generated example of every servable operation of the resources it names and
+fails on a 5xx; a 4xx for a placeholder value is a correct answer:
+
+```php
+#[ReplaysOpenApiExamples('wishlists', 'wishlist-items')]
+class WishlistsOpenApiExampleReplayStorefrontApiIntegrationTest extends AbstractOpenApiExampleReplayTestCase
+{
+    protected function createReplayContext(ApiOperation $operation): OpenApiExampleReplayContext
+    {
+        $this->tester->actingAsCustomer($this->tester->haveCustomer());
+
+        return new OpenApiExampleReplayContext(['wishlistUuid' => $this->tester->haveWishlist()->getUuidOrFail()]);
+    }
+}
+```
+
+The body comes from the writable properties' `openapiContext.example`, the query from the parameter
+examples. The context fills the path variables, the headers and any value that must reference a
+fixture, or skips an operation with `OpenApiExampleReplayContext::skip($reason)`.
+
+## Operations without a success response
+
+An operation whose schema declares statuses and no 2xx among them - a bare collection URL kept only
+to answer 400 or 501 - never returns a resource body. It owes no response attributes, no request
+attributes, no includes and no non-empty arrays, because each of those is proven by a successful
+response. Its declared error statuses and codes and its validation rules stay owed: a 4xx proves
+them. An operation that declares nothing at all is a schema defect instead and keeps owing everything.
+
 ## Two guarantees
 
 1. **Declarations are verified, not claimed.** `AbstractApiTestCase` records every operation a
@@ -234,3 +441,13 @@ validation rules.
 | `OperationCoverageRecorder`, `OperationVerifier` | the runtime side that verifies operation declarations |
 | `ResponseAttributeRecorder` | the runtime side that records which response-attribute paths a `#[CoversApiRequiredResponseAttributes]` test actually asserted |
 | `ApiContractCoverageCommand` | the `api:contract:coverage` console command |
+| `ContractCoverageDimension`, `ContractCoverageEnforcement` | the reported dimensions and which of them fail the gate |
+| `ContractCoverageBaseline`, `BaselineEntry` | the items known product bugs keep uncovered, and the entries to remove |
+| `DimensionCoverage`, `CoverageItem` | one dimension's covered / uncovered / stale items, and the key every item compares by |
+| `RecordedExchange`, `RecordedExchangeFactory` | one request of a test: status, error codes, sent attributes and includes, violations, access decision |
+| `Attribute\Scenario`, `Attribute\CoversApiRequestAttributes`, `Attribute\CoversApiIncludes`, `Attribute\ReplaysOpenApiExamples` | the declarations of the reported dimensions |
+| `ErrorMappingResolver`, `ErrorMappingDiscovery`, `ErrorMappingEntry` | reads a registered Zed error mapping, and lists the unregistered ones |
+| `ValidationEvidenceVerifier`, `ValidationAttributePath` | holds a validation declaration to the violations raised |
+| `RequestAttributeTruthCollector`, `RequestAttributePathExtractor`, `RequestAttributeVerifier` | the writable attributes of an input operation, and what a request sent |
+| `IncludeRelationship`, `IncludedRelationshipRecorder`, `IncludeEvidenceVerifier` | the declared includes, and the proof of one |
+| `Replay\OpenApiExampleRequestBuilder`, `Replay\ReplayableRequest`, `Replay\OpenApiExampleReplayContext` | the example replay |

@@ -12,14 +12,27 @@ namespace SprykerTest\ApiPlatform\Unit\Coverage;
 use Codeception\Test\Unit;
 use Generated\Api\Storefront\WishlistItemsStorefrontResource;
 use Generated\Api\Storefront\WishlistsStorefrontResource;
+use Spryker\ApiPlatform\Contract\Coverage\ApiOperation;
+use Spryker\ApiPlatform\Contract\Coverage\ConstraintRuleMapper;
+use Spryker\ApiPlatform\Contract\Coverage\IncludeRelationship;
+use Spryker\ApiPlatform\Contract\Coverage\RequestAttributeTruthCollector;
 use Spryker\ApiPlatform\Contract\Coverage\ResponseAttribute;
+use Spryker\ApiPlatform\Contract\Coverage\ResponseAttributeTruthCollector;
+use Spryker\ApiPlatform\Contract\Coverage\SchemaTruthLoader;
 use Spryker\ApiPlatform\Contract\Coverage\TruthSet;
+use Spryker\ApiPlatform\Contract\Coverage\ValidationConstraint;
 use SprykerTest\ApiPlatform\Coverage\ContractCoverageFactory;
 use SprykerTest\ApiPlatform\Unit\Coverage\Fixture\BodylessWriteFixtureResource;
 use SprykerTest\ApiPlatform\Unit\Coverage\Fixture\CollectionOnlyAttributeFixtureResource;
+use SprykerTest\ApiPlatform\Unit\Coverage\Fixture\DeclaredErrorCodesFixtureResource;
 use SprykerTest\ApiPlatform\Unit\Coverage\Fixture\DeclaredResponsesFixtureResource;
+use SprykerTest\ApiPlatform\Unit\Coverage\Fixture\ErrorMappingRegisteringCartItemsFixtureResource;
+use SprykerTest\ApiPlatform\Unit\Coverage\Fixture\ErrorMappingRegisteringCartsFixtureResource;
+use SprykerTest\ApiPlatform\Unit\Coverage\Fixture\ErrorMappingUnrelatedOrdersFixtureResource;
 use SprykerTest\ApiPlatform\Unit\Coverage\Fixture\ErrorOnlyCollectionFixtureResource;
 use SprykerTest\ApiPlatform\Unit\Coverage\Fixture\HiddenDeclaredResponsesFixtureResource;
+use SprykerTest\ApiPlatform\Unit\Coverage\Fixture\IncludesFixtureResource;
+use SprykerTest\ApiPlatform\Unit\Coverage\Fixture\OwnershipSecuredFixtureResource;
 use SprykerTest\ApiPlatform\Unit\Coverage\Fixture\ResponseAttributesFixtureResource;
 use SprykerTest\ApiPlatform\Unit\Coverage\Fixture\RestorePasswordShapeFixtureResource;
 use SprykerTest\ApiPlatform\Unit\Coverage\Fixture\SyntheticIdentifierFixtureResource;
@@ -186,6 +199,68 @@ class SchemaTruthLoaderTest extends Unit
             $truthSet->responseAttributes,
         )));
         $this->assertSame(['GET /error-only/{uuid}'], $dispatchKeys);
+    }
+
+    public function testGivenAReadDeclaringNoSuccessResponseWhenLoadingThenItOwesNoInclude(): void
+    {
+        // Arrange - only a successful response carries `included`.
+        $loader = ContractCoverageFactory::createSchemaTruthLoader();
+
+        // Act
+        $truthSet = $loader->load([ErrorOnlyCollectionFixtureResource::class]);
+
+        // Assert
+        $this->assertSame(
+            ['GET /error-only/{uuid}  include owners'],
+            array_map(static fn (IncludeRelationship $includeRelationship): string => $includeRelationship->key(), $truthSet->includeRelationships),
+        );
+        $this->assertSame([], $truthSet->writeIncludeRelationships);
+    }
+
+    public function testGivenAnInputOperationDeclaringNoSuccessResponseWhenLoadingThenItOwesNoRequestAttribute(): void
+    {
+        // Arrange - a request attribute is proven by a successful request, which this create never answers.
+        $loader = ContractCoverageFactory::createSchemaTruthLoader();
+
+        // Act
+        $truthSet = $loader->load([ErrorOnlyCollectionFixtureResource::class]);
+
+        // Assert
+        $this->assertSame([], $truthSet->requestAttributes);
+    }
+
+    public function testGivenOperationsDeclaringNoSuccessResponseWhenLoadingThenTheirErrorStatusesAndValidationRulesStayOwed(): void
+    {
+        // Arrange
+        $loader = ContractCoverageFactory::createSchemaTruthLoader();
+
+        // Act
+        $truthSet = $loader->load([ErrorOnlyCollectionFixtureResource::class]);
+
+        // Assert
+        $operationKeys = $this->operationKeys($truthSet->servableOperations);
+        $this->assertContains('GET /error-only 400', $operationKeys);
+        $this->assertContains('POST /error-only 400', $operationKeys);
+        $this->assertContains('POST /error-only 422', $operationKeys);
+        $this->assertSame(
+            ['error-only.name.NotBlank on POST /error-only'],
+            array_map(static fn (ValidationConstraint $validationConstraint): string => $validationConstraint->key(), $truthSet->validationConstraints),
+        );
+    }
+
+    public function testGivenAReadDeclaringNoSuccessResponseWhenLoadingThenItsArraysAreNotListedWithoutRequiredItems(): void
+    {
+        // Arrange
+        $loader = ContractCoverageFactory::createSchemaTruthLoader();
+
+        // Act
+        $truthSet = $loader->load([ErrorOnlyCollectionFixtureResource::class]);
+
+        // Assert
+        $this->assertSame(
+            ['GET /error-only/{uuid}  tags'],
+            array_map(static fn (ResponseAttribute $responseAttribute): string => $responseAttribute->key(), $truthSet->readableArraysWithoutRequiredItems),
+        );
     }
 
     public function testGivenAWriteDeclaringNoOutputWhenLoadingThenItDemandsNoResponseAttributes(): void
@@ -475,5 +550,200 @@ class SchemaTruthLoaderTest extends Unit
         sort($keys);
 
         return array_values(array_unique($keys));
+    }
+
+    public function testGivenAStatusWithDeclaredCodesWhenLoadingThenOneItemPerCodeIsEmittedNextToTheStatusItem(): void
+    {
+        // Arrange
+        $loader = ContractCoverageFactory::createSchemaTruthLoader();
+
+        // Act
+        $truthSet = $loader->load([DeclaredErrorCodesFixtureResource::class]);
+
+        // Assert
+        $servableKeys = array_map(static fn (ApiOperation $operation): string => $operation->key(), $truthSet->servableOperations);
+        $this->assertContains('DELETE /carts/{cartUuid}/cart-codes/{code} 422', $servableKeys);
+        $this->assertSame(
+            ['DELETE /carts/{cartUuid}/cart-codes/{code} 422 code 3301', 'DELETE /carts/{cartUuid}/cart-codes/{code} 422 code 3303', 'GET /cart-codes 400 code 104'],
+            array_map(static fn (ApiOperation $operation): string => $operation->key(), $truthSet->errorCodeOperations),
+        );
+    }
+
+    public function testGivenAHiddenOperationWithDeclaredCodesWhenLoadingThenItsCodesAreRead(): void
+    {
+        // Arrange
+        $loader = ContractCoverageFactory::createSchemaTruthLoader();
+
+        // Act
+        $truthSet = $loader->load([DeclaredErrorCodesFixtureResource::class]);
+
+        // Assert
+        $this->assertSame(
+            ['DELETE /carts/{cartUuid}/cart-codes/{code}' => [422 => ['3301', '3303']], 'GET /cart-codes' => [400 => ['104']]],
+            $truthSet->declaredErrorCodes,
+        );
+    }
+
+    public function testGivenResourceSecurityWithAnOwnershipAttributeWhenLoadingThenEveryServableOperationOwesAForeignOwnerScenario(): void
+    {
+        // Arrange
+        $loader = new SchemaTruthLoader(new ConstraintRuleMapper(), new ResponseAttributeTruthCollector(), ['CUSTOMER_OWNER'], new RequestAttributeTruthCollector());
+
+        // Act
+        $truthSet = $loader->load([OwnershipSecuredFixtureResource::class]);
+
+        // Assert
+        $this->assertContains(
+            'GET /customers/{customerReference}/notes/{uuid} scenario foreign-owner',
+            array_map(static fn (ApiOperation $operation): string => $operation->key(), $truthSet->ownershipScenarioOperations),
+        );
+    }
+
+    public function testGivenOperationSecurityOverridingTheResourceWhenLoadingThenTheOperationLevelExpressionDecides(): void
+    {
+        // Arrange
+        $loader = new SchemaTruthLoader(new ConstraintRuleMapper(), new ResponseAttributeTruthCollector(), ['CUSTOMER_OWNER'], new RequestAttributeTruthCollector());
+
+        // Act
+        $truthSet = $loader->load([OwnershipSecuredFixtureResource::class]);
+
+        // Assert
+        $this->assertSame(
+            [
+                'GET /customers/{customerReference}/notes/{uuid} scenario foreign-owner',
+                'PATCH /customers/{customerReference}/notes/{uuid} scenario foreign-owner',
+            ],
+            array_map(static fn (ApiOperation $operation): string => $operation->key(), $truthSet->ownershipScenarioOperations),
+        );
+    }
+
+    public function testGivenOnlyRoleChecksWhenLoadingThenNoScenarioIsOwed(): void
+    {
+        // Arrange
+        $loader = new SchemaTruthLoader(new ConstraintRuleMapper(), new ResponseAttributeTruthCollector(), ['SOME_OTHER_OWNER'], new RequestAttributeTruthCollector());
+
+        // Act
+        $truthSet = $loader->load([OwnershipSecuredFixtureResource::class]);
+
+        // Assert
+        $this->assertSame([], $truthSet->ownershipScenarioOperations);
+    }
+
+    public function testGivenNoConfiguredOwnershipAttributesWhenLoadingThenNoScenarioIsOwed(): void
+    {
+        // Arrange
+        $loader = ContractCoverageFactory::createSchemaTruthLoader();
+
+        // Act
+        $truthSet = $loader->load([OwnershipSecuredFixtureResource::class]);
+
+        // Assert
+        $this->assertSame([], $truthSet->ownershipScenarioOperations);
+    }
+
+    public function testGivenAReadableArrayWithoutRequiredItemsWhenLoadingThenItIsListedAsArrayWithoutRequiredItems(): void
+    {
+        // Arrange
+        $loader = ContractCoverageFactory::createSchemaTruthLoader();
+
+        // Act
+        $truthSet = $loader->load([ResponseAttributesFixtureResource::class]);
+
+        // Assert
+        $this->assertContains(
+            'GET /response-attributes-fixture  tags',
+            array_map(static fn (ResponseAttribute $responseAttribute): string => $responseAttribute->key(), $truthSet->readableArraysWithoutRequiredItems),
+        );
+    }
+
+    public function testGivenAReadableArrayWithRequiredItemsWhenLoadingThenItIsNotListed(): void
+    {
+        // Arrange
+        $loader = ContractCoverageFactory::createSchemaTruthLoader();
+
+        // Act
+        $truthSet = $loader->load([ResponseAttributesFixtureResource::class]);
+
+        // Assert
+        $this->assertNotContains(
+            'GET /response-attributes-fixture  lines',
+            array_map(static fn (ResponseAttribute $responseAttribute): string => $responseAttribute->key(), $truthSet->readableArraysWithoutRequiredItems),
+        );
+    }
+
+    public function testGivenDeclaredIncludesWhenLoadingThenOneItemPerRelationshipPerServableGetIsEmitted(): void
+    {
+        // Arrange
+        $loader = ContractCoverageFactory::createSchemaTruthLoader();
+
+        // Act
+        $truthSet = $loader->load([IncludesFixtureResource::class]);
+
+        // Assert
+        $this->assertSame(
+            ['GET /carts  include items'],
+            array_map(static fn (IncludeRelationship $includeRelationship): string => $includeRelationship->key(), $truthSet->includeRelationships),
+        );
+        $this->assertSame(
+            ['POST /carts  include items', 'POST /carts  include vouchers'],
+            array_map(static fn (IncludeRelationship $includeRelationship): string => $includeRelationship->key(), $truthSet->writeIncludeRelationships),
+        );
+    }
+
+    public function testGivenANonServableItemGetWhenLoadingThenItOwesNoInclude(): void
+    {
+        // Arrange
+        $loader = ContractCoverageFactory::createSchemaTruthLoader();
+
+        // Act
+        $truthSet = $loader->load([IncludesFixtureResource::class]);
+
+        // Assert
+        $this->assertSame([], array_values(array_filter(
+            $truthSet->includeRelationships,
+            static fn (IncludeRelationship $includeRelationship): bool => $includeRelationship->dispatchKey === 'GET /carts/{uuid}',
+        )));
+    }
+
+    public function testGivenARegisteringResourceAndAnUnrelatedOneWhenLoadingThenTheRegistrationCarriesOnlyTheRegisteringResourcesCodes(): void
+    {
+        // Arrange
+        $loader = ContractCoverageFactory::createSchemaTruthLoader();
+
+        // Act
+        $truthSet = $loader->load([ErrorMappingRegisteringCartsFixtureResource::class, ErrorMappingUnrelatedOrdersFixtureResource::class]);
+
+        // Assert
+        $this->assertSame(
+            [
+                'CartsConfig::getErrorMapping' => [
+                    'resources' => ['carts'],
+                    'notAnswered' => ['1507' => 'Raised only by the legacy merge.'],
+                    'declaredErrorCodes' => [422 => ['101']],
+                ],
+            ],
+            $truthSet->errorMappingRegistrations,
+        );
+    }
+
+    public function testGivenTwoResourcesRegisteringTheSameMappingWhenLoadingThenTheirRegistrationsAreMerged(): void
+    {
+        // Arrange
+        $loader = ContractCoverageFactory::createSchemaTruthLoader();
+
+        // Act
+        $truthSet = $loader->load([ErrorMappingRegisteringCartsFixtureResource::class, ErrorMappingRegisteringCartItemsFixtureResource::class]);
+
+        // Assert
+        $this->assertSame(
+            [
+                'CartsConfig::getErrorMapping' => [
+                    'resources' => ['carts', 'cart-items'],
+                    'notAnswered' => ['1507' => 'Raised only by the legacy merge.', '1508' => 'Raised only by the legacy import.'],
+                    'declaredErrorCodes' => [422 => ['101', '102']],
+                ],
+            ],
+            $truthSet->errorMappingRegistrations,
+        );
     }
 }

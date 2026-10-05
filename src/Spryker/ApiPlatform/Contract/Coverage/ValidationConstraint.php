@@ -17,7 +17,7 @@ namespace Spryker\ApiPlatform\Contract\Coverage;
  * The operation is part of the identity: a rule active on two operations (a `NotBlank` enforced on
  * both POST and PATCH) is two entries, and each needs its own test.
  */
-readonly class ValidationConstraint
+readonly class ValidationConstraint implements CoverageItem
 {
     public function __construct(
         public string $resource,

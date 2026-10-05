@@ -27,6 +27,16 @@ readonly class TruthSet
      * @param array<string, array<int>> $declaredResponses dispatchKey => sorted unique declared statuses
      * @param array<\Spryker\ApiPlatform\Contract\Coverage\ApiOperation> $internalOperations
      * @param array<\Spryker\ApiPlatform\Contract\Coverage\ResponseAttribute> $responseAttributes
+     * @param array<\Spryker\ApiPlatform\Contract\Coverage\ApiOperation> $errorCodeOperations One entry per declared error code of a servable operation.
+     * @param array<string, array<int, array<string>>> $declaredErrorCodes dispatchKey => status => sorted declared codes
+     * @param array<\Spryker\ApiPlatform\Contract\Coverage\ApiOperation> $ownershipScenarioOperations One foreign-owner scenario item per servable operation guarded by an ownership check.
+     * @param array<string, array{resources: array<string>, notAnswered: array<int|string, string>, declaredErrorCodes: array<int, array<string>>}> $errorMappingRegistrations
+     *   `Class::method` of a registered error mapping => the resources registering it, the codes they declare they never answer (with the reason) and the codes their operations declare.
+     * @param array<\Spryker\ApiPlatform\Contract\Coverage\ResponseAttribute> $readableArraysWithoutRequiredItems Response arrays whose element shape the schema does not demand.
+     * @param array<\Spryker\ApiPlatform\Contract\Coverage\RequestAttribute> $requestAttributes The attributes each input operation accepts.
+     * @param array<\Spryker\ApiPlatform\Contract\Coverage\IncludeRelationship> $includeRelationships The includes each read has to prove.
+     * @param array<\Spryker\ApiPlatform\Contract\Coverage\IncludeRelationship> $writeIncludeRelationships The includes a write may be claimed for without owing them.
+     * @param array<\Spryker\ApiPlatform\Contract\Coverage\ReplayedResource> $replayableResources The resources with a servable operation whose examples can be replayed.
      */
     public function __construct(
         public array $servableOperations,
@@ -36,6 +46,15 @@ readonly class TruthSet
         public array $declaredResponses = [],
         public array $internalOperations = [],
         public array $responseAttributes = [],
+        public array $errorCodeOperations = [],
+        public array $declaredErrorCodes = [],
+        public array $ownershipScenarioOperations = [],
+        public array $errorMappingRegistrations = [],
+        public array $readableArraysWithoutRequiredItems = [],
+        public array $requestAttributes = [],
+        public array $includeRelationships = [],
+        public array $writeIncludeRelationships = [],
+        public array $replayableResources = [],
     ) {
     }
 
@@ -48,6 +67,113 @@ readonly class TruthSet
     public function allOperations(): array
     {
         return array_merge($this->servableOperations, $this->nonServableOperations, $this->internalOperations);
+    }
+
+    /**
+     * The one place that knows every field: the per-resource truths of a short name and the
+     * per-scope truths both merge through here, so a new field cannot be dropped by one of them.
+     */
+    public static function merge(self ...$truthSets): self
+    {
+        $servableOperations = [];
+        $nonServableOperations = [];
+        $validationConstraints = [];
+        $undeclaredResponseOperations = [];
+        $declaredResponses = [];
+        $internalOperations = [];
+        $responseAttributes = [];
+        $errorCodeOperations = [];
+        $declaredErrorCodes = [];
+        $ownershipScenarioOperations = [];
+        $errorMappingRegistrations = [];
+        $readableArraysWithoutRequiredItems = [];
+        $requestAttributes = [];
+        $includeRelationships = [];
+        $writeIncludeRelationships = [];
+        $replayableResources = [];
+
+        foreach ($truthSets as $truthSet) {
+            $servableOperations = array_merge($servableOperations, $truthSet->servableOperations);
+            $nonServableOperations = array_merge($nonServableOperations, $truthSet->nonServableOperations);
+            $validationConstraints = array_merge($validationConstraints, $truthSet->validationConstraints);
+            $undeclaredResponseOperations = array_merge($undeclaredResponseOperations, $truthSet->undeclaredResponseOperations);
+            $declaredResponses = static::mergeDeclaredResponses($declaredResponses, $truthSet->declaredResponses);
+            $internalOperations = array_merge($internalOperations, $truthSet->internalOperations);
+            $responseAttributes = array_merge($responseAttributes, $truthSet->responseAttributes);
+            $errorCodeOperations = array_merge($errorCodeOperations, $truthSet->errorCodeOperations);
+            $declaredErrorCodes = static::mergeDeclaredErrorCodes($declaredErrorCodes, $truthSet->declaredErrorCodes);
+            $ownershipScenarioOperations = array_merge($ownershipScenarioOperations, $truthSet->ownershipScenarioOperations);
+            $errorMappingRegistrations = static::mergeErrorMappingRegistrations($errorMappingRegistrations, $truthSet->errorMappingRegistrations);
+            $readableArraysWithoutRequiredItems = array_merge($readableArraysWithoutRequiredItems, $truthSet->readableArraysWithoutRequiredItems);
+            $requestAttributes = array_merge($requestAttributes, $truthSet->requestAttributes);
+            $includeRelationships = array_merge($includeRelationships, $truthSet->includeRelationships);
+            $writeIncludeRelationships = array_merge($writeIncludeRelationships, $truthSet->writeIncludeRelationships);
+            $replayableResources = array_merge($replayableResources, $truthSet->replayableResources);
+        }
+
+        return new self(
+            $servableOperations,
+            $nonServableOperations,
+            $validationConstraints,
+            $undeclaredResponseOperations,
+            $declaredResponses,
+            $internalOperations,
+            $responseAttributes,
+            $errorCodeOperations,
+            $declaredErrorCodes,
+            $ownershipScenarioOperations,
+            $errorMappingRegistrations,
+            $readableArraysWithoutRequiredItems,
+            $requestAttributes,
+            $includeRelationships,
+            $writeIncludeRelationships,
+            $replayableResources,
+        );
+    }
+
+    /**
+     * @param array<string, array{resources: array<string>, notAnswered: array<int|string, string>, declaredErrorCodes: array<int, array<string>>}> $registrations
+     * @param array<string, array{resources: array<string>, notAnswered: array<int|string, string>, declaredErrorCodes: array<int, array<string>>}> $additionalRegistrations
+     *
+     * @return array<string, array{resources: array<string>, notAnswered: array<int|string, string>, declaredErrorCodes: array<int, array<string>>}>
+     */
+    public static function mergeErrorMappingRegistrations(array $registrations, array $additionalRegistrations): array
+    {
+        foreach ($additionalRegistrations as $source => $registration) {
+            $existing = $registrations[$source] ?? ['resources' => [], 'notAnswered' => [], 'declaredErrorCodes' => []];
+            $merged = static::mergeDeclaredErrorCodes([$source => $existing['declaredErrorCodes']], [$source => $registration['declaredErrorCodes']]);
+
+            $registrations[$source] = [
+                'resources' => array_values(array_unique([...$existing['resources'], ...$registration['resources']])),
+                'notAnswered' => $existing['notAnswered'] + $registration['notAnswered'],
+                'declaredErrorCodes' => $merged[$source] ?? [],
+            ];
+        }
+
+        return $registrations;
+    }
+
+    /**
+     * @param array<string, array<int, array<string>>> $declaredErrorCodes
+     * @param array<string, array<int, array<string>>> $additionalDeclaredErrorCodes
+     *
+     * @return array<string, array<int, array<string>>>
+     */
+    public static function mergeDeclaredErrorCodes(array $declaredErrorCodes, array $additionalDeclaredErrorCodes): array
+    {
+        foreach ($additionalDeclaredErrorCodes as $dispatchKey => $codesByStatus) {
+            foreach ($codesByStatus as $status => $codes) {
+                $merged = array_values(array_unique(array_merge($declaredErrorCodes[$dispatchKey][$status] ?? [], $codes)));
+                sort($merged, SORT_STRING);
+                $declaredErrorCodes[$dispatchKey][$status] = $merged;
+            }
+
+            if (isset($declaredErrorCodes[$dispatchKey])) {
+                ksort($declaredErrorCodes[$dispatchKey]);
+            }
+        }
+
+        return $declaredErrorCodes;
     }
 
     /**

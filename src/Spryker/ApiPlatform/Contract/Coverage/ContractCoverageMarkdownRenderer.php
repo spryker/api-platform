@@ -32,6 +32,16 @@ class ContractCoverageMarkdownRenderer
 
     protected const string NO_DECLARER_PLACEHOLDER = '(no test declares this operation yet)';
 
+    protected const string DIMENSION_ROW_FORMAT = '| %s (%s) | %d / %d | %d | %d |';
+
+    protected const string BASELINED_DIMENSION_ROW_FORMAT = '| %s (%s) | %d / %d | %d + %d baselined | %d |';
+
+    protected const string RUNTIME_ONLY_DIMENSION_ROW_FORMAT = '| %s (%s) | runtime-only | | |';
+
+    protected const string ENFORCEMENT_ENFORCED = 'enforced';
+
+    protected const string ENFORCEMENT_REPORTED = 'reported';
+
     public function render(ContractCoverageResult $result): string
     {
         $summary = ContractCoverageSummary::fromResult($result);
@@ -59,6 +69,7 @@ class ContractCoverageMarkdownRenderer
                 $summary->uncoveredValidationCount,
                 $summary->staleValidationCount,
             ),
+            ...$this->renderDimensionRows($summary),
             '',
             $this->renderScope($result),
         ];
@@ -105,7 +116,82 @@ class ContractCoverageMarkdownRenderer
             }
         }
 
+        if ($summary->reportedSections !== []) {
+            $lines[] = '';
+            $lines[] = sprintf('### %s', ContractCoverageSummary::HEADING_REPORTED_SECTIONS);
+
+            foreach ($summary->reportedSections as $label => $keys) {
+                $lines[] = '';
+                $lines[] = sprintf('#### %s (%d)', $label, count($keys));
+                $lines[] = '';
+
+                foreach ($keys as $key) {
+                    $lines[] = sprintf('- `%s`', $key);
+                }
+            }
+        }
+
+        if ($summary->baselinedSections !== []) {
+            $lines[] = '';
+            $lines[] = sprintf('### %s', ContractCoverageSummary::HEADING_BASELINED_SECTIONS);
+
+            foreach ($summary->baselinedSections as $label => $entryLines) {
+                $lines[] = '';
+                $lines[] = sprintf('#### %s (%d)', $label, count($entryLines));
+                $lines[] = '';
+
+                foreach ($entryLines as $entryLine) {
+                    $lines[] = sprintf('- %s', $entryLine);
+                }
+            }
+        }
+
         return implode("\n", $lines) . "\n";
+    }
+
+    /**
+     * @return array<string>
+     */
+    protected function renderDimensionRows(ContractCoverageSummary $summary): array
+    {
+        $rows = [];
+
+        foreach ($summary->dimensionCounters as $counter) {
+            $enforcement = $counter['isEnforced'] ? static::ENFORCEMENT_ENFORCED : static::ENFORCEMENT_REPORTED;
+
+            if ($counter['isRuntimeOnly']) {
+                $rows[] = sprintf(static::RUNTIME_ONLY_DIMENSION_ROW_FORMAT, $counter['label'], $enforcement);
+
+                continue;
+            }
+
+            if ($counter['baselined'] !== 0) {
+                $rows[] = sprintf(
+                    static::BASELINED_DIMENSION_ROW_FORMAT,
+                    $counter['label'],
+                    $enforcement,
+                    $counter['covered'],
+                    $counter['covered'] + $counter['uncovered'] + $counter['baselined'],
+                    $counter['uncovered'],
+                    $counter['baselined'],
+                    $counter['stale'],
+                );
+
+                continue;
+            }
+
+            $rows[] = sprintf(
+                static::DIMENSION_ROW_FORMAT,
+                $counter['label'],
+                $enforcement,
+                $counter['covered'],
+                $counter['covered'] + $counter['uncovered'],
+                $counter['uncovered'],
+                $counter['stale'],
+            );
+        }
+
+        return $rows;
     }
 
     /**

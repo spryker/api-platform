@@ -89,6 +89,11 @@ class PropertyAttributeGenerator
     protected const string EXTRA_PROPERTY_ITEM_ONLY = 'itemOnly';
 
     /**
+     * @uses \Spryker\ApiPlatform\Contract\Coverage\RequestAttributeTruthCollector::EXTRA_PROPERTY_WRITABLE_ON
+     */
+    protected const string EXTRA_PROPERTY_WRITABLE_ON = 'writableOn';
+
+    /**
      * @param array<string, mixed> $property
      * @param array<string, mixed> $validationSchema
      * @param array<string, mixed> $operations
@@ -146,11 +151,18 @@ class PropertyAttributeGenerator
             $extraProperties[] = static::EXTRA_PROPERTY_ITEM_ONLY;
         }
 
-        if ($extraProperties !== []) {
-            $apiPropertyParts[] = sprintf(
-                'extraProperties: [%s]',
-                implode(', ', array_map(static fn (string $key): string => sprintf("'%s' => true", $key), $extraProperties)),
+        $extraPropertyParts = array_map(static fn (string $key): string => sprintf("'%s' => true", $key), $extraProperties);
+
+        if (isset($property[SchemaKey::WRITABLE_ON]) && is_array($property[SchemaKey::WRITABLE_ON]) && $property[SchemaKey::WRITABLE_ON] !== []) {
+            $extraPropertyParts[] = sprintf(
+                "'%s' => [%s]",
+                static::EXTRA_PROPERTY_WRITABLE_ON,
+                implode(', ', array_map(static fn (mixed $operationType): string => sprintf("'%s'", addslashes((string)$operationType)), $property[SchemaKey::WRITABLE_ON])),
             );
+        }
+
+        if ($extraPropertyParts !== []) {
+            $apiPropertyParts[] = sprintf('extraProperties: [%s]', implode(', ', $extraPropertyParts));
         }
 
         $openapiContext = $property[SchemaKey::OPEN_API_CONTEXT] ?? [];

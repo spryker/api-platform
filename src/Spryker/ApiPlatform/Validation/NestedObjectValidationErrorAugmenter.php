@@ -12,6 +12,7 @@ namespace Spryker\ApiPlatform\Validation;
 use ReflectionClass;
 use ReflectionNamedType;
 use Spryker\ApiPlatform\Utility\FractionalNumberDetector;
+use Spryker\ApiPlatform\Validation\Trait\SynthesizedViolationTrait;
 use Spryker\ApiPlatform\Validation\Trait\ValidationMessageTranslationTrait;
 use Symfony\Component\HttpFoundation\Response;
 use Symfony\Component\Validator\Constraints\Email;
@@ -49,6 +50,7 @@ use Symfony\Contracts\Translation\TranslatorInterface;
  */
 class NestedObjectValidationErrorAugmenter
 {
+    use SynthesizedViolationTrait;
     use ValidationMessageTranslationTrait;
 
     protected const string ERROR_CODE_VALIDATION = '901';
@@ -64,6 +66,10 @@ class NestedObjectValidationErrorAugmenter
     protected const string TYPE_NAME_INTEGER = 'integer';
 
     protected const string PHP_TYPE_INT = 'int';
+
+    protected const string CONSTRAINT_TYPE = 'Type';
+
+    protected const string NESTED_PATH_TEMPLATE = '%s.%s';
 
     /**
      * ApiType-agnostic on purpose: the same prefix
@@ -197,7 +203,11 @@ class NestedObjectValidationErrorAugmenter
                 continue;
             }
 
-            $errors[] = ['detail' => $detail, 'code' => static::ERROR_CODE_VALIDATION, 'status' => Response::HTTP_UNPROCESSABLE_ENTITY];
+            $errors[] = $this->withSynthesizedViolations(
+                ['detail' => $detail, 'code' => static::ERROR_CODE_VALIDATION, 'status' => Response::HTTP_UNPROCESSABLE_ENTITY],
+                sprintf(static::NESTED_PATH_TEMPLATE, $propertyName, $leaf),
+                [static::CONSTRAINT_TYPE],
+            );
             $existingDetails[$detail] = true;
             $modified = true;
         }
@@ -242,11 +252,11 @@ class NestedObjectValidationErrorAugmenter
         $leafDetails = [];
 
         foreach ($this->resolveUnassignableLeafTypes($valueObjectClass, $submittedObject, $groups) as $leaf => $declaredType) {
-            $leafDetails[] = sprintf(
+            $leafDetails[sprintf(
                 '%s => %s',
                 $leaf,
                 $this->translateValidationMessage(static::MESSAGE_TEMPLATE_TYPE, ['{{ type }}' => $declaredType]),
-            );
+            )] = (string)$leaf;
         }
 
         if ($leafDetails === []) {
@@ -261,12 +271,17 @@ class NestedObjectValidationErrorAugmenter
 
         unset($existingDetails[$objectTypeDetail]);
 
-        foreach ($leafDetails as $detail) {
+        // The detail names the leaf alone, the legacy shape; the synthesized violation keeps its full path.
+        foreach ($leafDetails as $detail => $leaf) {
             if (isset($existingDetails[$detail])) {
                 continue;
             }
 
-            $errors[] = ['detail' => $detail, 'code' => static::ERROR_CODE_VALIDATION, 'status' => Response::HTTP_UNPROCESSABLE_ENTITY];
+            $errors[] = $this->withSynthesizedViolations(
+                ['detail' => $detail, 'code' => static::ERROR_CODE_VALIDATION, 'status' => Response::HTTP_UNPROCESSABLE_ENTITY],
+                sprintf(static::NESTED_PATH_TEMPLATE, $propertyName, $leaf),
+                [static::CONSTRAINT_TYPE],
+            );
             $existingDetails[$detail] = true;
         }
 
@@ -444,7 +459,11 @@ class NestedObjectValidationErrorAugmenter
                     continue;
                 }
 
-                $errors[] = ['detail' => $missingDetail, 'code' => static::ERROR_CODE_VALIDATION, 'status' => Response::HTTP_UNPROCESSABLE_ENTITY];
+                $errors[] = $this->withSynthesizedViolations(
+                    ['detail' => $missingDetail, 'code' => static::ERROR_CODE_VALIDATION, 'status' => Response::HTTP_UNPROCESSABLE_ENTITY],
+                    sprintf(static::NESTED_PATH_TEMPLATE, $propertyName, $leaf),
+                    $this->resolveNullRejectingConstraints($valueObjectClass, $leaf, $groups),
+                );
             }
 
             $existingDetails[$missingDetail] = true;
@@ -523,6 +542,27 @@ class NestedObjectValidationErrorAugmenter
         }
 
         return $leaves;
+    }
+
+    /**
+     * The leaf's declared constraints a missing value fails. `Email`, and `NotBlank` with
+     * `allowNull`, accept null, so a missing field proves nothing about them.
+     *
+     * @param array<string> $groups
+     *
+     * @return array<string>
+     */
+    protected function resolveNullRejectingConstraints(string $valueObjectClass, string $leaf, array $groups): array
+    {
+        $constraintShortNames = [];
+
+        foreach ($this->constraintReader->getConstraintsForGroups($valueObjectClass, $leaf, $groups) as $constraint) {
+            if (($constraint instanceof NotBlank && !$constraint->allowNull) || $constraint instanceof NotNull) {
+                $constraintShortNames[] = $this->constraintShortName($constraint);
+            }
+        }
+
+        return $constraintShortNames;
     }
 
     protected function getTranslator(): TranslatorInterface

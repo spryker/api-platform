@@ -23,6 +23,7 @@ use Spryker\ApiPlatform\Validation\BoolValidationErrorAugmenter;
 use Spryker\ApiPlatform\Validation\DenormalizationErrorMatcher;
 use Spryker\ApiPlatform\Validation\NestedObjectValidationErrorAugmenter;
 use Spryker\ApiPlatform\Validation\NumericValidationErrorAugmenter;
+use Spryker\ApiPlatform\Validation\SynthesizedViolation;
 use Spryker\ApiPlatform\Validation\Trait\ValidationMessageTranslationTrait;
 use Spryker\ApiPlatform\Validation\ValidationConstraintReader;
 use Spryker\ApiPlatform\Validation\ValidationErrorFormatNormalizer;
@@ -102,7 +103,7 @@ class GlueApiExceptionSubscriber implements EventSubscriberInterface
         $this->validationErrorFormatNormalizer = $validationErrorFormatNormalizer ?? new ValidationErrorFormatNormalizer($translator);
         $this->numericValidationErrorAugmenter = $numericValidationErrorAugmenter
             ?? new NumericValidationErrorAugmenter($constraintReader, $translator);
-        $this->boolValidationErrorAugmenter = $boolValidationErrorAugmenter ?? new BoolValidationErrorAugmenter($translator);
+        $this->boolValidationErrorAugmenter = $boolValidationErrorAugmenter ?? new BoolValidationErrorAugmenter($translator, $constraintReader);
         $this->relativeLinkTransform = $relativeLinkTransform ?? new RelativeLinkTransform();
     }
 
@@ -411,13 +412,13 @@ class GlueApiExceptionSubscriber implements EventSubscriberInterface
         $groups = $this->getActiveValidationGroups($request);
 
         $this->rewriteErrors($response, fn (array $errors): array => $this->numericValidationErrorAugmenter
-            ->augmentEmptyStringValues($resourceClass, $groups, $errors));
+            ->augmentEmptyStringValues($resourceClass, $groups, $errors), $request);
         $this->rewriteErrors($response, fn (array $errors): array => $this->numericValidationErrorAugmenter
-            ->augmentStringNumericValues($resourceClass, $rawAttributes, $groups, $errors));
+            ->augmentStringNumericValues($resourceClass, $rawAttributes, $groups, $errors), $request);
 
         if ($request->getMethod() === Request::METHOD_POST) {
             $this->rewriteErrors($response, fn (array $errors): array => $this->boolValidationErrorAugmenter
-                ->augment($resourceClass, $rawAttributes, $errors));
+                ->augment($resourceClass, $rawAttributes, $errors, $groups), $request);
         }
     }
 
@@ -474,7 +475,7 @@ class GlueApiExceptionSubscriber implements EventSubscriberInterface
         }
 
         $event->setResponse($this->errorResponseFactory->createJsonApiResponse(
-            ['errors' => $result->errors],
+            ['errors' => $this->takeSynthesizedViolations($request, $result->errors)],
             Response::HTTP_UNPROCESSABLE_ENTITY,
         ));
     }
@@ -484,7 +485,7 @@ class GlueApiExceptionSubscriber implements EventSubscriberInterface
      *
      * @param callable(array<int, array<string, mixed>>): array<int, array<string, mixed>> $augment
      */
-    protected function rewriteErrors(Response $response, callable $augment): void
+    protected function rewriteErrors(Response $response, callable $augment, ?Request $request = null): void
     {
         $data = $this->decodeErrorResponse($response);
 
@@ -498,8 +499,35 @@ class GlueApiExceptionSubscriber implements EventSubscriberInterface
             return;
         }
 
-        $data['errors'] = $errors;
+        $data['errors'] = $this->takeSynthesizedViolations($request, $errors);
         $response->setContent((string)json_encode($data, JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES));
+    }
+
+    /**
+     * Moves the synthesized violations off the errors and onto the request, so they never reach the
+     * wire and the contract coverage can still read what each synthesized error stands for. Without
+     * a request they are only dropped.
+     *
+     * @param array<int, array<string, mixed>> $errors
+     *
+     * @return array<int, array<string, mixed>>
+     */
+    protected function takeSynthesizedViolations(?Request $request, array $errors): array
+    {
+        $violations = $request?->attributes->get(RequestAttribute::SYNTHESIZED_VIOLATIONS, []) ?? [];
+
+        foreach ($errors as $index => $error) {
+            if (!isset($error[SynthesizedViolation::ERROR_KEY])) {
+                continue;
+            }
+
+            array_push($violations, ...$error[SynthesizedViolation::ERROR_KEY]);
+            unset($errors[$index][SynthesizedViolation::ERROR_KEY]);
+        }
+
+        $request?->attributes->set(RequestAttribute::SYNTHESIZED_VIOLATIONS, $violations);
+
+        return $errors;
     }
 
     /**

@@ -11,6 +11,7 @@ namespace Spryker\ApiPlatform\Validation;
 
 use ReflectionNamedType;
 use ReflectionProperty;
+use Spryker\ApiPlatform\Validation\Trait\SynthesizedViolationTrait;
 use Spryker\ApiPlatform\Validation\Trait\ValidationMessageTranslationTrait;
 use Symfony\Component\HttpFoundation\Response;
 use Symfony\Component\Validator\Constraint;
@@ -30,6 +31,7 @@ use Symfony\Contracts\Translation\TranslatorInterface;
  */
 class NumericValidationErrorAugmenter
 {
+    use SynthesizedViolationTrait;
     use ValidationMessageTranslationTrait;
 
     protected const string ERROR_CODE_VALIDATION = '901';
@@ -43,6 +45,8 @@ class NumericValidationErrorAugmenter
     protected const string TYPE_NAME_NUMERIC = 'numeric';
 
     protected const string COMPARED_VALUE_ZERO = '0';
+
+    protected const string CONSTRAINT_TYPE = 'Type';
 
     /**
      * Captures the field name of a detail whose only violation is "This value should not be blank.".
@@ -109,18 +113,22 @@ class NumericValidationErrorAugmenter
                 $messages = $this->buildFallbackNumericMessages();
             }
 
+            // The fallback stands for no declared constraint, so it finds none here.
+            $violatedConstraints = $this->resolveConstraintsViolatedByEmptyString($resourceClass, $fieldName, $groups);
+
             foreach ($messages as $errorMessage) {
+                $constraintShortName = $violatedConstraints[$errorMessage] ?? null;
                 $detail = sprintf('%s => %s', $fieldName, $errorMessage);
 
                 if (isset($existingDetails[$detail])) {
                     continue;
                 }
 
-                $errors[] = [
+                $errors[] = $this->withSynthesizedViolations([
                     'detail' => $detail,
                     'code' => static::ERROR_CODE_VALIDATION,
                     'status' => Response::HTTP_UNPROCESSABLE_ENTITY,
-                ];
+                ], $fieldName, $constraintShortName === null ? [] : [$constraintShortName]);
 
                 $existingDetails[$detail] = true;
             }
@@ -227,11 +235,11 @@ class NumericValidationErrorAugmenter
             static fn (array $e): bool => ($e['detail'] ?? '') !== $typeNumericDetail,
         ));
 
-        array_unshift($errors, [
+        array_unshift($errors, $this->withSynthesizedViolations([
             'detail' => $typeIntegerDetail,
             'code' => static::ERROR_CODE_VALIDATION,
             'status' => Response::HTTP_UNPROCESSABLE_ENTITY,
-        ]);
+        ], $fieldName, [static::CONSTRAINT_TYPE]));
 
         $this->appendComparisonConstraintErrors($errors, $resourceClass, $fieldName, $rawValue, $groups);
     }
@@ -257,11 +265,11 @@ class NumericValidationErrorAugmenter
             return;
         }
 
-        array_unshift($errors, [
+        array_unshift($errors, $this->withSynthesizedViolations([
             'detail' => sprintf('%s => %s', $fieldName, $typeError),
             'code' => static::ERROR_CODE_VALIDATION,
             'status' => Response::HTTP_UNPROCESSABLE_ENTITY,
-        ]);
+        ], $fieldName, [static::CONSTRAINT_TYPE]));
     }
 
     /**
@@ -270,12 +278,14 @@ class NumericValidationErrorAugmenter
      */
     protected function appendComparisonConstraintErrors(array &$errors, string $resourceClass, string $fieldName, string $rawValue, array $groups): void
     {
+        $violatedConstraints = $this->resolveViolatedComparisonConstraints($resourceClass, $fieldName, $rawValue, $groups);
+
         foreach ($this->evaluateComparisonConstraints($resourceClass, $fieldName, $rawValue, $groups) as $errorDetail) {
-            $errors[] = [
+            $errors[] = $this->withSynthesizedViolations([
                 'detail' => sprintf('%s => %s', $fieldName, $errorDetail),
                 'code' => static::ERROR_CODE_VALIDATION,
                 'status' => Response::HTTP_UNPROCESSABLE_ENTITY,
-            ];
+            ], $fieldName, isset($violatedConstraints[$errorDetail]) ? [$violatedConstraints[$errorDetail]] : []);
         }
     }
 
@@ -323,25 +333,11 @@ class NumericValidationErrorAugmenter
         $errors = [];
 
         foreach ($this->constraintReader->getConstraintsForGroups($resourceClass, $fieldName, $groups) as $constraint) {
-            if (!$constraint instanceof GreaterThan && !$constraint instanceof LessThan) {
+            if (!$constraint instanceof AbstractComparison || !$this->isComparisonConstraintViolated($constraint, $rawValue)) {
                 continue;
             }
 
-            if (!isset($constraint->value, $constraint->message)) {
-                continue;
-            }
-
-            $comparand = $constraint->value;
-            $violated = $constraint instanceof GreaterThan
-                ? !($rawValue > $comparand)
-                : !($rawValue < $comparand);
-
-            if (!$violated) {
-                continue;
-            }
-
-            $comparandString = is_scalar($constraint->value) ? (string)$constraint->value : '';
-            $msg = strtr((string)$constraint->message, ['{{ compared_value }}' => $comparandString]);
+            $msg = $this->buildComparisonConstraintMessage($constraint);
 
             if (!in_array($msg, $errors, true)) {
                 $errors[] = $msg;
@@ -349,6 +345,50 @@ class NumericValidationErrorAugmenter
         }
 
         return $errors;
+    }
+
+    /**
+     * @param array<string> $groups
+     *
+     * @return array<string, string> Message => constraint short name, for each comparison the raw value fails.
+     */
+    protected function resolveViolatedComparisonConstraints(string $resourceClass, string $fieldName, string $rawValue, array $groups): array
+    {
+        $violated = [];
+
+        foreach ($this->constraintReader->getConstraintsForGroups($resourceClass, $fieldName, $groups) as $constraint) {
+            if ($constraint instanceof AbstractComparison && $this->isComparisonConstraintViolated($constraint, $rawValue)) {
+                $violated[$this->buildComparisonConstraintMessage($constraint)] ??= $this->constraintShortName($constraint);
+            }
+        }
+
+        return $violated;
+    }
+
+    /**
+     * Only GreaterThan and LessThan are judged, using PHP 8 comparison semantics on the raw string
+     * (a non-numeric string is compared as a string against the comparand).
+     */
+    protected function isComparisonConstraintViolated(Constraint $constraint, string $rawValue): bool
+    {
+        if (!$constraint instanceof GreaterThan && !$constraint instanceof LessThan) {
+            return false;
+        }
+
+        if (!isset($constraint->value, $constraint->message)) {
+            return false;
+        }
+
+        return $constraint instanceof GreaterThan
+            ? !($rawValue > $constraint->value)
+            : !($rawValue < $constraint->value);
+    }
+
+    protected function buildComparisonConstraintMessage(AbstractComparison $constraint): string
+    {
+        $comparandString = is_scalar($constraint->value) ? (string)$constraint->value : '';
+
+        return strtr((string)$constraint->message, ['{{ compared_value }}' => $comparandString]);
     }
 
     /**
@@ -413,6 +453,30 @@ class NumericValidationErrorAugmenter
         }
 
         return $errors;
+    }
+
+    /**
+     * The constraints an empty string actually fails, keyed by the message the empty-string pass
+     * renders for each: `Type`, and a GreaterThan or LessThan the raw `''` does not satisfy. A
+     * Range or another comparison is reported by that pass but not judged, so it proves nothing.
+     *
+     * @param array<string> $groups
+     *
+     * @return array<string, string> Message => constraint short name.
+     */
+    protected function resolveConstraintsViolatedByEmptyString(string $resourceClass, string $fieldName, array $groups): array
+    {
+        $violated = [];
+
+        foreach ($this->constraintReader->getConstraintsForGroups($resourceClass, $fieldName, $groups) as $constraint) {
+            $message = $this->renderConstraintMessage($constraint);
+
+            if ($message !== null && ($constraint instanceof Type || $this->isComparisonConstraintViolated($constraint, ''))) {
+                $violated[$message] ??= $this->constraintShortName($constraint);
+            }
+        }
+
+        return $violated;
     }
 
     protected function renderConstraintMessage(Constraint $constraint): ?string

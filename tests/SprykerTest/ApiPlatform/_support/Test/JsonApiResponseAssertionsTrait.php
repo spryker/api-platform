@@ -101,6 +101,8 @@ trait JsonApiResponseAssertionsTrait
 
     protected const string LINK_NEXT = 'next';
 
+    protected const string VALIDATION_DETAIL_SEPARATOR = ' => ';
+
     /**
      * @return array<string, mixed>
      */
@@ -249,13 +251,38 @@ trait JsonApiResponseAssertionsTrait
      * constraints fired is not part of the response contract, so the assertion stops at the
      * attribute — the rule under test is declared by
      * {@see \Spryker\ApiPlatform\Contract\Attribute\CoversApiValidation}.
+     *
+     * Once validation evidence is enforced, the attribute has to open an error detail
+     * (`<attribute> => <message>`), so another attribute that merely contains the name no longer
+     * satisfies it.
      */
     protected function assertValidationFailedForAttribute(Response $response, string $attribute): void
     {
         $body = (string)$response->getContent();
 
         $this->assertSame(Response::HTTP_UNPROCESSABLE_ENTITY, $response->getStatusCode(), $body);
-        $this->assertStringContainsString($attribute, $body, sprintf('Expected a validation violation for "%s". Body: %s', $attribute, $body));
+
+        if (!$this->isValidationEvidenceEnforced()) {
+            $this->assertStringContainsString($attribute, $body, sprintf('Expected a validation violation for "%s". Body: %s', $attribute, $body));
+
+            return;
+        }
+
+        $details = array_column($this->getJsonApiMembers($response, static::JSON_API_KEY_ERRORS), static::JSON_API_KEY_DETAIL);
+        $matchingDetails = array_filter(
+            $details,
+            static fn (mixed $detail): bool => is_string($detail) && str_starts_with($detail, $attribute . static::VALIDATION_DETAIL_SEPARATOR),
+        );
+
+        $this->assertNotSame([], $matchingDetails, sprintf('Expected an error detail starting with "%s%s". Body: %s', $attribute, static::VALIDATION_DETAIL_SEPARATOR, $body));
+    }
+
+    /**
+     * Overridden by the test case, which knows whether validation evidence is enforced.
+     */
+    protected function isValidationEvidenceEnforced(): bool
+    {
+        return false;
     }
 
     /**
@@ -377,6 +404,51 @@ trait JsonApiResponseAssertionsTrait
     }
 
     /**
+     * Asserts a `?include=` response resolved one relationship: the ids every `data` member
+     * references under `relationships.<name>.data` equal the expected ones, and each referenced
+     * resource is delivered in `included`. Records the relationship so a `#[CoversApiIncludes]`
+     * test is held to it.
+     *
+     * @param array<string> $expectedIncludedIds
+     */
+    protected function assertIncludedRelationship(Response $response, string $relationshipName, array $expectedIncludedIds): void
+    {
+        $this->assertNotSame([], $expectedIncludedIds, 'An include is proven by at least one included resource; give the fixture one.');
+
+        $document = $this->decodeJsonApi($response);
+        $data = $document[static::JSON_API_KEY_DATA] ?? [];
+        $members = is_array($data) && array_is_list($data) ? $data : [$data];
+
+        $references = [];
+        foreach ($members as $member) {
+            $relationshipData = is_array($member) ? ($member[static::JSON_API_KEY_RELATIONSHIPS][$relationshipName][static::JSON_API_KEY_DATA] ?? []) : [];
+            $relationshipData = is_array($relationshipData) && !array_is_list($relationshipData) ? [$relationshipData] : (array)$relationshipData;
+
+            foreach ($relationshipData as $reference) {
+                if (is_array($reference) && isset($reference[static::JSON_API_KEY_TYPE], $reference[static::JSON_API_KEY_ID])) {
+                    $references[] = [(string)$reference[static::JSON_API_KEY_TYPE], (string)$reference[static::JSON_API_KEY_ID]];
+                }
+            }
+        }
+
+        $referencedIds = array_values(array_unique(array_column($references, 1)));
+        $expectedIds = array_values(array_unique($expectedIncludedIds));
+        sort($referencedIds);
+        sort($expectedIds);
+        $this->assertSame($expectedIds, $referencedIds, sprintf('relationships.%s.data references other ids than expected. Body: %s', $relationshipName, (string)$response->getContent()));
+
+        $included = [];
+        foreach ($this->getJsonApiMembers($response, static::JSON_API_KEY_INCLUDED) as $includedResource) {
+            $included[($includedResource[static::JSON_API_KEY_TYPE] ?? '') . "\0" . ($includedResource[static::JSON_API_KEY_ID] ?? '')] = true;
+        }
+        foreach ($references as [$type, $id]) {
+            $this->assertArrayHasKey($type . "\0" . $id, $included, sprintf('%s "%s" is referenced by relationships.%s but missing from included.', $type, $id, $relationshipName));
+        }
+
+        $this->includedRelationshipRecorder?->record($relationshipName);
+    }
+
+    /**
      * Compares only the attributes named in the expectation and ignores the rest, so a resource
      * gaining an unrelated attribute does not break every test that reads it.
      *
@@ -411,7 +483,7 @@ trait JsonApiResponseAssertionsTrait
                 json_encode($expected, JSON_THROW_ON_ERROR),
                 json_encode($actual, JSON_THROW_ON_ERROR),
             ));
-            $this->responseAttributeRecorder?->record($path);
+            $this->responseAttributeRecorder?->recordValue($path, $actual);
         }
     }
 
@@ -427,8 +499,9 @@ trait JsonApiResponseAssertionsTrait
     {
         $document = $this->decodeJsonApi($response);
         foreach ($paths as $path) {
-            $this->assertNotNull($this->readResponseAttribute($document, $path), sprintf('%s is null', $path));
-            $this->responseAttributeRecorder?->record($path);
+            $actual = $this->readResponseAttribute($document, $path);
+            $this->assertNotNull($actual, sprintf('%s is null', $path));
+            $this->responseAttributeRecorder?->recordValue($path, $actual);
         }
     }
 
@@ -451,7 +524,7 @@ trait JsonApiResponseAssertionsTrait
                 json_encode($expected, JSON_THROW_ON_ERROR),
                 json_encode($actual, JSON_THROW_ON_ERROR),
             ));
-            $this->responseAttributeRecorder?->record($path);
+            $this->responseAttributeRecorder?->recordValue($path, $actual);
         }
     }
 
@@ -466,11 +539,9 @@ trait JsonApiResponseAssertionsTrait
     {
         $document = $this->decodeJsonApi($response);
         foreach ($paths as $path) {
-            $this->assertNotNull(
-                $this->readIncludedResponseAttribute($document, $resourceType, $path),
-                sprintf('%s %s is null', $resourceType, $path),
-            );
-            $this->responseAttributeRecorder?->record($path);
+            $actual = $this->readIncludedResponseAttribute($document, $resourceType, $path);
+            $this->assertNotNull($actual, sprintf('%s %s is null', $resourceType, $path));
+            $this->responseAttributeRecorder?->recordValue($path, $actual);
         }
     }
 

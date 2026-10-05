@@ -19,9 +19,12 @@ class ContractCoverageResult
      * @param array<string> $selectedResources The resources this run enforced.
      * @param array<string> $unmatchedFilters Module filters that named no generated resource.
      * @param int $generatedResourceCount Every generated resource, enforced or excluded.
+     * @param \Spryker\ApiPlatform\Contract\Coverage\ContractCoverageEnforcement $enforcement The dimensions a gap fails beyond operations, validation rules and response attributes.
      * @param array<\Spryker\ApiPlatform\Contract\Coverage\SchemaDefect> $schemaDefects Enforced operations whose schema declares no responses.
      * @param array<string, array<string>> $operationDeclarers Dispatch key => the tests declaring it, so a gap can name where its marker belongs.
      * @param array<string> $unknownExclusions Excluded short names no generated resource carries.
+     * @param array<string, array<string>> $entryDeclarers Uncovered entry key of a dimension => the tests where its claim belongs.
+     * @param array<string> $unregisteredErrorMappings `Class::method` of the error mappings a module seems to carry and no resource registers.
      */
     public function __construct(
         public readonly CoverageReport $report,
@@ -29,9 +32,12 @@ class ContractCoverageResult
         public readonly array $selectedResources,
         public readonly array $unmatchedFilters,
         public readonly int $generatedResourceCount,
+        public readonly ContractCoverageEnforcement $enforcement,
         public readonly array $schemaDefects = [],
         public readonly array $operationDeclarers = [],
         public readonly array $unknownExclusions = [],
+        public readonly array $entryDeclarers = [],
+        public readonly array $unregisteredErrorMappings = [],
     ) {
     }
 
@@ -70,6 +76,28 @@ class ContractCoverageResult
         }
         if ($this->report->uncoveredResponseAttributes !== []) {
             $reasons[] = count($this->report->uncoveredResponseAttributes) . ' uncovered response attribute(s)';
+        }
+
+        foreach (ContractCoverageDimension::cases() as $dimension) {
+            $dimensionCoverage = $this->report->dimensionCoverage($dimension->value);
+
+            // An entry that outlived its bug hides nothing, but left in place it would excuse the
+            // item again once it regresses, so it fails whether or not the dimension is enforced.
+            $baselineEntriesToRemove = $dimensionCoverage->baselineEntriesToRemove();
+            if ($baselineEntriesToRemove !== []) {
+                $reasons[] = sprintf('%d %s baseline entry(ies) to remove', count($baselineEntriesToRemove), $dimension->itemNoun());
+            }
+
+            if (!$this->enforcement->isEnforced($dimension)) {
+                continue;
+            }
+
+            if ($dimensionCoverage->uncovered !== []) {
+                $reasons[] = sprintf('%d uncovered %s(s)', count($dimensionCoverage->uncovered), $dimension->itemNoun());
+            }
+            if ($dimensionCoverage->stale !== []) {
+                $reasons[] = sprintf('%d stale %s claim(s)', count($dimensionCoverage->stale), $dimension->itemNoun());
+            }
         }
 
         return $reasons;

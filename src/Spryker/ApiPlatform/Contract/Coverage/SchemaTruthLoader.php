@@ -17,6 +17,7 @@ use ApiPlatform\OpenApi\Model\Operation as OpenApiOperation;
 use ReflectionClass;
 use ReflectionNamedType;
 use ReflectionProperty;
+use Spryker\ApiPlatform\Contract\Attribute\Scenario;
 use Symfony\Component\Validator\Constraint;
 use Symfony\Component\Validator\Constraints\All;
 use Symfony\Component\Validator\Constraints\Collection;
@@ -53,6 +54,25 @@ class SchemaTruthLoader
     protected const string EXTRA_PROPERTY_DECLARED_RESPONSES = 'declaredResponses';
 
     /**
+     * @uses \Spryker\ApiPlatform\Generator\ResourceAttributeGenerator::EXTRA_PROPERTY_DECLARED_ERROR_CODES
+     */
+    protected const string EXTRA_PROPERTY_DECLARED_ERROR_CODES = 'declaredErrorCodes';
+
+    /**
+     * @uses \Spryker\ApiPlatform\Generator\ResourceAttributeGenerator::EXTRA_PROPERTY_ERROR_MAPPINGS
+     */
+    protected const string EXTRA_PROPERTY_ERROR_MAPPINGS = 'errorMappings';
+
+    /**
+     * @uses \Spryker\ApiPlatform\Generator\ResourceAttributeGenerator::EXTRA_PROPERTY_DECLARED_INCLUDES
+     */
+    protected const string EXTRA_PROPERTY_DECLARED_INCLUDES = 'declaredIncludes';
+
+    protected const string ERROR_MAPPING_KEY_SOURCE = 'source';
+
+    protected const string ERROR_MAPPING_KEY_NOT_ANSWERED = 'notAnswered';
+
+    /**
      * @uses \Spryker\ApiPlatform\Generator\ResourceAttributeGenerator::EXTRA_PROPERTY_INTERNAL
      */
     protected const string EXTRA_PROPERTY_INTERNAL = 'internal';
@@ -76,9 +96,17 @@ class SchemaTruthLoader
 
     protected const string VALIDATION_CONTEXT_GROUPS = 'groups';
 
+    protected const string PATTERN_VOTER_ATTRIBUTE = "/is_granted\\(\\s*['\"]([A-Z0-9_]+)['\"]/";
+
+    /**
+     * @param array<string> $ownershipSecurityAttributes Security voter attributes whose grant depends on
+     *   who owns the addressed resource; an operation guarded by one owes a foreign-owner test.
+     */
     public function __construct(
         protected ConstraintRuleMapper $ruleMapper,
         protected ResponseAttributeTruthCollector $responseAttributeTruthCollector,
+        protected array $ownershipSecurityAttributes,
+        protected RequestAttributeTruthCollector $requestAttributeTruthCollector,
     ) {
     }
 
@@ -132,7 +160,62 @@ class SchemaTruthLoader
                 $operationTruth['declaredResponses'],
                 $operationTruth['bodylessDispatchKeys'],
             ),
+            $operationTruth['errorCodeOperations'],
+            $operationTruth['declaredErrorCodes'],
+            $operationTruth['ownershipScenarioOperations'],
+            $this->collectErrorMappingRegistrations($apiResource, $shortName, $operationTruth['declaredErrorCodes']),
+            $this->responseAttributeTruthCollector->collectArraysWithoutRequiredItems(
+                $reflectionClass,
+                $this->responseAttributeOperations($operationTruth['servableOperations'], $operationTruth['declaredResponses'], $operationTruth['bodylessDispatchKeys']),
+            ),
+            $this->requestAttributeTruthCollector->collect($reflectionClass, $operationTruth['successfulInputOperations']),
+            $operationTruth['includeRelationships'],
+            $operationTruth['writeIncludeRelationships'],
+            $operationTruth['servableOperations'] === [] ? [] : [new ReplayedResource($shortName)],
         );
+    }
+
+    /**
+     * The mappings a resource registers, each paired with every code the resource's operations
+     * declare: a mapped code is answered when any operation of a registering resource declares it.
+     *
+     * @param array<string, array<int, array<string>>> $declaredErrorCodes
+     *
+     * @return array<string, array{resources: array<string>, notAnswered: array<int|string, string>, declaredErrorCodes: array<int, array<string>>}>
+     */
+    protected function collectErrorMappingRegistrations(ApiResource $apiResource, string $shortName, array $declaredErrorCodes): array
+    {
+        $errorMappings = $apiResource->getExtraProperties()[static::EXTRA_PROPERTY_ERROR_MAPPINGS] ?? null;
+        if (!is_array($errorMappings)) {
+            return [];
+        }
+
+        $resourceErrorCodes = [];
+        foreach ($declaredErrorCodes as $codesByStatus) {
+            $resourceErrorCodes = TruthSet::mergeDeclaredErrorCodes($resourceErrorCodes, ['' => $codesByStatus]);
+        }
+
+        $registrations = [];
+        foreach ($errorMappings as $errorMapping) {
+            $source = is_array($errorMapping) ? ($errorMapping[static::ERROR_MAPPING_KEY_SOURCE] ?? null) : null;
+            if (!is_string($source)) {
+                continue;
+            }
+
+            $notAnswered = [];
+            foreach ((array)($errorMapping[static::ERROR_MAPPING_KEY_NOT_ANSWERED] ?? []) as $code => $reason) {
+                $notAnswered[(string)$code] = (string)$reason;
+            }
+
+            $registrations = TruthSet::mergeErrorMappingRegistrations($registrations, [
+            $source => [
+                'resources' => [$shortName],
+                'notAnswered' => $notAnswered,
+                'declaredErrorCodes' => $resourceErrorCodes[''] ?? [],
+            ]]);
+        }
+
+        return $registrations;
     }
 
     /**
@@ -160,22 +243,38 @@ class SchemaTruthLoader
         array $declaredResponses,
         array $bodylessDispatchKeys,
     ): array {
-        $successOperations = array_values(array_filter(
+        return $this->responseAttributeTruthCollector->collect(
+            $reflectionClass,
+            $this->responseAttributeOperations($servableOperations, $declaredResponses, $bodylessDispatchKeys),
+        );
+    }
+
+    /**
+     * The operations whose response carries the resource body.
+     *
+     * @param array<\Spryker\ApiPlatform\Contract\Coverage\ApiOperation> $servableOperations
+     * @param array<string, array<int>> $declaredResponses
+     * @param array<string> $bodylessDispatchKeys
+     *
+     * @return array<\Spryker\ApiPlatform\Contract\Coverage\ApiOperation>
+     */
+    protected function responseAttributeOperations(array $servableOperations, array $declaredResponses, array $bodylessDispatchKeys): array
+    {
+        return array_values(array_filter(
             $servableOperations,
             fn (ApiOperation $operation): bool => $operation->status === null
                 && strtoupper($operation->verb) !== static::VERB_DELETE
                 && !in_array($operation->dispatchKey(), $bodylessDispatchKeys, true)
                 && $this->declaresSuccessResponse($declaredResponses[$operation->dispatchKey()] ?? []),
         ));
-
-        return $this->responseAttributeTruthCollector->collect($reflectionClass, $successOperations);
     }
 
     /**
      * An operation that declares nothing is a schema defect reported in its own right
-     * ({@see TruthSet::$undeclaredResponseOperations}); it keeps demanding its response attributes,
+     * ({@see TruthSet::$undeclaredResponseOperations}); it keeps demanding what a success owes,
      * because the missing declaration is the thing to fix rather than a licence to skip coverage.
-     * Only an operation that declares statuses and no 2xx among them is exempt.
+     * Only an operation that declares statuses and no 2xx among them is exempt from the response
+     * attributes, the request attributes and the includes. Its declared error statuses stay owed.
      *
      * @param array<int> $declaredStatuses
      */
@@ -195,7 +294,7 @@ class SchemaTruthLoader
     }
 
     /**
-     * @return array{servableOperations: array<\Spryker\ApiPlatform\Contract\Coverage\ApiOperation>, nonServableOperations: array<\Spryker\ApiPlatform\Contract\Coverage\ApiOperation>, internalOperations: array<\Spryker\ApiPlatform\Contract\Coverage\ApiOperation>, undeclaredResponseOperations: array<\Spryker\ApiPlatform\Contract\Coverage\ApiOperation>, declaredResponses: array<string, array<int>>, inputOperations: array<array{operation: \Spryker\ApiPlatform\Contract\Coverage\ApiOperation, groups: array<string>}>, bodylessDispatchKeys: array<string>}
+     * @return array{servableOperations: array<\Spryker\ApiPlatform\Contract\Coverage\ApiOperation>, nonServableOperations: array<\Spryker\ApiPlatform\Contract\Coverage\ApiOperation>, internalOperations: array<\Spryker\ApiPlatform\Contract\Coverage\ApiOperation>, undeclaredResponseOperations: array<\Spryker\ApiPlatform\Contract\Coverage\ApiOperation>, declaredResponses: array<string, array<int>>, inputOperations: array<array{operation: \Spryker\ApiPlatform\Contract\Coverage\ApiOperation, groups: array<string>, type: string}>, successfulInputOperations: array<array{operation: \Spryker\ApiPlatform\Contract\Coverage\ApiOperation, groups: array<string>, type: string}>, errorCodeOperations: array<\Spryker\ApiPlatform\Contract\Coverage\ApiOperation>, declaredErrorCodes: array<string, array<int, array<string>>>, ownershipScenarioOperations: array<\Spryker\ApiPlatform\Contract\Coverage\ApiOperation>, includeRelationships: array<\Spryker\ApiPlatform\Contract\Coverage\IncludeRelationship>, writeIncludeRelationships: array<\Spryker\ApiPlatform\Contract\Coverage\IncludeRelationship>, bodylessDispatchKeys: array<string>}
      */
     protected function collectOperations(ApiResource $apiResource, string $shortName, string $identifier): array
     {
@@ -207,6 +306,13 @@ class SchemaTruthLoader
         $undeclaredResponseOperations = [];
         $declaredResponses = [];
         $inputOperations = [];
+        $successfulInputOperations = [];
+        $errorCodeOperations = [];
+        $declaredErrorCodes = [];
+        $ownershipScenarioOperations = [];
+        $includeRelationships = [];
+        $writeIncludeRelationships = [];
+        $declaredIncludes = $this->declaredIncludes($apiResource);
         $bodylessDispatchKeys = [];
 
         // `Operations` is keyed on the base `Operation`, so a resource may carry one that is not
@@ -260,11 +366,48 @@ class SchemaTruthLoader
                 $this->deriveDeclaredErrorResponses($declaredStatuses, $apiOperation),
             );
 
+            $operationErrorCodes = $this->declaredErrorCodes($operation);
+            if ($operationErrorCodes !== []) {
+                $declaredErrorCodes = TruthSet::mergeDeclaredErrorCodes(
+                    $declaredErrorCodes,
+                    [$apiOperation->dispatchKey() => $operationErrorCodes],
+                );
+                $errorCodeOperations = array_merge($errorCodeOperations, $this->deriveDeclaredErrorCodes($operationErrorCodes, $apiOperation));
+            }
+
+            $operationType = (new ReflectionClass($operation))->getShortName();
+            $declaresSuccessResponse = $this->declaresSuccessResponse($declaredStatuses);
+            // Only a successful response carries `included`, so an operation that declares no 2xx can
+            // neither owe an include nor prove one.
+            foreach ($declaresSuccessResponse ? $declaredIncludes : [] as $relationshipName => $includedOnTypes) {
+                if (in_array($operationType, $includedOnTypes, true)) {
+                    $includeRelationships[] = new IncludeRelationship($apiOperation->dispatchKey(), $relationshipName);
+
+                    continue;
+                }
+
+                if ($this->isInputOperation($operation)) {
+                    $writeIncludeRelationships[] = new IncludeRelationship($apiOperation->dispatchKey(), $relationshipName);
+                }
+            }
+
+            if ($this->isGuardedByOwnership($operation, $apiResource)) {
+                $ownershipScenarioOperations[] = new ApiOperation($apiOperation->verb, $apiOperation->uriTemplate, scenario: Scenario::FOREIGN_OWNER);
+            }
+
             if ($this->isInputOperation($operation)) {
-                $inputOperations[] = [
+                $inputOperation = [
                     'operation' => $apiOperation,
                     'groups' => $this->resolveOperationValidationGroups($operation),
+                    'type' => $operationType,
                 ];
+                $inputOperations[] = $inputOperation;
+
+                // A request attribute is proven by a successful request, which an operation that
+                // declares no 2xx never answers. Its validation rules stay owed: a 4xx proves them.
+                if ($declaresSuccessResponse) {
+                    $successfulInputOperations[] = $inputOperation;
+                }
             }
         }
 
@@ -275,8 +418,50 @@ class SchemaTruthLoader
             'undeclaredResponseOperations' => $undeclaredResponseOperations,
             'declaredResponses' => $declaredResponses,
             'inputOperations' => $inputOperations,
+            'successfulInputOperations' => $successfulInputOperations,
+            'errorCodeOperations' => $errorCodeOperations,
+            'declaredErrorCodes' => $declaredErrorCodes,
+            'ownershipScenarioOperations' => $ownershipScenarioOperations,
+            'includeRelationships' => $includeRelationships,
+            'writeIncludeRelationships' => $writeIncludeRelationships,
             'bodylessDispatchKeys' => $bodylessDispatchKeys,
         ];
+    }
+
+    /**
+     * @return array<string, array<string>> relationship name => the operation types that owe it
+     */
+    protected function declaredIncludes(ApiResource $apiResource): array
+    {
+        $declaredIncludes = $apiResource->getExtraProperties()[static::EXTRA_PROPERTY_DECLARED_INCLUDES] ?? null;
+        if (!is_array($declaredIncludes)) {
+            return [];
+        }
+
+        $includes = [];
+        foreach ($declaredIncludes as $relationshipName => $operationTypes) {
+            $includes[(string)$relationshipName] = array_values(array_map(static fn (mixed $type): string => (string)$type, (array)$operationTypes));
+        }
+
+        return $includes;
+    }
+
+    /**
+     * The attribute is reflected un-merged, so an operation without a security expression of its
+     * own falls back to the resource's by hand, as API Platform does at runtime.
+     */
+    protected function isGuardedByOwnership(HttpOperation $operation, ApiResource $apiResource): bool
+    {
+        if ($this->ownershipSecurityAttributes === []) {
+            return false;
+        }
+
+        $security = $operation->getSecurity() ?? $apiResource->getSecurity();
+        if (!is_string($security) || !preg_match_all(static::PATTERN_VOTER_ATTRIBUTE, $security, $matches)) {
+            return false;
+        }
+
+        return array_intersect($matches[1], $this->ownershipSecurityAttributes) !== [];
     }
 
     /**
@@ -295,33 +480,48 @@ class SchemaTruthLoader
      */
     protected function mergeTruthSets(array $truthSets): TruthSet
     {
-        $servableOperations = [];
-        $nonServableOperations = [];
-        $internalOperations = [];
-        $validationConstraints = [];
-        $undeclaredResponseOperations = [];
-        $declaredResponses = [];
-        $responseAttributes = [];
+        return TruthSet::merge(...$truthSets);
+    }
 
-        foreach ($truthSets as $truthSet) {
-            $servableOperations = array_merge($servableOperations, $truthSet->servableOperations);
-            $nonServableOperations = array_merge($nonServableOperations, $truthSet->nonServableOperations);
-            $internalOperations = array_merge($internalOperations, $truthSet->internalOperations);
-            $validationConstraints = array_merge($validationConstraints, $truthSet->validationConstraints);
-            $undeclaredResponseOperations = array_merge($undeclaredResponseOperations, $truthSet->undeclaredResponseOperations);
-            $responseAttributes = array_merge($responseAttributes, $truthSet->responseAttributes);
-            $declaredResponses = TruthSet::mergeDeclaredResponses($declaredResponses, $truthSet->declaredResponses);
+    /**
+     * The operations of a resource class a request can reach, each with the metadata a request
+     * builder needs - the same servable classification the truth uses.
+     *
+     * @param class-string $resourceClass
+     *
+     * @return array<array{apiOperation: \Spryker\ApiPlatform\Contract\Coverage\ApiOperation, httpOperation: \ApiPlatform\Metadata\HttpOperation, shortName: string}>
+     */
+    public function servableOperationsOf(string $resourceClass): array
+    {
+        $reflectionClass = new ReflectionClass($resourceClass);
+        $apiResourceAttributes = $reflectionClass->getAttributes(ApiResource::class);
+        if ($apiResourceAttributes === []) {
+            return [];
         }
 
-        return new TruthSet(
-            $servableOperations,
-            $nonServableOperations,
-            $validationConstraints,
-            $undeclaredResponseOperations,
-            $declaredResponses,
-            $internalOperations,
-            $responseAttributes,
-        );
+        /** @var \ApiPlatform\Metadata\ApiResource $apiResource */
+        $apiResource = $apiResourceAttributes[0]->newInstance();
+        $shortName = (string)$apiResource->getShortName();
+        $identifier = $this->resolveIdentifier($reflectionClass);
+
+        // `Operations` is keyed on the base `Operation`, as in collectOperations().
+        /** @var iterable<\ApiPlatform\Metadata\Operation> $operations */
+        $operations = $apiResource->getOperations() ?? [];
+
+        $servableOperations = [];
+        foreach ($operations as $operation) {
+            if (!$operation instanceof HttpOperation || $this->isNonServable($operation, $apiResource->getProvider())) {
+                continue;
+            }
+
+            $servableOperations[] = [
+                'apiOperation' => new ApiOperation($operation->getMethod(), $this->resolveUriTemplate($operation, $shortName, $identifier)),
+                'httpOperation' => $operation,
+                'shortName' => $shortName,
+            ];
+        }
+
+        return $servableOperations;
     }
 
     /**
@@ -473,6 +673,52 @@ class SchemaTruthLoader
         return $errorResponses;
     }
 
+    /**
+     * The codes each error status of an operation declares, read back from the `extraProperties`
+     * the generator writes for visible and hidden operations alike - see
+     * {@see \Spryker\ApiPlatform\Generator\ResourceAttributeGenerator::addDeclaredErrorCodesExtraProperty()}.
+     *
+     * @return array<int, array<string>>
+     */
+    protected function declaredErrorCodes(HttpOperation $operation): array
+    {
+        $declaredErrorCodes = $operation->getExtraProperties()[static::EXTRA_PROPERTY_DECLARED_ERROR_CODES] ?? null;
+        if (!is_array($declaredErrorCodes)) {
+            return [];
+        }
+
+        $codesByStatus = [];
+        foreach ($declaredErrorCodes as $status => $codes) {
+            if (!is_array($codes) || $codes === []) {
+                continue;
+            }
+
+            $codesByStatus[(int)$status] = array_values(array_map(static fn (mixed $code): string => (string)$code, $codes));
+        }
+
+        return $codesByStatus;
+    }
+
+    /**
+     * One coverage item per declared code, next to the status item it narrows.
+     *
+     * @param array<int, array<string>> $codesByStatus
+     *
+     * @return array<\Spryker\ApiPlatform\Contract\Coverage\ApiOperation>
+     */
+    protected function deriveDeclaredErrorCodes(array $codesByStatus, ApiOperation $apiOperation): array
+    {
+        $errorCodeOperations = [];
+
+        foreach ($codesByStatus as $status => $codes) {
+            foreach ($codes as $code) {
+                $errorCodeOperations[] = new ApiOperation($apiOperation->verb, $apiOperation->uriTemplate, $status, code: $code);
+            }
+        }
+
+        return $errorCodeOperations;
+    }
+
     protected function isNonServable(HttpOperation $operation, callable|string|null $resourceProvider): bool
     {
         return $operation->getMethod() === static::VERB_GET
@@ -538,7 +784,7 @@ class SchemaTruthLoader
      * test on POST but none on PATCH; one carried by both groups requires one test per operation.
      *
      * @param \ReflectionClass<object> $reflectionClass
-     * @param array<array{operation: \Spryker\ApiPlatform\Contract\Coverage\ApiOperation, groups: array<string>}> $inputOperations
+     * @param array<array{operation: \Spryker\ApiPlatform\Contract\Coverage\ApiOperation, groups: array<string>, type: string}> $inputOperations
      *
      * @return array<\Spryker\ApiPlatform\Contract\Coverage\ValidationConstraint>
      */
@@ -554,7 +800,7 @@ class SchemaTruthLoader
      * annotation names it.
      *
      * @param \ReflectionClass<object> $reflectionClass
-     * @param array<array{operation: \Spryker\ApiPlatform\Contract\Coverage\ApiOperation, groups: array<string>}> $inputOperations
+     * @param array<array{operation: \Spryker\ApiPlatform\Contract\Coverage\ApiOperation, groups: array<string>, type: string}> $inputOperations
      * @param array<string, true> $visitedClasses Classes already cascaded into on this path.
      *
      * @return array<\Spryker\ApiPlatform\Contract\Coverage\ValidationConstraint>
@@ -597,7 +843,7 @@ class SchemaTruthLoader
      * property's generated value-object class.
      *
      * @param \ReflectionProperty|null $property Absent below a `Collection`, where fields are array keys rather than typed properties.
-     * @param array<array{operation: \Spryker\ApiPlatform\Contract\Coverage\ApiOperation, groups: array<string>}> $inputOperations
+     * @param array<array{operation: \Spryker\ApiPlatform\Contract\Coverage\ApiOperation, groups: array<string>, type: string}> $inputOperations
      * @param array<string, true> $visitedClasses
      *
      * @return array<\Spryker\ApiPlatform\Contract\Coverage\ValidationConstraint>
@@ -646,7 +892,7 @@ class SchemaTruthLoader
     }
 
     /**
-     * @param array<array{operation: \Spryker\ApiPlatform\Contract\Coverage\ApiOperation, groups: array<string>}> $inputOperations
+     * @param array<array{operation: \Spryker\ApiPlatform\Contract\Coverage\ApiOperation, groups: array<string>, type: string}> $inputOperations
      * @param array<string, true> $visitedClasses
      *
      * @return array<\Spryker\ApiPlatform\Contract\Coverage\ValidationConstraint>

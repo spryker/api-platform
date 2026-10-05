@@ -18,10 +18,12 @@ readonly class OperationVerificationResult
     /**
      * @param array<\Spryker\ApiPlatform\Contract\Coverage\ApiOperation> $unverified
      * @param array<\Spryker\ApiPlatform\Contract\Coverage\ApiOperation> $undeclaredObservations
+     * @param array<\Spryker\ApiPlatform\Contract\Coverage\ApiOperation> $undeclaredErrorCodes Status and code of each observed error code its status does not declare.
      */
     public function __construct(
         public array $unverified,
         public array $undeclaredObservations,
+        public array $undeclaredErrorCodes = [],
     ) {
     }
 }

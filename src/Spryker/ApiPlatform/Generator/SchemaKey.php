@@ -42,6 +42,10 @@ class SchemaKey
 
     public const string ITEM_ONLY = 'itemOnly';
 
+    public const string WRITABLE_ON = 'writableOn';
+
+    public const string INCLUDED_ON = 'includedOn';
+
     public const string READABLE = 'readable';
 
     public const string WRITABLE = 'writable';

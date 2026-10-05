@@ -11,7 +11,11 @@ namespace SprykerTest\ApiPlatform\Unit\Coverage;
 
 use Codeception\Test\Unit;
 use Spryker\ApiPlatform\Contract\Coverage\ApiOperation;
+use Spryker\ApiPlatform\Contract\Coverage\BaselineEntry;
 use Spryker\ApiPlatform\Contract\Coverage\ContractCoverageConsoleRenderer;
+use Spryker\ApiPlatform\Contract\Coverage\ContractCoverageDimension;
+use Spryker\ApiPlatform\Contract\Coverage\ContractCoverageEnforcement;
+use Spryker\ApiPlatform\Contract\Coverage\DimensionCoverage;
 use Spryker\ApiPlatform\Contract\Coverage\ResponseAttribute;
 use Spryker\ApiPlatform\Contract\Coverage\SchemaDefect;
 use Spryker\ApiPlatform\Contract\Coverage\ValidationConstraint;
@@ -306,5 +310,86 @@ class ContractCoverageConsoleRendererTest extends Unit
 
         // Assert
         $this->assertStringNotContainsString('SCHEMA DEFECT', $report);
+    }
+
+    public function testGivenANonEnforcedDimensionWithGapsWhenRenderingThenItsSectionIsListedAsReported(): void
+    {
+        // Arrange
+        $result = ContractCoverageResultBuilder::create()
+            ->withDimensionCoverage(
+                ContractCoverageDimension::ERROR_CODES,
+                new DimensionCoverage([], [new ApiOperation('DELETE', '/carts/{cartUuid}', 422)]),
+            )
+            ->build();
+
+        // Act
+        $report = implode("\n", (new ContractCoverageConsoleRenderer())->render($result));
+
+        // Assert
+        $this->assertStringContainsString('  Error codes           0/1 covered · 1 uncovered · 0 stale  (reported)', $report);
+        $this->assertStringContainsString('Reported, not enforced (contract_coverage_enforced_dimensions)', $report);
+        $this->assertStringContainsString('[Uncovered error codes] (1)', $report);
+        $this->assertStringContainsString('Contract coverage gate: PASS', $report);
+    }
+
+    public function testGivenAnEnforcedDimensionWithGapsWhenRenderingThenItsSectionIsListedAsAGap(): void
+    {
+        // Arrange
+        $result = ContractCoverageResultBuilder::create()
+            ->withDimensionCoverage(
+                ContractCoverageDimension::ERROR_CODES,
+                new DimensionCoverage([], [new ApiOperation('DELETE', '/carts/{cartUuid}', 422)]),
+            )
+            ->withEnforcement(ContractCoverageEnforcement::fromValues(['error-codes']))
+            ->build();
+
+        // Act
+        $report = implode("\n", (new ContractCoverageConsoleRenderer())->render($result));
+
+        // Assert
+        $this->assertStringContainsString('  Error codes           0/1 covered · 1 uncovered · 0 stale  (enforced)', $report);
+        $this->assertStringNotContainsString('Reported, not enforced (contract_coverage_enforced_dimensions)', $report);
+        $this->assertStringContainsString('[Uncovered error codes] (1)', $report);
+        $this->assertStringContainsString('Contract coverage gate: FAIL (1 uncovered error code(s))', $report);
+    }
+
+    public function testGivenABaselinedGapOfAnEnforcedDimensionWhenRenderingThenItIsListedApartWithItsReasonAndTheGatePasses(): void
+    {
+        // Arrange
+        $result = ContractCoverageResultBuilder::create()
+            ->withDimensionCoverage(
+                ContractCoverageDimension::INCLUDES,
+                new DimensionCoverage([], [], [], [new BaselineEntry('GET /orders  include merchants', 'The merchants include is never loaded.')]),
+            )
+            ->withEnforcement(ContractCoverageEnforcement::fromValues(['includes']))
+            ->build();
+
+        // Act
+        $report = implode("\n", (new ContractCoverageConsoleRenderer())->render($result));
+
+        // Assert
+        $this->assertStringContainsString('  Includes              0/1 covered · 0 uncovered · 0 stale · 1 baselined  (enforced)', $report);
+        $this->assertStringContainsString('Baselined, known product bugs (contract_coverage_baseline)', $report);
+        $this->assertStringContainsString('  - GET /orders  include merchants — The merchants include is never loaded.', $report);
+        $this->assertStringNotContainsString('[Uncovered includes]', $report);
+        $this->assertStringContainsString('Contract coverage gate: PASS', $report);
+    }
+
+    public function testGivenABaselineEntryWhoseItemIsCoveredWhenRenderingThenItIsListedAsAGapToRemove(): void
+    {
+        // Arrange
+        $result = ContractCoverageResultBuilder::create()
+            ->withDimensionCoverage(
+                ContractCoverageDimension::INCLUDES,
+                new DimensionCoverage([], [], [], [], [new BaselineEntry('GET /orders  include merchants', 'The merchants include is never loaded.')]),
+            )
+            ->build();
+
+        // Act
+        $report = implode("\n", (new ContractCoverageConsoleRenderer())->render($result));
+
+        // Assert
+        $this->assertStringContainsString('[Includes baseline entries now covered (remove them from the baseline)] (1)', $report);
+        $this->assertStringContainsString('Contract coverage gate: FAIL (1 include baseline entry(ies) to remove)', $report);
     }
 }

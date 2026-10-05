@@ -10,8 +10,11 @@ declare(strict_types=1);
 namespace SprykerTest\ApiPlatform\Unit\Coverage\Fixture;
 
 use Spryker\ApiPlatform\Contract\Coverage\ApiOperation;
+use Spryker\ApiPlatform\Contract\Coverage\ContractCoverageDimension;
+use Spryker\ApiPlatform\Contract\Coverage\ContractCoverageEnforcement;
 use Spryker\ApiPlatform\Contract\Coverage\ContractCoverageResult;
 use Spryker\ApiPlatform\Contract\Coverage\CoverageReport;
+use Spryker\ApiPlatform\Contract\Coverage\DimensionCoverage;
 use Spryker\ApiPlatform\Contract\Coverage\ResponseAttribute;
 use Spryker\ApiPlatform\Contract\Coverage\SchemaDefect;
 use Spryker\ApiPlatform\Contract\Coverage\ScopeResolution;
@@ -89,10 +92,19 @@ class ContractCoverageResultBuilder
     /**
      * @var array<string>
      */
-    /**
-     * @var array<string>
-     */
     protected array $unmatchedFilters = [];
+
+    /**
+     * @var array<string, \Spryker\ApiPlatform\Contract\Coverage\DimensionCoverage<\Spryker\ApiPlatform\Contract\Coverage\CoverageItem>>
+     */
+    protected array $dimensionCoverages = [];
+
+    protected ContractCoverageEnforcement $enforcement;
+
+    public function __construct()
+    {
+        $this->enforcement = ContractCoverageEnforcement::none();
+    }
 
     /**
      * @var array<\Spryker\ApiPlatform\Contract\Coverage\SchemaDefect>
@@ -212,6 +224,23 @@ class ContractCoverageResultBuilder
         return $this;
     }
 
+    /**
+     * @param \Spryker\ApiPlatform\Contract\Coverage\DimensionCoverage<\Spryker\ApiPlatform\Contract\Coverage\CoverageItem> $dimensionCoverage
+     */
+    public function withDimensionCoverage(ContractCoverageDimension $dimension, DimensionCoverage $dimensionCoverage): self
+    {
+        $this->dimensionCoverages[$dimension->value] = $dimensionCoverage;
+
+        return $this;
+    }
+
+    public function withEnforcement(ContractCoverageEnforcement $enforcement): self
+    {
+        $this->enforcement = $enforcement;
+
+        return $this;
+    }
+
     public function build(): ContractCoverageResult
     {
         $enforcedTruth = new TruthSet(
@@ -234,11 +263,13 @@ class ContractCoverageResultBuilder
                 $this->staleValidations,
                 $this->coveredResponseAttributes,
                 $this->uncoveredResponseAttributes,
+                $this->dimensionCoverages,
             ),
             new ScopeResolution($enforcedTruth, $enforcedTruth),
             $this->selectedResources,
             $this->unmatchedFilters,
             $this->generatedResourceCount,
+            $this->enforcement,
             $this->schemaDefects,
             $this->operationDeclarers,
         );

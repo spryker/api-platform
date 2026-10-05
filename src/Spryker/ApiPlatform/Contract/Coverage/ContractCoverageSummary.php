@@ -26,11 +26,29 @@ readonly class ContractCoverageSummary
     public const string SECTION_UNCOVERED_RESPONSE_ATTRIBUTES = 'Uncovered response attributes';
 
     /**
+     * Where a dimension the application does not enforce lists its gaps, so they stay visible on
+     * every run without failing it.
+     */
+    public const string SECTION_ARRAYS_WITHOUT_REQUIRED_ITEMS = 'Arrays without items.required (element shape not demanded)';
+
+    public const string HEADING_REPORTED_SECTIONS = 'Reported, not enforced (contract_coverage_enforced_dimensions)';
+
+    /**
+     * Where the items a known product bug keeps uncovered are listed with the bug, apart from the gaps.
+     */
+    public const string HEADING_BASELINED_SECTIONS = 'Baselined, known product bugs (contract_coverage_baseline)';
+
+    protected const string BASELINE_ENTRY_FORMAT = '%s — %s';
+
+    /**
      * @param array<\Spryker\ApiPlatform\Contract\Coverage\ResponseAttribute> $uncoveredResponseAttributes Sorted by key.
      * @param array<\Spryker\ApiPlatform\Contract\Coverage\SchemaDefect> $schemaDefects Sorted by resource then operation.
      * @param array<string, array<string>> $warningSections Label to sorted entry keys, empty sections removed.
      * @param array<string, array<string>> $gapSections Label to sorted entry keys, empty sections removed.
      * @param array<string, array<string>> $coveredSections Label to sorted entry keys, empty sections removed.
+     * @param array<string, array{label: string, covered: int, uncovered: int, stale: int, baselined: int, isEnforced: bool, isRuntimeOnly: bool}> $dimensionCounters Keyed by dimension value, in enum order.
+     * @param array<string, array<string>> $reportedSections Label to sorted entry keys of the dimensions not enforced, empty sections removed.
+     * @param array<string, array<string>> $baselinedSections Label to sorted `<item key> — <reason>` lines, empty sections removed.
      */
     protected function __construct(
         public int $coveredOperationCount,
@@ -49,6 +67,10 @@ readonly class ContractCoverageSummary
         public array $warningSections,
         public array $gapSections,
         public array $coveredSections,
+        public array $dimensionCounters = [],
+        public array $reportedSections = [],
+        public int $arraysWithoutRequiredItemsCount = 0,
+        public array $baselinedSections = [],
     ) {
     }
 
@@ -57,6 +79,56 @@ readonly class ContractCoverageSummary
         $report = $result->report;
         $nonServableOperations = $result->scope->enforcedTruth->nonServableOperations;
         $internalOperations = $result->scope->enforcedTruth->internalOperations;
+
+        $gapSections = [
+            'Uncovered operations' => static::sortedKeys($report->uncoveredOperations),
+            'Stale operation claims' => static::sortedKeys($report->staleOperations),
+            'Uncovered validation rules' => static::sortedKeys($report->uncoveredValidations),
+            'Stale validation claims' => static::sortedKeys($report->staleValidations),
+            static::SECTION_UNCOVERED_RESPONSE_ATTRIBUTES => static::sortedKeys($report->uncoveredResponseAttributes),
+        ];
+        $reportedSections = [];
+        // An operation the schema declares internal answers the warning above rather than
+        // raising it, so it collapses with the covered set instead of being listed every run.
+        $coveredSections = [
+            'Covered operations' => static::sortedKeys($report->coveredOperations),
+            'Covered validation rules' => static::sortedKeys($report->coveredValidations),
+            'Covered response attributes' => static::sortedKeys($report->coveredResponseAttributes),
+            'Internal operations (IRI anchors, not reachable and not published)' => static::sortedKeys($internalOperations),
+        ];
+        $dimensionCounters = [];
+        $baselinedSections = [];
+
+        foreach (ContractCoverageDimension::cases() as $dimension) {
+            $dimensionCoverage = $report->dimensionCoverage($dimension->value);
+            $isEnforced = $result->enforcement->isEnforced($dimension);
+
+            $dimensionCounters[$dimension->value] = [
+                'label' => $dimension->label(),
+                'covered' => count($dimensionCoverage->covered),
+                'uncovered' => count($dimensionCoverage->uncovered),
+                'stale' => count($dimensionCoverage->stale),
+                'baselined' => count($dimensionCoverage->baselined),
+                'isEnforced' => $isEnforced,
+                'isRuntimeOnly' => $dimension->isRuntimeOnly(),
+            ];
+
+            $sections = [
+                $dimension->uncoveredSectionLabel() => static::sortedKeys($dimensionCoverage->uncovered),
+                $dimension->staleSectionLabel() => static::sortedKeys($dimensionCoverage->stale),
+            ];
+            if ($isEnforced) {
+                $gapSections = [...$gapSections, ...$sections];
+            } else {
+                $reportedSections = [...$reportedSections, ...$sections];
+            }
+
+            $gapSections[$dimension->label() . ' baseline entries now covered (remove them from the baseline)'] = static::sortedKeys($dimensionCoverage->baselineEntriesNowCovered);
+            $gapSections[$dimension->label() . ' baseline entries naming no uncovered item (remove them from the baseline)'] = static::sortedKeys($dimensionCoverage->baselineEntriesNamingNoGap);
+            $baselinedSections['Baselined ' . strtolower($dimension->label())] = static::baselineLines($dimensionCoverage->baselined);
+            $coveredSections['Covered ' . strtolower($dimension->label())] = static::sortedKeys($dimensionCoverage->covered);
+        }
+        $coveredSections[static::SECTION_ARRAYS_WITHOUT_REQUIRED_ITEMS] = static::sortedKeys($result->scope->enforcedTruth->readableArraysWithoutRequiredItems);
 
         return new self(
             count($report->coveredOperations),
@@ -77,23 +149,28 @@ readonly class ContractCoverageSummary
             // provider, so it is reported on every run instead of being filed with the covered set.
             static::withoutEmptySections([
                 'Non-servable operations (no provider — review the resource)' => static::sortedKeys($nonServableOperations),
+                'Unregistered error mappings (review)' => $result->unregisteredErrorMappings,
             ]),
-            static::withoutEmptySections([
-                'Uncovered operations' => static::sortedKeys($report->uncoveredOperations),
-                'Stale operation claims' => static::sortedKeys($report->staleOperations),
-                'Uncovered validation rules' => static::sortedKeys($report->uncoveredValidations),
-                'Stale validation claims' => static::sortedKeys($report->staleValidations),
-                static::SECTION_UNCOVERED_RESPONSE_ATTRIBUTES => static::sortedKeys($report->uncoveredResponseAttributes),
-            ]),
-            // An operation the schema declares internal answers the warning above rather than
-            // raising it, so it collapses with the covered set instead of being listed every run.
-            static::withoutEmptySections([
-                'Covered operations' => static::sortedKeys($report->coveredOperations),
-                'Covered validation rules' => static::sortedKeys($report->coveredValidations),
-                'Covered response attributes' => static::sortedKeys($report->coveredResponseAttributes),
-                'Internal operations (IRI anchors, not reachable and not published)' => static::sortedKeys($internalOperations),
-            ]),
+            static::withoutEmptySections($gapSections),
+            static::withoutEmptySections($coveredSections),
+            $dimensionCounters,
+            static::withoutEmptySections($reportedSections),
+            count($result->scope->enforcedTruth->readableArraysWithoutRequiredItems),
+            static::withoutEmptySections($baselinedSections),
         );
+    }
+
+    /**
+     * @param array<\Spryker\ApiPlatform\Contract\Coverage\BaselineEntry> $baselineEntries
+     *
+     * @return array<string>
+     */
+    protected static function baselineLines(array $baselineEntries): array
+    {
+        return static::sorted(array_map(
+            static fn (BaselineEntry $baselineEntry): string => sprintf(static::BASELINE_ENTRY_FORMAT, $baselineEntry->itemKey, $baselineEntry->reason),
+            $baselineEntries,
+        ));
     }
 
     public function operationTotal(): int
@@ -120,14 +197,14 @@ readonly class ContractCoverageSummary
     }
 
     /**
-     * @param array<\Spryker\ApiPlatform\Contract\Coverage\ApiOperation|\Spryker\ApiPlatform\Contract\Coverage\ValidationConstraint|\Spryker\ApiPlatform\Contract\Coverage\ResponseAttribute> $entries
+     * @param array<\Spryker\ApiPlatform\Contract\Coverage\CoverageItem> $entries
      *
      * @return array<string>
      */
     protected static function sortedKeys(array $entries): array
     {
         return static::sorted(array_map(
-            static fn (ApiOperation|ValidationConstraint|ResponseAttribute $entry): string => $entry->key(),
+            static fn (CoverageItem $entry): string => $entry->key(),
             $entries,
         ));
     }

@@ -1,0 +1,24 @@
+<?php
+
+/**
+ * Copyright © 2016-present Spryker Systems GmbH. All rights reserved.
+ * Use of this software requires acceptance of the Evaluation License Agreement. See LICENSE file.
+ */
+
+declare(strict_types=1);
+
+namespace SprykerTest\ApiPlatform\Unit\Coverage\Fixture\ErrorMapping;
+
+/**
+ * A static error mapping, as ShoppingListsRestApi declares it.
+ */
+class FixtureStaticErrorMappingConfig
+{
+    /**
+     * @return array<string, array<string, mixed>>
+     */
+    public static function getErrorIdentifierToRestErrorMapping(): array
+    {
+        return ['shopping-list.not-found' => ['code' => '1503', 'status' => 404, 'detail' => 'Shopping list not found.']];
+    }
+}

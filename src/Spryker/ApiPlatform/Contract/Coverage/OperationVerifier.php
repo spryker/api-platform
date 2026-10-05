@@ -9,6 +9,8 @@ declare(strict_types=1);
 
 namespace Spryker\ApiPlatform\Contract\Coverage;
 
+use Spryker\ApiPlatform\Contract\Attribute\Scenario;
+
 /**
  * The runtime side of the annotation contract: given the operations a test method declared it
  * covers, the operations actually dispatched and the statuses actually returned, reports the
@@ -29,20 +31,109 @@ class OperationVerifier
      * @param array<\Spryker\ApiPlatform\Contract\Coverage\ApiOperation> $recordedDispatches Status-less, from the kernel.request listener.
      * @param array<\Spryker\ApiPlatform\Contract\Coverage\ApiOperation> $recordedResponses Status-carrying, from the kernel.response listener.
      * @param array<string, array<int>> $declaredResponses dispatchKey => schema-declared statuses.
+     * @param array<\Spryker\ApiPlatform\Contract\Coverage\RecordedExchange> $exchanges The full records, which carry the error codes.
+     * @param array<string, array<int, array<string>>> $declaredErrorCodes dispatchKey => status => schema-declared codes.
      */
     public function verify(
         array $declared,
         array $recordedDispatches,
         array $recordedResponses,
         array $declaredResponses = [],
+        array $exchanges = [],
+        array $declaredErrorCodes = [],
     ): OperationVerificationResult {
         $dispatchedKeys = array_map(static fn (ApiOperation $operation): string => $operation->dispatchKey(), $recordedDispatches);
         $observedStatuses = $this->groupStatusesByDispatchKey($recordedResponses);
 
         return new OperationVerificationResult(
-            $this->findUnverifiedDeclarations($declared, $dispatchedKeys, $observedStatuses, $recordedResponses, $declaredResponses),
+            array_values(array_filter(
+                $declared,
+                fn (ApiOperation $operation): bool => !$this->isVerified($operation, $dispatchedKeys, $observedStatuses, $recordedResponses, $declaredResponses)
+                    || ($operation->code !== null && $exchanges !== [] && !$this->isErrorCodeObserved($operation, $exchanges))
+                    || ($operation->scenario === Scenario::FOREIGN_OWNER && $exchanges !== [] && !$this->isForeignOwnerDenialObserved($operation, $exchanges)),
+            )),
             $this->findUndeclaredObservations($declared, $recordedResponses, $declaredResponses),
+            $this->findUndeclaredErrorCodes($declared, $exchanges, $declaredErrorCodes),
         );
+    }
+
+    /**
+     * A code declaration is proven only by a response of its status that carried the code among
+     * its errors - a response may carry several, so any position counts.
+     *
+     * @param array<\Spryker\ApiPlatform\Contract\Coverage\RecordedExchange> $exchanges
+     */
+    protected function isErrorCodeObserved(ApiOperation $declaration, array $exchanges): bool
+    {
+        foreach ($exchanges as $exchange) {
+            if (
+                $exchange->operation->dispatchKey() === $declaration->dispatchKey()
+                && $exchange->status === $declaration->status
+                && in_array($declaration->code, $exchange->errorCodes, true)
+            ) {
+                return true;
+            }
+        }
+
+        return false;
+    }
+
+    /**
+     * A foreign-owner declaration is proven only by an authenticated request an access decision
+     * denied: that is what tells an ownership check apart from a missing token or an unknown id.
+     *
+     * @param array<\Spryker\ApiPlatform\Contract\Coverage\RecordedExchange> $exchanges
+     */
+    protected function isForeignOwnerDenialObserved(ApiOperation $declaration, array $exchanges): bool
+    {
+        foreach ($exchanges as $exchange) {
+            if (
+                $exchange->operation->dispatchKey() === $declaration->dispatchKey()
+                && $exchange->status === $declaration->status
+                && $exchange->isAccessDenied
+                && $exchange->isAuthenticated
+            ) {
+                return true;
+            }
+        }
+
+        return false;
+    }
+
+    /**
+     * Codes observed on an operation the test claims, under a status whose schema declares codes,
+     * that the declared list does not contain. A status that declares no codes is not judged: the
+     * list is the contract, and without one there is nothing to hold the response against.
+     *
+     * @param array<\Spryker\ApiPlatform\Contract\Coverage\ApiOperation> $declared
+     * @param array<\Spryker\ApiPlatform\Contract\Coverage\RecordedExchange> $exchanges
+     * @param array<string, array<int, array<string>>> $declaredErrorCodes
+     *
+     * @return array<\Spryker\ApiPlatform\Contract\Coverage\ApiOperation>
+     */
+    protected function findUndeclaredErrorCodes(array $declared, array $exchanges, array $declaredErrorCodes): array
+    {
+        $claimedKeys = array_flip(array_map(static fn (ApiOperation $operation): string => $operation->dispatchKey(), $declared));
+        $undeclared = [];
+
+        foreach ($exchanges as $exchange) {
+            $dispatchKey = $exchange->operation->dispatchKey();
+            $statusCodes = $declaredErrorCodes[$dispatchKey][$exchange->status] ?? null;
+            if (!isset($claimedKeys[$dispatchKey]) || $statusCodes === null) {
+                continue;
+            }
+
+            foreach ($exchange->errorCodes as $code) {
+                if (in_array($code, $statusCodes, true)) {
+                    continue;
+                }
+
+                $undeclaredCode = new ApiOperation($exchange->operation->verb, $exchange->operation->uriTemplate, $exchange->status, code: $code);
+                $undeclared[$undeclaredCode->key()] = $undeclaredCode;
+            }
+        }
+
+        return array_values($undeclared);
     }
 
     /**
@@ -62,34 +153,6 @@ class OperationVerifier
      * a kernel whose response listener never ran — both fall back to dispatch presence, which is
      * what the recorder alone can prove.
      *
-     * @param array<\Spryker\ApiPlatform\Contract\Coverage\ApiOperation> $declared
-     * @param array<string> $dispatchedKeys
-     * @param array<string, array<int>> $observedStatuses
-     * @param array<\Spryker\ApiPlatform\Contract\Coverage\ApiOperation> $recordedResponses
-     * @param array<string, array<int>> $declaredResponses
-     *
-     * @return array<\Spryker\ApiPlatform\Contract\Coverage\ApiOperation>
-     */
-    protected function findUnverifiedDeclarations(
-        array $declared,
-        array $dispatchedKeys,
-        array $observedStatuses,
-        array $recordedResponses,
-        array $declaredResponses,
-    ): array {
-        return array_values(array_filter(
-            $declared,
-            fn (ApiOperation $operation): bool => !$this->isVerified(
-                $operation,
-                $dispatchedKeys,
-                $observedStatuses,
-                $recordedResponses,
-                $declaredResponses,
-            ),
-        ));
-    }
-
-    /**
      * @param array<string> $dispatchedKeys
      * @param array<string, array<int>> $observedStatuses
      * @param array<\Spryker\ApiPlatform\Contract\Coverage\ApiOperation> $recordedResponses

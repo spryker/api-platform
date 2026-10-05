@@ -73,6 +73,18 @@ class SprykerApiPlatformExtension extends Extension implements PrependExtensionI
             'spryker_api_platform.contract_coverage_excluded_resources',
             $config['contract_coverage_excluded_resources'],
         );
+        $container->setParameter(
+            'spryker_api_platform.contract_coverage_enforced_dimensions',
+            $config['contract_coverage_enforced_dimensions'],
+        );
+        $container->setParameter(
+            'spryker_api_platform.contract_coverage_baseline',
+            $config['contract_coverage_baseline'],
+        );
+        $container->setParameter(
+            'spryker_api_platform.contract_coverage_ownership_security_attributes',
+            $config['contract_coverage_ownership_security_attributes'],
+        );
         $container->setParameter('spryker_api_platform.debug', $config['debug']);
         $container->setParameter(
             'spryker_api_platform.is_method_not_allowed_status_enabled',

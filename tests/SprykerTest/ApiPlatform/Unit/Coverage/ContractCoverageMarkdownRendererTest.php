@@ -11,7 +11,11 @@ namespace SprykerTest\ApiPlatform\Unit\Coverage;
 
 use Codeception\Test\Unit;
 use Spryker\ApiPlatform\Contract\Coverage\ApiOperation;
+use Spryker\ApiPlatform\Contract\Coverage\BaselineEntry;
+use Spryker\ApiPlatform\Contract\Coverage\ContractCoverageDimension;
+use Spryker\ApiPlatform\Contract\Coverage\ContractCoverageEnforcement;
 use Spryker\ApiPlatform\Contract\Coverage\ContractCoverageMarkdownRenderer;
+use Spryker\ApiPlatform\Contract\Coverage\DimensionCoverage;
 use Spryker\ApiPlatform\Contract\Coverage\ResponseAttribute;
 use Spryker\ApiPlatform\Contract\Coverage\SchemaDefect;
 use Spryker\ApiPlatform\Contract\Coverage\ValidationConstraint;
@@ -190,5 +194,67 @@ class ContractCoverageMarkdownRendererTest extends Unit
             $markdown,
         );
         $this->assertStringContainsString('1 operation(s) without schema-declared responses', $markdown);
+    }
+
+    public function testGivenANonEnforcedDimensionWithGapsWhenRenderingThenItsSectionIsListedAsReported(): void
+    {
+        // Arrange
+        $result = ContractCoverageResultBuilder::create()
+            ->withDimensionCoverage(
+                ContractCoverageDimension::ERROR_CODES,
+                new DimensionCoverage([], [new ApiOperation('DELETE', '/carts/{cartUuid}', 422)]),
+            )
+            ->build();
+
+        // Act
+        $report = (new ContractCoverageMarkdownRenderer())->render($result);
+
+        // Assert
+        $this->assertStringContainsString('| Error codes (reported) | 0 / 1 | 1 | 0 |', $report);
+        $this->assertStringContainsString('### Reported, not enforced (contract_coverage_enforced_dimensions)', $report);
+        $this->assertStringContainsString('#### Uncovered error codes (1)', $report);
+        $this->assertStringContainsString('**PASS**', $report);
+    }
+
+    public function testGivenAnEnforcedDimensionWithGapsWhenRenderingThenItsSectionIsListedAsAGap(): void
+    {
+        // Arrange
+        $result = ContractCoverageResultBuilder::create()
+            ->withDimensionCoverage(
+                ContractCoverageDimension::ERROR_CODES,
+                new DimensionCoverage([], [new ApiOperation('DELETE', '/carts/{cartUuid}', 422)]),
+            )
+            ->withEnforcement(ContractCoverageEnforcement::fromValues(['error-codes']))
+            ->build();
+
+        // Act
+        $report = (new ContractCoverageMarkdownRenderer())->render($result);
+
+        // Assert
+        $this->assertStringContainsString('| Error codes (enforced) | 0 / 1 | 1 | 0 |', $report);
+        $this->assertStringNotContainsString('### Reported, not enforced (contract_coverage_enforced_dimensions)', $report);
+        $this->assertStringContainsString('### Uncovered error codes (1)', $report);
+        $this->assertStringContainsString('**FAIL** — 1 uncovered error code(s)', $report);
+    }
+
+    public function testGivenABaselinedGapOfAnEnforcedDimensionWhenRenderingThenItIsListedApartWithItsReason(): void
+    {
+        // Arrange
+        $result = ContractCoverageResultBuilder::create()
+            ->withDimensionCoverage(
+                ContractCoverageDimension::INCLUDES,
+                new DimensionCoverage([], [], [], [new BaselineEntry('GET /orders  include merchants', 'The merchants include is never loaded.')]),
+            )
+            ->withEnforcement(ContractCoverageEnforcement::fromValues(['includes']))
+            ->build();
+
+        // Act
+        $report = (new ContractCoverageMarkdownRenderer())->render($result);
+
+        // Assert
+        $this->assertStringContainsString('| Includes (enforced) | 0 / 1 | 0 + 1 baselined | 0 |', $report);
+        $this->assertStringContainsString('### Baselined, known product bugs (contract_coverage_baseline)', $report);
+        $this->assertStringContainsString('- GET /orders  include merchants — The merchants include is never loaded.', $report);
+        $this->assertStringContainsString('**PASS**', $report);
     }
 }

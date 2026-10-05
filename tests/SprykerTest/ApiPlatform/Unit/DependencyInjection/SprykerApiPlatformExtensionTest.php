@@ -13,6 +13,7 @@ use Codeception\Test\Unit;
 use Spryker\ApiPlatform\Configuration\ApiPlatformConfig;
 use Spryker\ApiPlatform\DependencyInjection\SprykerApiPlatformExtension;
 use SprykerTest\ApiPlatform\ApiUnitTester;
+use Symfony\Component\Config\Definition\Exception\InvalidConfigurationException;
 use Symfony\Component\DependencyInjection\ContainerBuilder;
 
 /**
@@ -135,6 +136,67 @@ class SprykerApiPlatformExtensionTest extends Unit
             ['wishlists'],
             $container->getParameter('spryker_api_platform.contract_coverage_excluded_resources'),
         );
+    }
+
+    public function testGivenEnforcedDimensionsConfigWhenLoadingThenTheContainerParameterIsSet(): void
+    {
+        // Arrange
+        $container = new ContainerBuilder();
+        $container->setParameter('kernel.project_dir', static::PROJECT_DIR);
+        $container->setParameter('kernel.bundles', []);
+
+        // Act
+        (new SprykerApiPlatformExtension())->load([['contract_coverage_enforced_dimensions' => ['error-codes', 'all']]], $container);
+
+        // Assert
+        $this->assertSame(
+            ['error-codes', 'all'],
+            $container->getParameter('spryker_api_platform.contract_coverage_enforced_dimensions'),
+        );
+    }
+
+    public function testGivenABaselineConfigWhenLoadingThenTheContainerParameterKeepsItsItemKeysVerbatim(): void
+    {
+        // Arrange - item keys carry spaces, slashes and dashes, which a normalised array node would rewrite.
+        $container = new ContainerBuilder();
+        $container->setParameter('kernel.project_dir', static::PROJECT_DIR);
+        $container->setParameter('kernel.bundles', []);
+        $baseline = ['includes' => ['GET /product-offers/{productOfferReference}  include product-offer-prices' => 'The prices include is never loaded.']];
+
+        // Act
+        (new SprykerApiPlatformExtension())->load([['contract_coverage_baseline' => $baseline]], $container);
+
+        // Assert
+        $this->assertSame($baseline, $container->getParameter('spryker_api_platform.contract_coverage_baseline'));
+    }
+
+    public function testGivenABaselineThatIsNotAMapWhenCompilingTheConfigurationThenItFails(): void
+    {
+        // Arrange
+        $container = new ContainerBuilder();
+        $container->setParameter('kernel.project_dir', static::PROJECT_DIR);
+        $container->setParameter('kernel.bundles', []);
+
+        // Assert
+        $this->expectException(InvalidConfigurationException::class);
+
+        // Act
+        (new SprykerApiPlatformExtension())->load([['contract_coverage_baseline' => 'includes']], $container);
+    }
+
+    public function testGivenAnUnknownEnforcedDimensionWhenCompilingTheConfigurationThenItFails(): void
+    {
+        // Arrange
+        $container = new ContainerBuilder();
+        $container->setParameter('kernel.project_dir', static::PROJECT_DIR);
+        $container->setParameter('kernel.bundles', []);
+
+        // Assert
+        $this->expectException(InvalidConfigurationException::class);
+        $this->expectExceptionMessage('"error-code"');
+
+        // Act
+        (new SprykerApiPlatformExtension())->load([['contract_coverage_enforced_dimensions' => ['error-code']]], $container);
     }
 
     /**

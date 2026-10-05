@@ -10,6 +10,7 @@ declare(strict_types=1);
 namespace SprykerTest\ApiPlatform\Test;
 
 use ApiPlatform\Symfony\Security\ResourceAccessChecker;
+use ReflectionProperty;
 use Spryker\ApiPlatform\DependencyInjection\Compiler\ApiClassAutoDiscoveryPass;
 use Spryker\ApiPlatform\DependencyInjection\Compiler\SchemaServiceRegistrationPass;
 use Spryker\Service\Container\Pass\StackResolverPass;
@@ -26,6 +27,8 @@ use Symfony\Component\DependencyInjection\Compiler\PassConfig;
 use Symfony\Component\DependencyInjection\ContainerBuilder;
 use Symfony\Component\DependencyInjection\Definition;
 use Symfony\Component\DependencyInjection\Reference;
+use Symfony\Component\EventDispatcher\EventDispatcherInterface;
+use Symfony\Component\HttpKernel\HttpKernel;
 
 class ApiTestKernel extends TestKernel
 {
@@ -76,6 +79,25 @@ class ApiTestKernel extends TestKernel
         foreach ($this->testCompilerPasses as $pass) {
             $container->addCompilerPass($pass);
         }
+    }
+
+    /**
+     * The event dispatcher of the HTTP kernel {@see handle()} runs a request through. It is not
+     * necessarily the container's current `event_dispatcher`: the kernel resolves `http_kernel`
+     * through the `ContainerDelegator`, which keeps the first instance it handed out for the rest of
+     * the process, while a container reset between test methods rebuilds `event_dispatcher`.
+     * Resolving it here pins the HTTP kernel the same way a first request would.
+     */
+    public function getRequestEventDispatcher(): ?EventDispatcherInterface
+    {
+        $httpKernel = $this->getHttpKernel();
+        if (!$httpKernel instanceof HttpKernel) {
+            return null;
+        }
+
+        $dispatcher = (new ReflectionProperty(HttpKernel::class, 'dispatcher'))->getValue($httpKernel);
+
+        return $dispatcher instanceof EventDispatcherInterface ? $dispatcher : null;
     }
 
     public function setResourcePaths(array $resourcePaths): self

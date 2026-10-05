@@ -43,6 +43,18 @@ class PropertyAttributeGeneratorTest extends Unit
         $this->assertStringContainsString("extraProperties: ['responseOptional' => true]", $attributes);
     }
 
+    public function testGivenWritableOnWhenGeneratingThenTheOperationTypesRideInExtraProperties(): void
+    {
+        // Arrange
+        $property = ['type' => 'string', 'responseOptional' => true, 'writableOn' => ['Post']];
+
+        // Act
+        $attributes = (new PropertyAttributeGenerator())->generate($property, [], [], 'store', 'guest-carts');
+
+        // Assert
+        $this->assertStringContainsString("extraProperties: ['responseOptional' => true, 'writableOn' => ['Post']]", $attributes);
+    }
+
     public function testGivenGroupsWhenGeneratingThenEmitsTheGroupsAttribute(): void
     {
         // Arrange
