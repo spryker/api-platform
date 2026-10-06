@@ -37,6 +37,18 @@ class AbstractApiTestCaseBaselineTest extends Unit
 
     protected const string ARRAY_REASON = 'Order items never carry their calculated discounts.';
 
+    protected const string ELEMENT_PATH = 'discounts[].code';
+
+    protected const string ASSERTED_ELEMENT_ARRAY_PATH = 'discounts';
+
+    protected const string ASSERTED_ELEMENT_PATH = 'discounts[0].code';
+
+    protected const string ELEMENT_ARRAY_ITEM_KEY = 'GET /orders/{orderReference}  discounts';
+
+    protected const string ELEMENT_ARRAY_REASON = 'An order read never carries its discounts.';
+
+    protected const string ELEMENT_CODE = 'SUMMER';
+
     protected const string VALIDATION_ITEM_KEY = 'customer-addresses.iso2Code.Length.max on POST /customers/{customerReference}/addresses';
 
     protected const string VALIDATION_REASON = 'An over-long country code is cut instead of rejected.';
@@ -80,6 +92,46 @@ class AbstractApiTestCaseBaselineTest extends Unit
         $this->assertStringContainsString('remove the entry from the baseline', (string)$failure);
     }
 
+    public function testGivenAnArrayTheBaselineListsAsAlwaysEmptyWhenOnlyAnEmptyListWasAssertedThenItsElementPathsAreNotOwed(): void
+    {
+        // Arrange
+        $probe = $this->createOrderReadWithElementPathProbe([ContractCoverageDimension::NON_EMPTY_ARRAYS->value => [static::ELEMENT_ARRAY_ITEM_KEY => static::ELEMENT_ARRAY_REASON]]);
+        $probe->recordAssertedValue(static::ASSERTED_ELEMENT_ARRAY_PATH, []);
+
+        // Act
+        $failure = $probe->verifyResponseAttributes();
+
+        // Assert
+        $this->assertNull($failure);
+    }
+
+    public function testGivenAnArrayTheBaselineDoesNotListWhenOnlyAnEmptyListWasAssertedThenItsElementPathsAreOwed(): void
+    {
+        // Arrange
+        $probe = $this->createOrderReadWithElementPathProbe([]);
+        $probe->recordAssertedValue(static::ASSERTED_ELEMENT_ARRAY_PATH, []);
+
+        // Act
+        $failure = $probe->verifyResponseAttributes();
+
+        // Assert
+        $this->assertStringContainsString(sprintf('never asserted: %s', static::ELEMENT_PATH), (string)$failure);
+    }
+
+    public function testGivenAnArrayTheBaselineListsAsAlwaysEmptyWhenAnElementWasAssertedThenTheTestFailsAskingToRemoveTheEntry(): void
+    {
+        // Arrange
+        $probe = $this->createOrderReadWithElementPathProbe([ContractCoverageDimension::NON_EMPTY_ARRAYS->value => [static::ELEMENT_ARRAY_ITEM_KEY => static::ELEMENT_ARRAY_REASON]]);
+        $probe->recordAssertedValue(static::ASSERTED_ELEMENT_PATH, static::ELEMENT_CODE);
+
+        // Act
+        $failure = $probe->verifyResponseAttributes();
+
+        // Assert
+        $this->assertStringContainsString(static::ELEMENT_ARRAY_ITEM_KEY, (string)$failure);
+        $this->assertStringContainsString('remove the entry from the baseline', (string)$failure);
+    }
+
     public function testGivenABaselinedValidationWhenNoResponseProvedItThenTheEnforcedCheckPasses(): void
     {
         // Arrange
@@ -116,6 +168,17 @@ class AbstractApiTestCaseBaselineTest extends Unit
     {
         $probe = $this->createProbe($baselineConfiguration, 'probeOrderRead');
         $probe->responseAttributePaths = [static::ARRAY_PATH];
+
+        return $probe;
+    }
+
+    /**
+     * @param array<string, array<string, string>> $baselineConfiguration
+     */
+    protected function createOrderReadWithElementPathProbe(array $baselineConfiguration): ContractCoverageBaselineProbe
+    {
+        $probe = $this->createProbe($baselineConfiguration, 'probeOrderRead');
+        $probe->responseAttributePaths = [static::ELEMENT_PATH];
 
         return $probe;
     }

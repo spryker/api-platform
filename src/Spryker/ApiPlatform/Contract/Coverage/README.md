@@ -206,8 +206,9 @@ $sprykerApiPlatform->contractCoverageBaseline([
 - The reason describes the bug, not a ticket. A `%` in a reason is written `%%`, because the list is
   a container parameter.
 - The runtime-only dimensions are judged by the test runtime. A `non-empty-arrays` entry,
-  `<dispatch key>  <path>`, excuses a path a marked test asserted only as `[]` or `null`, and fails
-  the test that asserts a value for it. A `validation-evidence` entry, the `#[CoversApiValidation]`
+  `<dispatch key>  <path>`, excuses a path a marked test asserted only as `[]` or `null`, together
+  with the element paths of an array asserted as `[]`, and fails the test that asserts a value for
+  the path or one of its elements. A `validation-evidence` entry, the `#[CoversApiValidation]`
   key `<resource>.<attribute>.<rule> on <VERB> <uriTemplate>`, excuses a declaration no 422 proves,
   and fails the test whose response proves it.
 

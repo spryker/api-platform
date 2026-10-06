@@ -25,6 +25,7 @@ use Spryker\ApiPlatform\Contract\Coverage\ContractCoverageRunner;
 use Spryker\ApiPlatform\Contract\Coverage\IncludedRelationshipRecorder;
 use Spryker\ApiPlatform\Contract\Coverage\OperationCoverageRecorder;
 use Spryker\ApiPlatform\Contract\Coverage\ResponseAttribute;
+use Spryker\ApiPlatform\Contract\Coverage\ResponseAttributePath;
 use Spryker\ApiPlatform\Contract\Coverage\ResponseAttributeRecorder;
 use Spryker\ApiPlatform\Contract\Coverage\UriTemplateNormalizer;
 use Spryker\ApiPlatform\Contract\Coverage\ValidationConstraint;
@@ -226,6 +227,11 @@ abstract class AbstractApiTestCase extends Unit
     protected const string PARAMETER_CONTRACT_COVERAGE_ENFORCED_DIMENSIONS = 'spryker_api_platform.contract_coverage_enforced_dimensions';
 
     protected const string PARAMETER_CONTRACT_COVERAGE_BASELINE = 'spryker_api_platform.contract_coverage_baseline';
+
+    /**
+     * @uses \Spryker\ApiPlatform\Contract\Coverage\ResponseAttributeRecorder::ELEMENT_PATH_MARKER
+     */
+    protected const string ELEMENT_PATH_MARKER = '[].';
 
     /**
      * Keyed by API type, like {@see AbstractApiTestCase::$contractCoverageEnforcements}.
@@ -1336,7 +1342,8 @@ abstract class AbstractApiTestCase extends Unit
         );
         $assertedOnlyEmpty = array_values(array_intersect($missing, $this->responseAttributeRecorder->emptyAssertedPaths()));
         $baselinedEmpty = array_values(array_filter($assertedOnlyEmpty, fn (string $path): bool => $this->isNonEmptyArrayBaselined($path)));
-        $missing = array_values(array_diff($missing, $baselinedEmpty));
+        $baselinedElements = array_values(array_filter($missing, fn (string $path): bool => $this->isElementOfBaselinedEmptyArray($path)));
+        $missing = array_values(array_diff($missing, $baselinedEmpty, $baselinedElements));
         $assertedOnlyEmpty = array_values(array_diff($assertedOnlyEmpty, $baselinedEmpty));
         if ($missing === []) {
             return;
@@ -1374,9 +1381,27 @@ abstract class AbstractApiTestCase extends Unit
         return false;
     }
 
+    protected function isElementOfBaselinedEmptyArray(string $path): bool
+    {
+        $arrayPath = $this->findElementArrayPath($path);
+
+        return $arrayPath !== null
+            && in_array($arrayPath, $this->responseAttributeRecorder?->emptyAssertedPaths() ?? [], true)
+            && $this->isNonEmptyArrayBaselined($arrayPath);
+    }
+
+    protected function findElementArrayPath(string $path): ?string
+    {
+        $normalizedPath = ResponseAttributePath::normalize($path);
+        $markerPosition = strrpos($normalizedPath, static::ELEMENT_PATH_MARKER);
+
+        return $markerPosition === false ? null : substr($normalizedPath, 0, $markerPosition);
+    }
+
     /**
      * A test that asserted a baselined path with a real value has proven the bug fixed, so the entry
-     * has to leave the baseline before it excuses a regression.
+     * has to leave the baseline before it excuses a regression. For a baselined array that holds
+     * for an asserted element as much as for the array itself.
      */
     protected function failOnStaleNonEmptyArrayBaseline(): void
     {
@@ -1388,10 +1413,13 @@ abstract class AbstractApiTestCase extends Unit
         $stale = [];
         foreach ($this->declaredSuccessDispatchKeys() as $dispatchKey) {
             foreach ($this->schemaResponseAttributePaths([$dispatchKey]) as $path) {
-                $itemKey = (new ResponseAttribute($dispatchKey, $path))->key();
-                if ($baseline->isBaselined(ContractCoverageDimension::NON_EMPTY_ARRAYS, $itemKey) && $this->responseAttributeRecorder->isAssertedNonEmpty($path)) {
-                    $stale[] = $itemKey;
+                if (!$this->responseAttributeRecorder->isAssertedNonEmpty($path)) {
+                    continue;
                 }
+
+                $arrayPath = $this->findElementArrayPath($path);
+                $baselinablePaths = $arrayPath === null ? [$path] : [$path, $arrayPath];
+                $stale = [...$stale, ...$this->findNonEmptyArrayBaselinedItemKeys($baseline, $dispatchKey, $baselinablePaths)];
             }
         }
 
@@ -1404,9 +1432,27 @@ abstract class AbstractApiTestCase extends Unit
             . 'The bug is fixed: remove the entry from the baseline.',
             static::class,
             $this->runningTestMethodName(),
-            implode(', ', $stale),
+            implode(', ', array_unique($stale)),
             ContractCoverageDimension::NON_EMPTY_ARRAYS->value,
         ));
+    }
+
+    /**
+     * @param array<string> $paths
+     *
+     * @return array<string>
+     */
+    protected function findNonEmptyArrayBaselinedItemKeys(ContractCoverageBaseline $baseline, string $dispatchKey, array $paths): array
+    {
+        $itemKeys = [];
+        foreach ($paths as $path) {
+            $itemKey = (new ResponseAttribute($dispatchKey, $path))->key();
+            if ($baseline->isBaselined(ContractCoverageDimension::NON_EMPTY_ARRAYS, $itemKey)) {
+                $itemKeys[] = $itemKey;
+            }
+        }
+
+        return $itemKeys;
     }
 
     /**
