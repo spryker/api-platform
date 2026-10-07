@@ -14,10 +14,12 @@ use Spryker\ApiPlatform\DependencyInjection\Compiler\ApiPlatformDecoratorPass;
 use Spryker\ApiPlatform\OpenApi\Decorator\ErrorResponseOpenApiDecorator;
 use Spryker\ApiPlatform\OpenApi\Decorator\OpenApiDecorator;
 use Spryker\ApiPlatform\PropertyAccess\LosslessIntegerPropertyAccessor;
+use Spryker\ApiPlatform\State\WhitespaceTrimmingDeserializeProvider;
 use SprykerTest\ApiPlatform\ApiUnitTester;
 use stdClass;
 use Symfony\Component\DependencyInjection\ContainerBuilder;
 use Symfony\Component\DependencyInjection\Definition;
+use Symfony\Component\DependencyInjection\Reference;
 
 /**
  * Auto-generated group annotations
@@ -39,6 +41,10 @@ class ApiPlatformDecoratorPassTest extends Unit
     protected const int PRIORITY_DEFAULT = 0;
 
     protected const string SERVICE_ID_PROPERTY_ACCESSOR = 'property_accessor';
+
+    protected const string SERVICE_ID_DESERIALIZE_STATE_PROVIDER = 'api_platform.state_provider.deserialize';
+
+    protected const string REFERENCE_INNER = '.inner';
 
     /**
      * @var array<string>
@@ -121,5 +127,34 @@ class ApiPlatformDecoratorPassTest extends Unit
             static fn (Definition $definition): bool => $definition->getClass() === LosslessIntegerPropertyAccessor::class,
         );
         $this->assertSame([], $accessorDefinitions);
+    }
+
+    public function testGivenTheDeserializeStateProviderWhenProcessingThenTheWhitespaceTrimmingProviderDecoratesIt(): void
+    {
+        // Arrange
+        $container = new ContainerBuilder();
+        $container->register(static::SERVICE_ID_RESOURCE_CLASS_RESOLVER, stdClass::class);
+        $container->register(static::SERVICE_ID_DESERIALIZE_STATE_PROVIDER, stdClass::class);
+
+        // Act
+        (new ApiPlatformDecoratorPass())->process($container);
+
+        // Assert
+        $whitespaceTrimmingDefinition = $container->getDefinition(WhitespaceTrimmingDeserializeProvider::class);
+        $this->assertSame(static::SERVICE_ID_DESERIALIZE_STATE_PROVIDER, $whitespaceTrimmingDefinition->getDecoratedService()[0] ?? null);
+        $this->assertEquals([new Reference(static::REFERENCE_INNER)], $whitespaceTrimmingDefinition->getArguments());
+    }
+
+    public function testGivenNoDeserializeStateProviderWhenProcessingThenNoWhitespaceTrimmingProviderIsRegistered(): void
+    {
+        // Arrange
+        $container = new ContainerBuilder();
+        $container->register(static::SERVICE_ID_RESOURCE_CLASS_RESOLVER, stdClass::class);
+
+        // Act
+        (new ApiPlatformDecoratorPass())->process($container);
+
+        // Assert
+        $this->assertFalse($container->hasDefinition(WhitespaceTrimmingDeserializeProvider::class));
     }
 }

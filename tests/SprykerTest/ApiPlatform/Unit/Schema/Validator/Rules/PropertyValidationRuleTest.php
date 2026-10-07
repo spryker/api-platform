@@ -129,6 +129,54 @@ class PropertyValidationRuleTest extends Unit
         $this->assertStringContainsString('responseOptional', $errors[0]);
     }
 
+    public function testGivenNonBooleanAllowWhitespaceAttributeWhenValidatingThenReturnsError(): void
+    {
+        // Arrange
+        $schema = ['properties' => ['password' => ['type' => 'string', 'allowWhitespace' => 'yes']]];
+        $rule = $this->tester->getContainer()->get(PropertyValidationRule::class);
+
+        // Act
+        $errors = $rule->validate($schema);
+
+        // Assert
+        $this->assertNotEmpty($errors);
+        $this->assertStringContainsString('allowWhitespace', $errors[0]);
+    }
+
+    public function testGivenAListItemPropertyThatAllowsWhitespaceWhenValidatingThenReturnsError(): void
+    {
+        // Arrange
+        $listItemProperties = ['value' => ['type' => 'string', 'allowWhitespace' => true]];
+        $schema = ['properties' => ['translations' => ['type' => 'array', 'items' => ['type' => 'object', 'properties' => $listItemProperties]]]];
+        $rule = $this->tester->getContainer()->get(PropertyValidationRule::class);
+
+        // Act
+        $errors = $rule->validate($schema);
+
+        // Assert
+        $this->assertCount(1, $errors);
+        $this->assertStringContainsString('translations.items.value', $errors[0]);
+    }
+
+    public function testGivenAListOrNestedObjectPropertyThatAllowsWhitespaceWhenValidatingThenReturnsNoError(): void
+    {
+        // Arrange
+        $listItems = ['type' => 'object', 'properties' => ['value' => ['type' => 'string']]];
+        $nestedObjectProperties = ['addressLine' => ['type' => 'string', 'allowWhitespace' => true]];
+        $properties = [
+            'translations' => ['type' => 'array', 'allowWhitespace' => true, 'items' => $listItems],
+            'address' => ['type' => 'object', 'properties' => $nestedObjectProperties],
+        ];
+        $schema = ['properties' => $properties];
+        $rule = $this->tester->getContainer()->get(PropertyValidationRule::class);
+
+        // Act
+        $errors = $rule->validate($schema);
+
+        // Assert
+        $this->assertSame([], $errors);
+    }
+
     public function testGivenIncompatibleDefaultValueWhenValidatingThenReturnsError(): void
     {
         // Arrange

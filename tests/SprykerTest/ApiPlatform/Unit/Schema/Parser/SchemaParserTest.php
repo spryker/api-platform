@@ -85,6 +85,32 @@ class SchemaParserTest extends Unit
         $this->assertEquals('integer', $result['properties']['id']['type']);
     }
 
+    public function testGivenAPropertyThatAllowsWhitespaceWhenParsingThenTheFlagIsKept(): void
+    {
+        // Arrange
+        $rawSchema = [
+            'resource' => [
+                'properties' => [
+                    'password' => ['type' => 'string', 'allowWhitespace' => true],
+                    'address' => [
+                        'type' => 'object',
+                        'properties' => [
+                            'addressLine' => ['type' => 'string', 'allowWhitespace' => true],
+                        ],
+                    ],
+                ],
+            ],
+        ];
+        $parser = $this->createSchemaParser();
+
+        // Act
+        $result = $parser->parse($rawSchema, new SplFileInfo(__FILE__));
+
+        // Assert
+        $this->assertTrue($result['properties']['password']['allowWhitespace']);
+        $this->assertTrue($result['properties']['address']['properties']['addressLine']['allowWhitespace']);
+    }
+
     public function testGivenObjectPropertyWithNestedPropertiesWhenParsingThenNormalizesNestedProperties(): void
     {
         // Arrange

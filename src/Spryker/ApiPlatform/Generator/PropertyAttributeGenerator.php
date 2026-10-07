@@ -64,6 +64,12 @@ namespace Spryker\ApiPlatform\Generator;
  * #[ApiProperty(extraProperties: ['itemOnly' => true])]
  * ```
  *
+ * `allowWhitespace: true` keeps the submitted value as sent instead of trimming it, for a password
+ * or any other value whose leading or trailing whitespace is meaningful:
+ * ```php
+ * #[ApiProperty(extraProperties: ['allowWhitespace' => true])]
+ * ```
+ *
  * Handles array and nested OpenAPI context formatting for complex examples and enum definitions.
  */
 class PropertyAttributeGenerator
@@ -92,6 +98,11 @@ class PropertyAttributeGenerator
      * @uses \Spryker\ApiPlatform\Contract\Coverage\RequestAttributeTruthCollector::EXTRA_PROPERTY_WRITABLE_ON
      */
     protected const string EXTRA_PROPERTY_WRITABLE_ON = 'writableOn';
+
+    /**
+     * @uses \Spryker\ApiPlatform\State\WhitespaceTrimmingDeserializeProvider::EXTRA_PROPERTY_ALLOW_WHITESPACE
+     */
+    protected const string EXTRA_PROPERTY_ALLOW_WHITESPACE = 'allowWhitespace';
 
     /**
      * @param array<string, mixed> $property
@@ -149,6 +160,10 @@ class PropertyAttributeGenerator
 
         if (isset($property[SchemaKey::ITEM_ONLY]) && $property[SchemaKey::ITEM_ONLY] === true) {
             $extraProperties[] = static::EXTRA_PROPERTY_ITEM_ONLY;
+        }
+
+        if (isset($property[SchemaKey::ALLOW_WHITESPACE]) && $property[SchemaKey::ALLOW_WHITESPACE] === true) {
+            $extraProperties[] = static::EXTRA_PROPERTY_ALLOW_WHITESPACE;
         }
 
         $extraPropertyParts = array_map(static fn (string $key): string => sprintf("'%s' => true", $key), $extraProperties);

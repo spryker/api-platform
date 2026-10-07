@@ -39,6 +39,7 @@ class PropertyValidationRule implements ValidationRuleInterface
         $errors = array_merge($errors, $this->validateSerializedPathAttributes($properties, $schema));
         $errors = array_merge($errors, $this->validateDuplicateItemDefinitions($properties, $schema));
         $errors = array_merge($errors, $this->validateRelationshipItemsCollision($properties, $schema));
+        $errors = array_merge($errors, $this->validateListItemWhitespaceAllowance($properties, $schema));
 
         return $errors;
     }
@@ -152,7 +153,7 @@ class PropertyValidationRule implements ValidationRuleInterface
     protected function validateBooleanAttributes(array $properties, array $schema): array
     {
         $errors = [];
-        $booleanAttributes = ['writable', 'readable', 'identifier', 'required', 'responseOptional', 'syntheticIdentifier', 'collectionOnly', 'itemOnly'];
+        $booleanAttributes = ['writable', 'readable', 'identifier', 'required', 'responseOptional', 'syntheticIdentifier', 'collectionOnly', 'itemOnly', 'allowWhitespace'];
 
         foreach ($properties as $propertyName => $property) {
             foreach ($booleanAttributes as $attribute) {
@@ -324,6 +325,69 @@ class PropertyValidationRule implements ValidationRuleInterface
                     $errors,
                     $this->validateDuplicateItemDefinitions($property['items']['properties'], $schema, $path . '.items'),
                 );
+            }
+        }
+
+        return $errors;
+    }
+
+    /**
+     * The items of a list stay plain arrays after deserialization, so the request trimming cannot read a flag
+     * declared on an item property: `allowWhitespace` there would be silently ignored. The flag belongs on
+     * the list property, where it covers every item.
+     *
+     * @param array<string, array<string, mixed>> $properties
+     * @param array<string, mixed> $schema
+     *
+     * @return array<string>
+     */
+    protected function validateListItemWhitespaceAllowance(array $properties, array $schema, string $pathPrefix = ''): array
+    {
+        $errors = [];
+
+        foreach ($properties as $propertyName => $property) {
+            $path = $pathPrefix === '' ? (string)$propertyName : $pathPrefix . '.' . $propertyName;
+
+            if (isset($property['properties']) && is_array($property['properties'])) {
+                $errors = array_merge($errors, $this->validateListItemWhitespaceAllowance($property['properties'], $schema, $path));
+            }
+
+            if (isset($property['items']['properties']) && is_array($property['items']['properties'])) {
+                $errors = array_merge($errors, $this->findItemPropertiesAllowingWhitespace($property['items']['properties'], $schema, $path));
+            }
+        }
+
+        return $errors;
+    }
+
+    /**
+     * @param array<string, array<string, mixed>> $itemProperties
+     * @param array<string, mixed> $schema
+     *
+     * @return array<string>
+     */
+    protected function findItemPropertiesAllowingWhitespace(array $itemProperties, array $schema, string $listPath): array
+    {
+        $errors = [];
+
+        foreach ($itemProperties as $propertyName => $property) {
+            if (isset($property['allowWhitespace'])) {
+                $errors[] = sprintf(
+                    'Property "%s.items.%s" declares "allowWhitespace" in %s. List items are not inspected for it, '
+                    . 'so it would be ignored — declare it on "%s" instead.',
+                    $listPath,
+                    $propertyName,
+                    $schema['sourceFile'] ?? 'unknown file',
+                    $listPath,
+                );
+            }
+
+            if (isset($property['properties']) && is_array($property['properties'])) {
+                $errors = array_merge($errors, $this->findItemPropertiesAllowingWhitespace($property['properties'], $schema, $listPath));
+            }
+
+            if (isset($property['items']['properties']) && is_array($property['items']['properties'])) {
+                $errors = array_merge($errors, $this->findItemPropertiesAllowingWhitespace($property['items']['properties'], $schema, $listPath));
             }
         }
 

@@ -46,6 +46,8 @@ class SchemaKey
 
     public const string INCLUDED_ON = 'includedOn';
 
+    public const string ALLOW_WHITESPACE = 'allowWhitespace';
+
     public const string READABLE = 'readable';
 
     public const string WRITABLE = 'writable';

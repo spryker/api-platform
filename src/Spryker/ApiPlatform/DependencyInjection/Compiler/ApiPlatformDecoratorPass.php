@@ -24,6 +24,7 @@ use Spryker\ApiPlatform\OpenApi\ErrorResponse\RequestAttributesResolver;
 use Spryker\ApiPlatform\PropertyAccess\LosslessIntegerPropertyAccessor;
 use Spryker\ApiPlatform\State\OptionalFieldFilteringValidateProvider;
 use Spryker\ApiPlatform\State\StrictBooleanCanonicalizingDeserializeProvider;
+use Spryker\ApiPlatform\State\WhitespaceTrimmingDeserializeProvider;
 use Spryker\ApiPlatform\Validation\ValidationConstraintReader;
 use Symfony\Component\DependencyInjection\Argument\TaggedIteratorArgument;
 use Symfony\Component\DependencyInjection\Compiler\CompilerPassInterface;
@@ -45,6 +46,7 @@ use Symfony\Component\DependencyInjection\Reference;
  * - ErrorResponseOpenApiDecorator: Documents every error response with the Glue error schema and examples
  * - OptionalFieldFilteringValidateProvider: Drops violations for Optional fields absent from the body
  * - StrictBooleanCanonicalizingDeserializeProvider: Re-applies the boolean a client spelled as a string
+ * - WhitespaceTrimmingDeserializeProvider: Trims the strings a client submitted unless the property allows whitespace
  * - LosslessIntegerPropertyAccessor: Rejects a fractional number written into an `int` property instead of truncating it
  */
 class ApiPlatformDecoratorPass implements CompilerPassInterface
@@ -147,6 +149,10 @@ class ApiPlatformDecoratorPass implements CompilerPassInterface
                     new Reference(static::REFERENCE_INNER),
                     new Reference(ValidationConstraintReader::class),
                 ]);
+
+            $container->register(WhitespaceTrimmingDeserializeProvider::class, WhitespaceTrimmingDeserializeProvider::class)
+                ->setDecoratedService(static::SERVICE_ID_DESERIALIZE_STATE_PROVIDER)
+                ->setArguments([new Reference(static::REFERENCE_INNER)]);
         }
 
         $this->decorateSerializerPropertyAccessors($container);

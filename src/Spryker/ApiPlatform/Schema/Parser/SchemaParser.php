@@ -491,6 +491,10 @@ class SchemaParser implements SchemaParserInterface
                     : $property[SchemaKey::WRITABLE_ON];
             }
 
+            if (isset($property[SchemaKey::ALLOW_WHITESPACE])) {
+                $normalized[$propertyName][SchemaKey::ALLOW_WHITESPACE] = $property[SchemaKey::ALLOW_WHITESPACE];
+            }
+
             if (isset($property['default'])) {
                 $normalized[$propertyName]['default'] = $property['default'];
             }

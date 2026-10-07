@@ -55,6 +55,18 @@ class PropertyAttributeGeneratorTest extends Unit
         $this->assertStringContainsString("extraProperties: ['responseOptional' => true, 'writableOn' => ['Post']]", $attributes);
     }
 
+    public function testGivenAPropertyThatAllowsWhitespaceWhenGeneratingThenTheApiPropertyCarriesTheExtraProperty(): void
+    {
+        // Arrange
+        $property = ['type' => 'string', 'allowWhitespace' => true];
+
+        // Act
+        $attributes = (new PropertyAttributeGenerator())->generate($property, [], [], 'password', static::RESOURCE_NAME);
+
+        // Assert
+        $this->assertStringContainsString("extraProperties: ['allowWhitespace' => true]", $attributes);
+    }
+
     public function testGivenGroupsWhenGeneratingThenEmitsTheGroupsAttribute(): void
     {
         // Arrange
