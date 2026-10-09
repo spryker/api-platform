@@ -22,8 +22,12 @@ use Spryker\ApiPlatform\Contract\Coverage\IncludeRelationship;
 use Spryker\ApiPlatform\Contract\Coverage\ReplayedResource;
 use Spryker\ApiPlatform\Contract\Coverage\RequestAttribute;
 use Spryker\ApiPlatform\Contract\Coverage\ResponseAttribute;
+use Spryker\ApiPlatform\Contract\Coverage\ThrownStatus;
 use Spryker\ApiPlatform\Contract\Coverage\TruthSet;
+use Spryker\ApiPlatform\Contract\Coverage\TypedRequestAttribute;
+use Spryker\ApiPlatform\Contract\Coverage\UnreadableThrownStatus;
 use Spryker\ApiPlatform\Contract\Coverage\ValidationConstraint;
+use SprykerTest\ApiPlatform\Unit\Coverage\Fixture\ThrownStatusFixtureArgumentRequiredHttpException;
 
 /**
  * Auto-generated group annotations
@@ -454,6 +458,122 @@ class CoverageCalculatorTest extends Unit
         $this->assertSame(['wishlists'], $this->coverageItemKeys($replay->covered));
         $this->assertSame(['carts'], $this->coverageItemKeys($replay->uncovered));
         $this->assertSame(['gone'], $this->coverageItemKeys($replay->stale));
+    }
+
+    public function testGivenThrownStatusesWhenCalculatingThenADeclaredOneIsCoveredAndAnUndeclaredOneIsUncovered(): void
+    {
+        // Arrange
+        $truthSet = new TruthSet(
+            [],
+            [],
+            [],
+            declaredResponses: ['PATCH /carts/{uuid}' => [200, 404]],
+            thrownStatuses: [new ThrownStatus('PATCH /carts/{uuid}', 404), new ThrownStatus('PATCH /carts/{uuid}', 400)],
+        );
+
+        // Act
+        $report = (new CoverageCalculator())->calculate($truthSet, $truthSet, new CollectedAnnotations([], []));
+
+        // Assert
+        $thrownStatuses = $report->dimensionCoverage(ContractCoverageDimension::THROWN_STATUSES->value);
+        $this->assertSame(['PATCH /carts/{uuid} 404'], $this->coverageItemKeys($thrownStatuses->covered));
+        $this->assertSame(['PATCH /carts/{uuid} 400'], $this->coverageItemKeys($thrownStatuses->uncovered));
+    }
+
+    public function testGivenAnUnreadableThrownStatusWhenCalculatingThenItIsUncoveredWhateverTheOperationDeclares(): void
+    {
+        // Arrange
+        $truthSet = new TruthSet(
+            [],
+            [],
+            [],
+            declaredResponses: ['PATCH /carts/{uuid}' => [200, 400, 404, 423]],
+            thrownStatuses: [new UnreadableThrownStatus('PATCH /carts/{uuid}', ThrownStatusFixtureArgumentRequiredHttpException::class)],
+        );
+
+        // Act
+        $report = (new CoverageCalculator())->calculate($truthSet, $truthSet, new CollectedAnnotations([], []));
+
+        // Assert
+        $thrownStatuses = $report->dimensionCoverage(ContractCoverageDimension::THROWN_STATUSES->value);
+        $this->assertSame([], $thrownStatuses->covered);
+        $this->assertSame(['PATCH /carts/{uuid} unreadable ' . ThrownStatusFixtureArgumentRequiredHttpException::class], $this->coverageItemKeys($thrownStatuses->uncovered));
+    }
+
+    public function testGivenTypedAttributesWhenCalculatingThenOneWithAnActiveConstraintIsCoveredAndOneWithoutIsUncovered(): void
+    {
+        // Arrange
+        $truthSet = new TruthSet(
+            [],
+            [],
+            [new ValidationConstraint('carts', 'priceMode', 'NotBlank', 'POST', '/carts')],
+            typedRequestAttributes: [
+                new TypedRequestAttribute('carts', 'POST /carts', 'priceMode'),
+                new TypedRequestAttribute('carts', 'PATCH /carts/{uuid}', 'priceMode'),
+            ],
+        );
+
+        // Act
+        $report = (new CoverageCalculator())->calculate($truthSet, $truthSet, new CollectedAnnotations([], []));
+
+        // Assert
+        $unconstrainedAttributes = $report->dimensionCoverage(ContractCoverageDimension::UNCONSTRAINED_ATTRIBUTES->value);
+        $this->assertSame(['POST /carts  priceMode'], $this->coverageItemKeys($unconstrainedAttributes->covered));
+        $this->assertSame(['PATCH /carts/{uuid}  priceMode'], $this->coverageItemKeys($unconstrainedAttributes->uncovered));
+    }
+
+    public function testGivenAConstraintOnAFieldOfAListElementWhenCalculatingThenTheWildcardRequestPathIsCovered(): void
+    {
+        // Arrange
+        $truthSet = new TruthSet(
+            [],
+            [],
+            [new ValidationConstraint('checkout', 'shipments.requestedDeliveryDate', 'Date', 'POST', '/checkout')],
+            typedRequestAttributes: [new TypedRequestAttribute('checkout', 'POST /checkout', 'shipments[].requestedDeliveryDate')],
+        );
+
+        // Act
+        $report = (new CoverageCalculator())->calculate($truthSet, $truthSet, new CollectedAnnotations([], []));
+
+        // Assert
+        $unconstrainedAttributes = $report->dimensionCoverage(ContractCoverageDimension::UNCONSTRAINED_ATTRIBUTES->value);
+        $this->assertSame(['POST /checkout  shipments[].requestedDeliveryDate'], $this->coverageItemKeys($unconstrainedAttributes->covered));
+        $this->assertSame([], $unconstrainedAttributes->uncovered);
+    }
+
+    public function testGivenAnExcludedTypedAttributeWhenCalculatingThenItIsNotOwedOnAnyOperation(): void
+    {
+        // Arrange
+        $truthSet = new TruthSet(
+            [],
+            [],
+            [],
+            typedRequestAttributes: [
+                new TypedRequestAttribute('carts', 'POST /carts', 'store'),
+                new TypedRequestAttribute('carts', 'PATCH /carts/{uuid}', 'store'),
+            ],
+        );
+
+        // Act
+        $report = (new CoverageCalculator(['carts.store']))->calculate($truthSet, $truthSet, new CollectedAnnotations([], []));
+
+        // Assert
+        $unconstrainedAttributes = $report->dimensionCoverage(ContractCoverageDimension::UNCONSTRAINED_ATTRIBUTES->value);
+        $this->assertFalse($unconstrainedAttributes->hasGaps());
+        $this->assertSame([], $unconstrainedAttributes->covered);
+    }
+
+    public function testGivenAnExclusionNamingNoTypedAttributeWhenCalculatingThenItIsStale(): void
+    {
+        // Arrange
+        $truthSet = new TruthSet([], [], [], typedRequestAttributes: [new TypedRequestAttribute('carts', 'POST /carts', 'store')]);
+
+        // Act
+        $report = (new CoverageCalculator(['carts.store', 'carts.gone']))->calculate($truthSet, $truthSet, new CollectedAnnotations([], []));
+
+        // Assert
+        $unconstrainedAttributes = $report->dimensionCoverage(ContractCoverageDimension::UNCONSTRAINED_ATTRIBUTES->value);
+        $this->assertSame(['carts.gone'], $this->coverageItemKeys($unconstrainedAttributes->stale));
     }
 
     protected function hasGaps(CoverageReport $report): bool

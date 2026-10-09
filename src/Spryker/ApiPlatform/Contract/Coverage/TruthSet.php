@@ -37,6 +37,8 @@ readonly class TruthSet
      * @param array<\Spryker\ApiPlatform\Contract\Coverage\IncludeRelationship> $includeRelationships The includes each read has to prove.
      * @param array<\Spryker\ApiPlatform\Contract\Coverage\IncludeRelationship> $writeIncludeRelationships The includes a write may be claimed for without owing them.
      * @param array<\Spryker\ApiPlatform\Contract\Coverage\ReplayedResource> $replayableResources The resources with a servable operation whose examples can be replayed.
+     * @param array<\Spryker\ApiPlatform\Contract\Coverage\ThrownStatus|\Spryker\ApiPlatform\Contract\Coverage\UnreadableThrownStatus> $thrownStatuses The error statuses each servable operation's processor and provider can throw, and the ones that cannot be read.
+     * @param array<\Spryker\ApiPlatform\Contract\Coverage\TypedRequestAttribute> $typedRequestAttributes The writable attributes of each input operation whose value has a shape of its own.
      */
     public function __construct(
         public array $servableOperations,
@@ -55,6 +57,8 @@ readonly class TruthSet
         public array $includeRelationships = [],
         public array $writeIncludeRelationships = [],
         public array $replayableResources = [],
+        public array $thrownStatuses = [],
+        public array $typedRequestAttributes = [],
     ) {
     }
 
@@ -91,6 +95,8 @@ readonly class TruthSet
         $includeRelationships = [];
         $writeIncludeRelationships = [];
         $replayableResources = [];
+        $thrownStatuses = [];
+        $typedRequestAttributes = [];
 
         foreach ($truthSets as $truthSet) {
             $servableOperations = array_merge($servableOperations, $truthSet->servableOperations);
@@ -109,6 +115,8 @@ readonly class TruthSet
             $includeRelationships = array_merge($includeRelationships, $truthSet->includeRelationships);
             $writeIncludeRelationships = array_merge($writeIncludeRelationships, $truthSet->writeIncludeRelationships);
             $replayableResources = array_merge($replayableResources, $truthSet->replayableResources);
+            $thrownStatuses = array_merge($thrownStatuses, $truthSet->thrownStatuses);
+            $typedRequestAttributes = array_merge($typedRequestAttributes, $truthSet->typedRequestAttributes);
         }
 
         return new self(
@@ -128,6 +136,8 @@ readonly class TruthSet
             $includeRelationships,
             $writeIncludeRelationships,
             $replayableResources,
+            $thrownStatuses,
+            $typedRequestAttributes,
         );
     }
 

@@ -31,7 +31,8 @@ use Symfony\Component\Validator\Constraints\Sequentially;
  *
  * uriTemplate resolution mirrors API Platform's own defaults. An item `GET` with no provider is
  * classified non-servable, and error coverage is schema-declared rather than synthesised — see
- * {@see TruthSet}.
+ * {@see TruthSet}. The one thing read from source rather than reflected is what a processor or
+ * provider can throw, see {@see ThrownStatusAnalyzer}.
  */
 class SchemaTruthLoader
 {
@@ -107,6 +108,8 @@ class SchemaTruthLoader
         protected ResponseAttributeTruthCollector $responseAttributeTruthCollector,
         protected array $ownershipSecurityAttributes,
         protected RequestAttributeTruthCollector $requestAttributeTruthCollector,
+        protected ThrownStatusCollector $thrownStatusCollector,
+        protected TypedRequestAttributeCollector $typedRequestAttributeCollector,
     ) {
     }
 
@@ -172,6 +175,8 @@ class SchemaTruthLoader
             $operationTruth['includeRelationships'],
             $operationTruth['writeIncludeRelationships'],
             $operationTruth['servableOperations'] === [] ? [] : [new ReplayedResource($shortName)],
+            $operationTruth['thrownStatuses'],
+            $this->typedRequestAttributeCollector->collect($reflectionClass, $shortName, $operationTruth['inputOperations']),
         );
     }
 
@@ -294,7 +299,7 @@ class SchemaTruthLoader
     }
 
     /**
-     * @return array{servableOperations: array<\Spryker\ApiPlatform\Contract\Coverage\ApiOperation>, nonServableOperations: array<\Spryker\ApiPlatform\Contract\Coverage\ApiOperation>, internalOperations: array<\Spryker\ApiPlatform\Contract\Coverage\ApiOperation>, undeclaredResponseOperations: array<\Spryker\ApiPlatform\Contract\Coverage\ApiOperation>, declaredResponses: array<string, array<int>>, inputOperations: array<array{operation: \Spryker\ApiPlatform\Contract\Coverage\ApiOperation, groups: array<string>, type: string}>, successfulInputOperations: array<array{operation: \Spryker\ApiPlatform\Contract\Coverage\ApiOperation, groups: array<string>, type: string}>, errorCodeOperations: array<\Spryker\ApiPlatform\Contract\Coverage\ApiOperation>, declaredErrorCodes: array<string, array<int, array<string>>>, ownershipScenarioOperations: array<\Spryker\ApiPlatform\Contract\Coverage\ApiOperation>, includeRelationships: array<\Spryker\ApiPlatform\Contract\Coverage\IncludeRelationship>, writeIncludeRelationships: array<\Spryker\ApiPlatform\Contract\Coverage\IncludeRelationship>, bodylessDispatchKeys: array<string>}
+     * @return array{servableOperations: array<\Spryker\ApiPlatform\Contract\Coverage\ApiOperation>, nonServableOperations: array<\Spryker\ApiPlatform\Contract\Coverage\ApiOperation>, internalOperations: array<\Spryker\ApiPlatform\Contract\Coverage\ApiOperation>, undeclaredResponseOperations: array<\Spryker\ApiPlatform\Contract\Coverage\ApiOperation>, declaredResponses: array<string, array<int>>, inputOperations: array<array{operation: \Spryker\ApiPlatform\Contract\Coverage\ApiOperation, groups: array<string>, type: string}>, successfulInputOperations: array<array{operation: \Spryker\ApiPlatform\Contract\Coverage\ApiOperation, groups: array<string>, type: string}>, errorCodeOperations: array<\Spryker\ApiPlatform\Contract\Coverage\ApiOperation>, declaredErrorCodes: array<string, array<int, array<string>>>, ownershipScenarioOperations: array<\Spryker\ApiPlatform\Contract\Coverage\ApiOperation>, includeRelationships: array<\Spryker\ApiPlatform\Contract\Coverage\IncludeRelationship>, writeIncludeRelationships: array<\Spryker\ApiPlatform\Contract\Coverage\IncludeRelationship>, bodylessDispatchKeys: array<string>, thrownStatuses: array<\Spryker\ApiPlatform\Contract\Coverage\ThrownStatus|\Spryker\ApiPlatform\Contract\Coverage\UnreadableThrownStatus>}
      */
     protected function collectOperations(ApiResource $apiResource, string $shortName, string $identifier): array
     {
@@ -314,6 +319,7 @@ class SchemaTruthLoader
         $writeIncludeRelationships = [];
         $declaredIncludes = $this->declaredIncludes($apiResource);
         $bodylessDispatchKeys = [];
+        $thrownStatuses = [];
 
         // `Operations` is keyed on the base `Operation`, so a resource may carry one that is not
         // HTTP and cannot answer `getMethod()`.
@@ -348,6 +354,7 @@ class SchemaTruthLoader
             }
 
             $declaredStatuses = $this->declaredResponseStatuses($operation);
+            $thrownStatuses = array_merge($thrownStatuses, $this->thrownStatusCollector->collect($operation, $apiResource, $apiOperation));
 
             if ($declaredStatuses === []) {
                 $undeclaredResponseOperations[] = $apiOperation;
@@ -425,6 +432,7 @@ class SchemaTruthLoader
             'includeRelationships' => $includeRelationships,
             'writeIncludeRelationships' => $writeIncludeRelationships,
             'bodylessDispatchKeys' => $bodylessDispatchKeys,
+            'thrownStatuses' => $thrownStatuses,
         ];
     }
 

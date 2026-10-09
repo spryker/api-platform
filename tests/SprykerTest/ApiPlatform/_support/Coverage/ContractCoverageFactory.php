@@ -30,6 +30,9 @@ use Spryker\ApiPlatform\Contract\Coverage\ResponseAttributeTruthCollector;
 use Spryker\ApiPlatform\Contract\Coverage\SchemaSourceResolver;
 use Spryker\ApiPlatform\Contract\Coverage\SchemaTruthLoader;
 use Spryker\ApiPlatform\Contract\Coverage\ScopeResolver;
+use Spryker\ApiPlatform\Contract\Coverage\ThrownStatusAnalyzer;
+use Spryker\ApiPlatform\Contract\Coverage\ThrownStatusCollector;
+use Spryker\ApiPlatform\Contract\Coverage\TypedRequestAttributeCollector;
 use Spryker\ApiPlatform\Contract\Coverage\ValidationEvidenceVerifier;
 use Spryker\ApiPlatform\Contract\Envelope\JsonApiEnvelopeRecorder;
 use Spryker\ApiPlatform\Contract\Envelope\JsonApiEnvelopeVerifier;
@@ -96,6 +99,8 @@ class ContractCoverageFactory
             static::createResponseAttributeTruthCollector(),
             [],
             static::createRequestAttributeTruthCollector(),
+            static::createThrownStatusCollector(),
+            static::createTypedRequestAttributeCollector(),
         );
     }
 
@@ -197,6 +202,21 @@ class ContractCoverageFactory
     public static function createRequestAttributeTruthCollector(): RequestAttributeTruthCollector
     {
         return new RequestAttributeTruthCollector();
+    }
+
+    public static function createThrownStatusAnalyzer(): ThrownStatusAnalyzer
+    {
+        return new ThrownStatusAnalyzer();
+    }
+
+    public static function createThrownStatusCollector(): ThrownStatusCollector
+    {
+        return new ThrownStatusCollector(static::createThrownStatusAnalyzer());
+    }
+
+    public static function createTypedRequestAttributeCollector(): TypedRequestAttributeCollector
+    {
+        return new TypedRequestAttributeCollector(static::createRequestAttributeTruthCollector());
     }
 
     public static function createValidationEvidenceVerifier(): ValidationEvidenceVerifier

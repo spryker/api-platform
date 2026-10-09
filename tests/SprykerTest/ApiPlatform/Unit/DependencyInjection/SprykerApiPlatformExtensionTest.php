@@ -170,6 +170,20 @@ class SprykerApiPlatformExtensionTest extends Unit
         $this->assertSame($baseline, $container->getParameter('spryker_api_platform.contract_coverage_baseline'));
     }
 
+    public function testGivenExcludedUnconstrainedAttributesWhenLoadingThenTheContainerParameterCarriesThem(): void
+    {
+        // Arrange
+        $container = new ContainerBuilder();
+        $container->setParameter('kernel.project_dir', static::PROJECT_DIR);
+        $container->setParameter('kernel.bundles', []);
+
+        // Act
+        (new SprykerApiPlatformExtension())->load([['contract_coverage_excluded_unconstrained_attributes' => ['carts.priceMode']]], $container);
+
+        // Assert
+        $this->assertSame(['carts.priceMode'], $container->getParameter('spryker_api_platform.contract_coverage_excluded_unconstrained_attributes'));
+    }
+
     public function testGivenABaselineThatIsNotAMapWhenCompilingTheConfigurationThenItFails(): void
     {
         // Arrange

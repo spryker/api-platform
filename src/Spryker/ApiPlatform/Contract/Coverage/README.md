@@ -166,6 +166,8 @@ $sprykerApiPlatform->contractCoverageEnforcedDimensions(['all']); // every dimen
 | `ownership-scenarios` | each operation guarded by an ownership voter | `#[CoversApiOperation(..., status:, scenario: Scenario::FOREIGN_OWNER)]` |
 | `non-empty-arrays` | runtime only: every asserted response attribute | a non-empty value |
 | `openapi-example-replay` | each resource with a servable operation | `#[ReplaysOpenApiExamples]` on a replay class |
+| `thrown-statuses` | each error status an operation's processor or provider can throw | the status declared under the operation's `responses` |
+| `unconstrained-attributes` | each typed writable attribute of an input operation | a constraint active on that operation, or an exclusion |
 
 A dimension that is not enforced lists its gaps under `Reported, not enforced
 (contract_coverage_enforced_dimensions)`, so they stay visible on every CI run. Preview one before
@@ -344,6 +346,57 @@ The body comes from the writable properties' `openapiContext.example`, the query
 examples. The context fills the path variables, the headers and any value that must reference a
 fixture, or skips an operation with `OpenApiExampleReplayContext::skip($reason)`.
 
+## Thrown statuses
+
+Every error status the processor or provider of an operation can throw has to be declared on that
+operation in the `.resource.yml`. The truth is read from the source without running anything:
+
+- A processor built on `AbstractProcessor` owes, per operation, what its `processPost()`,
+  `processPatch()` or `processDelete()` can throw. A provider built on `AbstractProvider` adds what
+  `provideItem()` or `provideCollection()` can throw to every operation that reads, which excludes
+  POST and any operation declaring `read: false`. A processor or provider that implements
+  `process()` / `provide()` itself owes all of it on every operation it serves.
+- A status counts when the method, or a method it calls on `$this` or on a collaborator typed as a
+  concrete class, throws an HTTP exception it constructs or one an exception factory returns. The
+  status is followed through literals, class constants, ternaries, `match` arms and the integer
+  parameters a call site passes or leaves at their default:
+  `createExceptionFromQuoteResponse(..., int $fallbackStatus = Response::HTTP_UNPROCESSABLE_ENTITY)`
+  owes a 422 unless the caller passes another status. An `AccessDeniedException` counts as 403.
+- A status read at runtime - the entry of an error mapping, an exception held in a variable - is not
+  followed. The `error-mappings` dimension owns the mapped statuses.
+
+An item is printed `<dispatch key> <status>`, e.g. `PATCH /carts/{uuid} 400`. It is covered by
+declaring the status on the operation; when the status can never actually be answered, remove the
+`throw` instead of declaring it. No test claims a thrown status.
+
+An HTTP exception whose constructor requires an argument fixes a status that cannot be read without
+running anything. It is printed `<dispatch key> unreadable <exception class>` and is never covered:
+list the class with its status in `ThrownStatusAnalyzer::STATUS_BY_EXCEPTION_CLASS`.
+
+## Unconstrained attributes
+
+A writable attribute whose value has a shape of its own needs a constraint on every input operation
+that accepts it, or a client can write any string into it. An attribute counts as typed when its
+property is a `DateTimeInterface`, when its `openapiContext` declares an `enum` or a `format`, when
+its name is `store`, `currency`, `priceMode` or `locale`, or when its name reads as a date
+(`…Date`, `…At`, `dateOf…`, `validFrom`, `validTo`). The attributes are the ones the
+[request attributes](#request-attributes) dimension derives, so nested value objects and
+`Assert\Collection` fields count one level deep.
+
+An item is printed `<dispatch key>  <path>`, e.g. `PATCH /carts/{uuid}  priceMode`. Any constraint
+whose validation groups are active on the operation covers it, including one on a field below it.
+
+Which dates and closed sets a project validates differs per project, so the application opts an
+attribute out on every operation by naming it `<resource>.<attribute path>`:
+
+```php
+// config/GlueStorefront/packages/spryker_api_platform.php
+$sprykerApiPlatform->contractCoverageExcludedUnconstrainedAttributes(['carts.priceMode']);
+```
+
+An entry that names no typed writable attribute of any resource is reported stale, so an opt-out
+cannot outlive the attribute it was written for.
+
 ## Operations without a success response
 
 An operation whose schema declares statuses and no 2xx among them - a bare collection URL kept only
@@ -403,8 +456,9 @@ It measures the API type of the application it runs in, so `GLUE_APPLICATION` se
 `GLUE_STOREFRONT` reflects `Generated\Api\Storefront` against the `StorefrontApi` suites,
 `GLUE_BACKEND` reflects `Generated\Api\Backend` against the `BackendApi` ones. CI runs both.
 
-The check itself stays boot-free: it only reflects generated classes and test attributes. Booting
-the Glue console is the console's cost, not the report's.
+The check itself stays boot-free: it reflects generated classes and test attributes, and parses the
+source of processors, providers and what they call for the thrown statuses. Booting the Glue console
+is the console's cost, not the report's.
 
 ## Scope
 
@@ -457,4 +511,6 @@ validation rules.
 | `ValidationEvidenceVerifier`, `ValidationAttributePath` | holds a validation declaration to the violations raised |
 | `RequestAttributeTruthCollector`, `RequestAttributePathExtractor`, `RequestAttributeVerifier` | the writable attributes of an input operation, and what a request sent |
 | `IncludeRelationship`, `IncludedRelationshipRecorder`, `IncludeEvidenceVerifier` | the declared includes, and the proof of one |
+| `ThrownStatusCollector`, `ThrownStatusAnalyzer`, `AnalyzedMethod`, `ThrownStatus`, `UnreadableThrownStatus` | the error statuses each operation's processor and provider can throw, read from source |
+| `TypedRequestAttributeCollector`, `TypedRequestAttribute`, `UnconstrainedAttributeExclusion` | the typed writable attributes of each input operation, and the project's opt-outs |
 | `Replay\OpenApiExampleRequestBuilder`, `Replay\ReplayableRequest`, `Replay\OpenApiExampleReplayContext` | the example replay |

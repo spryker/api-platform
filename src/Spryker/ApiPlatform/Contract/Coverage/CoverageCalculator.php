@@ -23,6 +23,20 @@ namespace Spryker\ApiPlatform\Contract\Coverage;
  */
 class CoverageCalculator
 {
+    protected const string PATH_WILDCARD = '[]';
+
+    protected const string PATH_SEPARATOR = '.';
+
+    /**
+     * @param array<string> $excludedUnconstrainedAttributes `<resource>.<attribute path>` entries the
+     *   unconstrained-attributes dimension does not owe, from the application's
+     *   `contract_coverage_excluded_unconstrained_attributes`: which typed attributes a project
+     *   validates is its own decision.
+     */
+    public function __construct(protected readonly array $excludedUnconstrainedAttributes = [])
+    {
+    }
+
     /**
      * @param array<string, array<\Spryker\ApiPlatform\Contract\Coverage\ErrorMappingEntry>> $errorMappingEntries
      *   The resolved entries of each error mapping the enforced truth registers, keyed by source.
@@ -102,8 +116,98 @@ class CoverageCalculator
                     array_fill_keys($annotations->replayedResources, true),
                     array_map(static fn (string $resourceShortName): ReplayedResource => new ReplayedResource($resourceShortName), $annotations->replayedResources),
                 ),
+                ContractCoverageDimension::THROWN_STATUSES->value => $this->diffThrownStatuses($enforcedTruth),
+                ContractCoverageDimension::UNCONSTRAINED_ATTRIBUTES->value => $this->diffUnconstrainedAttributes($enforcedTruth, $existenceTruth),
             ],
         );
+    }
+
+    /**
+     * A thrown status is covered when the operation's schema declares it; no test claims it. One that
+     * cannot be read is never covered.
+     *
+     * @return \Spryker\ApiPlatform\Contract\Coverage\DimensionCoverage<\Spryker\ApiPlatform\Contract\Coverage\ThrownStatus|\Spryker\ApiPlatform\Contract\Coverage\UnreadableThrownStatus>
+     */
+    protected function diffThrownStatuses(TruthSet $enforcedTruth): DimensionCoverage
+    {
+        $covered = [];
+        $uncovered = [];
+
+        foreach ($this->unique($enforcedTruth->thrownStatuses) as $thrownStatus) {
+            if ($thrownStatus instanceof ThrownStatus && in_array($thrownStatus->status, $enforcedTruth->declaredResponses[$thrownStatus->dispatchKey] ?? [], true)) {
+                $covered[] = $thrownStatus;
+
+                continue;
+            }
+            $uncovered[] = $thrownStatus;
+        }
+
+        return new DimensionCoverage($covered, $uncovered);
+    }
+
+    /**
+     * A typed attribute is covered when any constraint is active on it, or on a field below it, for
+     * the operation. An excluded one is not owed at all, and an exclusion that names no typed
+     * attribute of any resource is stale.
+     *
+     * @return \Spryker\ApiPlatform\Contract\Coverage\DimensionCoverage<\Spryker\ApiPlatform\Contract\Coverage\CoverageItem>
+     */
+    protected function diffUnconstrainedAttributes(TruthSet $enforcedTruth, TruthSet $existenceTruth): DimensionCoverage
+    {
+        $constrainedKeys = [];
+        foreach ($enforcedTruth->validationConstraints as $validationConstraint) {
+            $dispatchKey = (new ApiOperation($validationConstraint->verb, $validationConstraint->uriTemplate))->dispatchKey();
+            $constrainedKeys[(new RequestAttribute($dispatchKey, $validationConstraint->attribute))->key()] = true;
+        }
+
+        $excludedKeys = array_fill_keys($this->excludedUnconstrainedAttributes, true);
+        $covered = [];
+        $uncovered = [];
+
+        foreach ($this->unique($enforcedTruth->typedRequestAttributes) as $typedRequestAttribute) {
+            if (isset($excludedKeys[$typedRequestAttribute->exclusionKey()])) {
+                continue;
+            }
+
+            if ($this->isConstrained($typedRequestAttribute, $constrainedKeys)) {
+                $covered[] = $typedRequestAttribute;
+
+                continue;
+            }
+            $uncovered[] = $typedRequestAttribute;
+        }
+
+        $existingExclusionKeys = [];
+        foreach ($existenceTruth->typedRequestAttributes as $typedRequestAttribute) {
+            $existingExclusionKeys[$typedRequestAttribute->exclusionKey()] = true;
+        }
+
+        $stale = [];
+        foreach (array_unique($this->excludedUnconstrainedAttributes) as $exclusionKey) {
+            if (!isset($existingExclusionKeys[$exclusionKey])) {
+                $stale[] = new UnconstrainedAttributeExclusion($exclusionKey);
+            }
+        }
+
+        return new DimensionCoverage($covered, $uncovered, $stale);
+    }
+
+    /**
+     * A validation rule names a list element's field without the `[]` a request path carries.
+     *
+     * @param array<string, true> $constrainedKeys
+     */
+    protected function isConstrained(TypedRequestAttribute $typedRequestAttribute, array $constrainedKeys): bool
+    {
+        $key = (new RequestAttribute($typedRequestAttribute->dispatchKey, str_replace(static::PATH_WILDCARD, '', $typedRequestAttribute->path)))->key();
+
+        foreach (array_keys($constrainedKeys) as $constrainedKey) {
+            if ($constrainedKey === $key || str_starts_with($constrainedKey, $key . static::PATH_SEPARATOR)) {
+                return true;
+            }
+        }
+
+        return false;
     }
 
     /**

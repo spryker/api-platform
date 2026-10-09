@@ -82,6 +82,10 @@ class SprykerApiPlatformExtension extends Extension implements PrependExtensionI
             $config['contract_coverage_baseline'],
         );
         $container->setParameter(
+            'spryker_api_platform.contract_coverage_excluded_unconstrained_attributes',
+            $config['contract_coverage_excluded_unconstrained_attributes'],
+        );
+        $container->setParameter(
             'spryker_api_platform.contract_coverage_ownership_security_attributes',
             $config['contract_coverage_ownership_security_attributes'],
         );

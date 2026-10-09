@@ -587,7 +587,7 @@ class SchemaTruthLoaderTest extends Unit
     public function testGivenResourceSecurityWithAnOwnershipAttributeWhenLoadingThenEveryServableOperationOwesAForeignOwnerScenario(): void
     {
         // Arrange
-        $loader = new SchemaTruthLoader(new ConstraintRuleMapper(), new ResponseAttributeTruthCollector(), ['CUSTOMER_OWNER'], new RequestAttributeTruthCollector());
+        $loader = new SchemaTruthLoader(new ConstraintRuleMapper(), new ResponseAttributeTruthCollector(), ['CUSTOMER_OWNER'], new RequestAttributeTruthCollector(), ContractCoverageFactory::createThrownStatusCollector(), ContractCoverageFactory::createTypedRequestAttributeCollector());
 
         // Act
         $truthSet = $loader->load([OwnershipSecuredFixtureResource::class]);
@@ -602,7 +602,7 @@ class SchemaTruthLoaderTest extends Unit
     public function testGivenOperationSecurityOverridingTheResourceWhenLoadingThenTheOperationLevelExpressionDecides(): void
     {
         // Arrange
-        $loader = new SchemaTruthLoader(new ConstraintRuleMapper(), new ResponseAttributeTruthCollector(), ['CUSTOMER_OWNER'], new RequestAttributeTruthCollector());
+        $loader = new SchemaTruthLoader(new ConstraintRuleMapper(), new ResponseAttributeTruthCollector(), ['CUSTOMER_OWNER'], new RequestAttributeTruthCollector(), ContractCoverageFactory::createThrownStatusCollector(), ContractCoverageFactory::createTypedRequestAttributeCollector());
 
         // Act
         $truthSet = $loader->load([OwnershipSecuredFixtureResource::class]);
@@ -620,7 +620,7 @@ class SchemaTruthLoaderTest extends Unit
     public function testGivenOnlyRoleChecksWhenLoadingThenNoScenarioIsOwed(): void
     {
         // Arrange
-        $loader = new SchemaTruthLoader(new ConstraintRuleMapper(), new ResponseAttributeTruthCollector(), ['SOME_OTHER_OWNER'], new RequestAttributeTruthCollector());
+        $loader = new SchemaTruthLoader(new ConstraintRuleMapper(), new ResponseAttributeTruthCollector(), ['SOME_OTHER_OWNER'], new RequestAttributeTruthCollector(), ContractCoverageFactory::createThrownStatusCollector(), ContractCoverageFactory::createTypedRequestAttributeCollector());
 
         // Act
         $truthSet = $loader->load([OwnershipSecuredFixtureResource::class]);

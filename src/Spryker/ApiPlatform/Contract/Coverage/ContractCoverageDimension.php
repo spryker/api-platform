@@ -27,6 +27,8 @@ enum ContractCoverageDimension: string
     case OWNERSHIP_SCENARIOS = 'ownership-scenarios';
     case NON_EMPTY_ARRAYS = 'non-empty-arrays';
     case OPENAPI_EXAMPLE_REPLAY = 'openapi-example-replay';
+    case THROWN_STATUSES = 'thrown-statuses';
+    case UNCONSTRAINED_ATTRIBUTES = 'unconstrained-attributes';
 
     public function label(): string
     {
@@ -39,6 +41,8 @@ enum ContractCoverageDimension: string
             static::OWNERSHIP_SCENARIOS => 'Ownership scenarios',
             static::NON_EMPTY_ARRAYS => 'Non-empty arrays',
             static::OPENAPI_EXAMPLE_REPLAY => 'Example replay',
+            static::THROWN_STATUSES => 'Thrown statuses',
+            static::UNCONSTRAINED_ATTRIBUTES => 'Typed attributes',
         };
     }
 
@@ -51,6 +55,8 @@ enum ContractCoverageDimension: string
             static::INCLUDES => 'Uncovered includes',
             static::OWNERSHIP_SCENARIOS => 'Uncovered ownership scenarios',
             static::OPENAPI_EXAMPLE_REPLAY => 'Resources without an example replay',
+            static::THROWN_STATUSES => 'Thrown statuses the operation does not declare',
+            static::UNCONSTRAINED_ATTRIBUTES => 'Typed writable attributes without a constraint',
             static::VALIDATION_EVIDENCE, static::NON_EMPTY_ARRAYS => 'Uncovered ' . strtolower($this->label()),
         };
     }
@@ -64,6 +70,8 @@ enum ContractCoverageDimension: string
             static::INCLUDES => 'Stale include claims',
             static::OWNERSHIP_SCENARIOS => 'Stale scenario claims',
             static::OPENAPI_EXAMPLE_REPLAY => 'Stale example replay claims',
+            static::THROWN_STATUSES => 'Stale thrown status claims',
+            static::UNCONSTRAINED_ATTRIBUTES => 'Stale unconstrained attribute exclusions (contract_coverage_excluded_unconstrained_attributes)',
             static::VALIDATION_EVIDENCE, static::NON_EMPTY_ARRAYS => 'Stale ' . strtolower($this->label()) . ' claims',
         };
     }
@@ -82,6 +90,8 @@ enum ContractCoverageDimension: string
             static::OWNERSHIP_SCENARIOS => 'ownership scenario',
             static::NON_EMPTY_ARRAYS => 'non-empty array',
             static::OPENAPI_EXAMPLE_REPLAY => 'example replay',
+            static::THROWN_STATUSES => 'thrown status',
+            static::UNCONSTRAINED_ATTRIBUTES => 'unconstrained attribute',
         };
     }
 
