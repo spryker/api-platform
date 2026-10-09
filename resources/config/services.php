@@ -438,6 +438,13 @@ return static function (ContainerConfigurator $container): void {
         'Spryker\\Glue\\GlueApplication\\Compatibility\\RequestBuilder\\SyntheticRestRequestBuilder',
     );
     $services->set('Spryker\\Glue\\GlueApplication\\Compatibility\\EventSubscriber\\LegacyPluginBridgeSubscriber');
+    $services->set(
+        'Spryker\\Glue\\GlueApplication\\Compatibility\\Transfer\\NullCollectionNormalizer',
+    );
+    $services->alias(
+        'Spryker\\Glue\\GlueApplication\\Compatibility\\Transfer\\NullCollectionNormalizerInterface',
+        'Spryker\\Glue\\GlueApplication\\Compatibility\\Transfer\\NullCollectionNormalizer',
+    );
 
     // Validate JSON:API request body (type field, resource ID presence)
     $services->set(JsonApiRequestValidatorSubscriber::class);

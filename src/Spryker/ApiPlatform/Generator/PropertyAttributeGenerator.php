@@ -258,6 +258,16 @@ class PropertyAttributeGenerator
         return '[' . implode(', ', $parts) . ']';
     }
 
+    /**
+     * Only the backslash and the single quote carry meaning inside a single-quoted PHP literal.
+     * `addslashes()` would also escape the double quote, so an example holding JSON would reach
+     * the published schema with a stray backslash before every quote.
+     */
+    protected function escapeSingleQuoted(string $value): string
+    {
+        return str_replace(['\\', "'"], ['\\\\', "\\'"], $value);
+    }
+
     protected function formatOpenapiContextValue(mixed $value): string
     {
         if (is_array($value)) {
@@ -265,7 +275,7 @@ class PropertyAttributeGenerator
         }
 
         if (is_string($value)) {
-            return sprintf("'%s'", addslashes($value));
+            return sprintf("'%s'", $this->escapeSingleQuoted($value));
         }
 
         if (is_bool($value)) {

@@ -236,6 +236,31 @@ class OpenApiOperationBuilderTest extends Unit
         );
     }
 
+    public function testGivenAQueryParameterExampleHoldingDoubleQuotesWhenGeneratingThenTheQuotesAreEmittedUnescaped(): void
+    {
+        // Arrange
+        $operation = [
+            'type' => static::OPERATION_TYPE_PATCH,
+            'openapiContext' => [
+                'parameters' => [
+                    [
+                        'name' => 'filter',
+                        'in' => 'query',
+                        'required' => false,
+                        'schema' => ['type' => 'string'],
+                        'example' => '{"sku": "093_24495843"}',
+                    ],
+                ],
+            ],
+        ];
+
+        // Act
+        $result = $this->createBuilder()->generateOpenApiOperation([], $operation, static::OPERATION_TYPE_PATCH);
+
+        // Assert
+        $this->assertStringContainsString("example: '{\"sku\": \"093_24495843\"}'", $result);
+    }
+
     public function testGivenOperationDeclaresNoParametersWhenGeneratingThenNoParametersParameterIsEmitted(): void
     {
         // Arrange

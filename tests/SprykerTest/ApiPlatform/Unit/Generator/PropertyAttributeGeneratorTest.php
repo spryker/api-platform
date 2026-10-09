@@ -55,6 +55,30 @@ class PropertyAttributeGeneratorTest extends Unit
         $this->assertStringContainsString("extraProperties: ['responseOptional' => true, 'writableOn' => ['Post']]", $attributes);
     }
 
+    public function testGivenAnExampleHoldingDoubleQuotesWhenGeneratingThenTheQuotesAreEmittedUnescaped(): void
+    {
+        // Arrange
+        $property = ['type' => 'string', 'openapiContext' => ['example' => '{"date": "09.09.2050"}']];
+
+        // Act
+        $attributes = (new PropertyAttributeGenerator())->generate($property, [], [], 'configuration', 'items');
+
+        // Assert
+        $this->assertStringContainsString("openapiContext: ['example' => '{\"date\": \"09.09.2050\"}']", $attributes);
+    }
+
+    public function testGivenAnExampleHoldingASingleQuoteWhenGeneratingThenOnlyTheSingleQuoteIsEscaped(): void
+    {
+        // Arrange
+        $property = ['type' => 'string', 'openapiContext' => ['example' => "Customer's \"note\""]];
+
+        // Act
+        $attributes = (new PropertyAttributeGenerator())->generate($property, [], [], 'comment', 'items');
+
+        // Assert
+        $this->assertStringContainsString("openapiContext: ['example' => 'Customer\\'s \"note\"']", $attributes);
+    }
+
     public function testGivenAPropertyThatAllowsWhitespaceWhenGeneratingThenTheApiPropertyCarriesTheExtraProperty(): void
     {
         // Arrange

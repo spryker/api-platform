@@ -292,7 +292,7 @@ class OpenApiOperationBuilder
                 continue;
             }
 
-            $arguments[] = sprintf("%s: '%s'", $key, addslashes($example[$key]));
+            $arguments[] = sprintf("%s: '%s'", $key, $this->escapeSingleQuoted($example[$key]));
         }
 
         if (array_key_exists(static::EXAMPLE_KEY_VALUE, $example)) {

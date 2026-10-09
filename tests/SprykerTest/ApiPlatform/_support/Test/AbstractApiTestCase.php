@@ -1400,8 +1400,7 @@ abstract class AbstractApiTestCase extends Unit
 
     /**
      * A test that asserted a baselined path with a real value has proven the bug fixed, so the entry
-     * has to leave the baseline before it excuses a regression. For a baselined array that holds
-     * for an asserted element as much as for the array itself.
+     * has to leave the baseline before it excuses a regression.
      */
     protected function failOnStaleNonEmptyArrayBaseline(): void
     {
