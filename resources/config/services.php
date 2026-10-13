@@ -66,6 +66,7 @@ use Spryker\ApiPlatform\OpenApi\FormatTransformer\JsonApiFormatTransformer;
 use Spryker\ApiPlatform\OpenApi\Normalizer\EmptyRelationshipNormalizer;
 use Spryker\ApiPlatform\OpenApi\Normalizer\IdNormalizer;
 use Spryker\ApiPlatform\OpenApi\Normalizer\LinksPositionNormalizer;
+use Spryker\ApiPlatform\OpenApi\Normalizer\ResourceLinksNormalizer;
 use Spryker\ApiPlatform\OpenApi\Normalizer\SelfLinkNormalizer;
 use Spryker\ApiPlatform\Processor\RelationshipProcessor;
 use Spryker\ApiPlatform\Provider\RelationshipProvider;
@@ -102,6 +103,7 @@ use Spryker\ApiPlatform\Schema\Validator\PreMergeValidator;
 use Spryker\ApiPlatform\Schema\Validator\PreMergeValidatorInterface;
 use Spryker\ApiPlatform\Schema\Validator\Rules\ErrorCodesValidationRule;
 use Spryker\ApiPlatform\Schema\Validator\Rules\ErrorMappingsValidationRule;
+use Spryker\ApiPlatform\Schema\Validator\Rules\LinksValidationRule;
 use Spryker\ApiPlatform\Schema\Validator\Rules\MergeValidationRule;
 use Spryker\ApiPlatform\Schema\Validator\Rules\OperationTypeReferenceValidationRule;
 use Spryker\ApiPlatform\Schema\Validator\Rules\PaginationValidationRule;
@@ -120,6 +122,8 @@ use Spryker\ApiPlatform\Serializer\Denormalizer\WriteOnlyOperationDenormalizer;
 use Spryker\ApiPlatform\Serializer\Encoder\CXmlEncoder;
 use Spryker\ApiPlatform\Serializer\Normalizer\CXmlNormalizer;
 use Spryker\ApiPlatform\Serializer\TranslatingConstraintViolationListNormalizer;
+use Spryker\ApiPlatform\State\Request\CollectionQueryReader;
+use Spryker\ApiPlatform\State\Request\CollectionQueryReaderInterface;
 use Spryker\ApiPlatform\State\TranslatingErrorProvider;
 use Spryker\ApiPlatform\Translation\ApiCsvFileLoader;
 use Spryker\ApiPlatform\Validation\BoolValidationErrorAugmenter;
@@ -225,6 +229,9 @@ return static function (ContainerConfigurator $container): void {
         ->tag('spryker_api_platform.validation_rule.post_merge');
 
     $services->set(RelationshipValidationRule::class)
+        ->tag('spryker_api_platform.validation_rule.post_merge');
+
+    $services->set(LinksValidationRule::class)
         ->tag('spryker_api_platform.validation_rule.post_merge');
 
     $services->set(MergeValidationRule::class);
@@ -487,6 +494,8 @@ return static function (ContainerConfigurator $container): void {
         ->tag('translation.loader', ['alias' => ApiCsvFileLoader::FORMAT]);
     $services->set(LocaleFacadeInterface::class, LocaleFacade::class);
 
+    $services->set(CollectionQueryReaderInterface::class, CollectionQueryReader::class);
+
     // Translate error messages using Spryker glossary
     $services->set(TranslatingErrorProvider::class)
         ->autoconfigure(false)
@@ -557,6 +566,14 @@ return static function (ContainerConfigurator $container): void {
      */
     $services->set(SelfLinkNormalizer::class)
         ->tag('serializer.normalizer', ['priority' => 63]);
+
+    /**
+     * Runs inside SelfLinkNormalizer so `links.self` is still written last.
+     */
+    $services->set(ResourceLinksNormalizer::class)
+        ->arg('$urlGenerator', service('router'))
+        ->arg('$logger', service('logger'))
+        ->tag('serializer.normalizer', ['priority' => 62]);
 
     /**
      * This normalizer ensures that we do not have empty relations kept.

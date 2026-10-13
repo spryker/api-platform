@@ -271,6 +271,68 @@ class ResourceGenerationIntegrationTest extends Unit
         $this->assertStringNotContainsString('public ?string $customer = null;', $generatedCode);
     }
 
+    /**
+     * @dataProvider provideLinksSchemas
+     *
+     * @param array<string, mixed> $resource
+     * @param array<string> $expectedFragments
+     */
+    public function testGivenSchemaWithLinksWhenGeneratingThenEmitsThemIntoValidCode(
+        array $resource,
+        array $expectedFragments,
+    ): void {
+        // Arrange
+        $schemaParser = $this->createSchemaParser();
+        $classGenerator = $this->createClassGenerator();
+
+        // Act
+        $parsedSchema = $schemaParser->parse(['resource' => $resource], new SplFileInfo(__FILE__));
+        $generatedCode = $classGenerator->generate($parsedSchema, 'Backend');
+
+        // Assert
+        foreach ($expectedFragments as $expectedFragment) {
+            $this->assertStringContainsString($expectedFragment, $generatedCode);
+        }
+
+        $this->assertNotEmpty(token_get_all($generatedCode, TOKEN_PARSE));
+    }
+
+    /**
+     * @return array<string, array<string, mixed>>
+     */
+    public function provideLinksSchemas(): array
+    {
+        $properties = [
+            'uuid' => ['type' => 'string', 'identifier' => true],
+            'discountType' => ['type' => 'string'],
+        ];
+
+        return [
+            'given a resource declaring links, when generating, then they land in extraProperties as a name-keyed map' => [
+                'resource' => [
+                    'name' => 'Discounts',
+                    'shortName' => 'discounts',
+                    'links' => [
+                        [
+                            'name' => 'voucherCodesExport',
+                            'route' => 'exportDiscountVoucherCodes',
+                            'parameters' => ['uuid' => 'uuid'],
+                            'condition' => ['property' => 'discountType', 'equals' => 'voucher'],
+                            'operations' => ['Get'],
+                        ],
+                    ],
+                    'operations' => [['type' => 'Get', 'uriTemplate' => '/discounts/{uuid}']],
+                    'properties' => $properties,
+                ],
+                'expectedFragments' => [
+                    "extraProperties: ['links' => ['voucherCodesExport' => ['route' => 'exportDiscountVoucherCodes', "
+                        . "'parameters' => ['uuid' => 'uuid'], 'condition' => ['property' => 'discountType', 'equals' => 'voucher'], "
+                        . "'operations' => ['0' => 'Get']]]]",
+                ],
+            ],
+        ];
+    }
+
     protected function createSchemaParser(): SchemaParser
     {
         return $this->tester->getContainer()->get(SchemaParserInterface::class);

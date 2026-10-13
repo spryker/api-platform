@@ -60,4 +60,9 @@
         <property name="offset" type="int"/>
     </transfer>
 
+    <transfer name="Sort">
+        <property name="field" type="string"/>
+        <property name="isAscending" type="bool"/>
+    </transfer>
+
 </transfers>

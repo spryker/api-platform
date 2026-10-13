@@ -135,8 +135,7 @@ class GlueApiExceptionSubscriberThrowableTest extends Unit
 
     public function testGivenUncaughtThrowableOnApiPlatformRequestInProductionWhenOnKernelExceptionLastResortThenThrowableIsLogged(): void
     {
-        // Arrange — the exception that API Platform would otherwise swallow into a generic
-        // 500 (SUPESC-1116) must reach the logger so operators are not blind to the cause.
+        // Arrange
         $logger = $this->createRecordingLogger();
         $subscriber = $this->createSubscriber(debug: false, logger: $logger);
         $request = new Request();

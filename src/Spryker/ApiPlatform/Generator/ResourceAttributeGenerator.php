@@ -9,6 +9,8 @@ declare(strict_types=1);
 
 namespace Spryker\ApiPlatform\Generator;
 
+use Spryker\ApiPlatform\Schema\LinkSchemaKeys;
+
 /**
  * Generates the class-level #[ApiResource(...)] attribute for API Platform resource classes.
  *
@@ -236,6 +238,10 @@ class ResourceAttributeGenerator
 
         if (isset($schema['includedSortPriority']) && is_numeric($schema['includedSortPriority'])) {
             $extraProperties['includedSortPriority'] = (int)$schema['includedSortPriority'];
+        }
+
+        if (isset($schema[LinkSchemaKeys::LINKS]) && is_array($schema[LinkSchemaKeys::LINKS]) && $schema[LinkSchemaKeys::LINKS] !== []) {
+            $extraProperties[LinkSchemaKeys::LINKS] = $schema[LinkSchemaKeys::LINKS];
         }
 
         // The Zed error mappings the resource answers, which the contract coverage holds against

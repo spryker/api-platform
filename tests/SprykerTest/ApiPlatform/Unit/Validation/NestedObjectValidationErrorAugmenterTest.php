@@ -50,8 +50,8 @@ class NestedObjectValidationErrorAugmenterTest extends Unit
      * resource-property types off static analysis, which would otherwise flag the runtime-only
      * classes as unknown.
      *
-     * Backend fixtures mirror the Storefront ones so the both-ApiType cascade stays covered — a
-     * Backend-only regression is otherwise invisible here and only surfaces in SOL-561.
+     * Backend fixtures mirror the Storefront ones so the both-ApiType cascade stays covered: a
+     * Backend-only regression is otherwise invisible here.
      */
     protected function _before(): void
     {

@@ -13,6 +13,7 @@ use SplFileInfo;
 use Spryker\ApiPlatform\Exception\ApiSchemaValidationException;
 use Spryker\ApiPlatform\Generator\ResourceNameTagGenerator;
 use Spryker\ApiPlatform\Generator\SchemaKey;
+use Spryker\ApiPlatform\Schema\LinkSchemaKeys;
 use Spryker\ApiPlatform\Schema\Validation\Mapper\ValidationGroupMapperInterface;
 use Spryker\ApiPlatform\Schema\Validator\PreMergeValidatorInterface;
 
@@ -86,6 +87,7 @@ class SchemaParser implements SchemaParserInterface
             'securityPostValidation' => $this->getValue($resource, 'securityPostValidation', null),
             'securityPostValidationMessage' => $this->getValue($resource, 'securityPostValidationMessage', null),
             'openapiContext' => $this->getValue($resource, 'openapiContext', []),
+            LinkSchemaKeys::LINKS => $this->normalizeLinks($resource, $filePath),
             'resourceAttributesClassName' => $this->getValue($resource, 'resourceAttributesClassName', null),
             'includedSortPriority' => $this->getValue($resource, 'includedSortPriority', null),
             'includes' => $includes,
@@ -736,5 +738,42 @@ class SchemaParser implements SchemaParserInterface
         }
 
         return lcfirst(str_replace('-', '', ucwords($value, '-')));
+    }
+
+    /**
+     * @param array<string, mixed> $resource
+     *
+     * @throws \Spryker\ApiPlatform\Exception\ApiSchemaValidationException
+     *
+     * @return array<string, array<string, mixed>>
+     */
+    protected function normalizeLinks(array $resource, string $filePath): array
+    {
+        $links = $this->getValue($resource, LinkSchemaKeys::LINKS, []);
+
+        if (!is_array($links)) {
+            throw new ApiSchemaValidationException('Links must be an array', $filePath);
+        }
+
+        $normalized = [];
+
+        foreach ($links as $key => $link) {
+            if (!is_array($link)) {
+                throw new ApiSchemaValidationException('Every link must be an array', $filePath);
+            }
+
+            $linkName = is_string($key) ? $key : ($link[LinkSchemaKeys::LINK_NAME] ?? null);
+
+            if (!is_string($linkName) || $linkName === '') {
+                throw new ApiSchemaValidationException('Every link must have a non-empty "name"', $filePath);
+            }
+
+            // Every other key and value is carried through untouched: `LinksValidationRule` rejects unknown keys and
+            // wrong types, so a typo such as `params:` fails generation instead of silently producing a broken link.
+            unset($link[LinkSchemaKeys::LINK_NAME]);
+            $normalized[$linkName] = $link;
+        }
+
+        return $normalized;
     }
 }

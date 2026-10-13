@@ -485,10 +485,6 @@ class PropertyValidationRule implements ValidationRuleInterface
             return null;
         }
 
-        // Truthy, not strict === true: mirrors RelationshipPhpDocGenerator::generate()'s
-        // `if ($property['writable'] ?? false) { continue; }`, which disqualifies on any truthy
-        // value (e.g. a non-boolean 'false' string or 1). The `readable` check below is strict
-        // === true on purpose — that asymmetry is in the generator too; do not harmonise them.
         if ($property['writable'] ?? false) {
             return null;
         }

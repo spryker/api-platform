@@ -374,6 +374,77 @@
                         ]
                     ]
                 },
+                "links": {
+                    "type": "array",
+                    "description": "Named JSON:API links rendered next to links.self in the primary data of a single-resource response (Get, Post, Patch, Put). Items of a collection response are not decorated.",
+                    "items": {
+                        "type": "object",
+                        "required": ["name", "route"],
+                        "properties": {
+                            "name": {
+                                "type": "string",
+                                "description": "The key the link is rendered under inside the item's links object",
+                                "pattern": "^[a-zA-Z][a-zA-Z0-9]*$",
+                                "examples": ["voucherCodesExport"]
+                            },
+                            "route": {
+                                "type": "string",
+                                "description": "Name of the route the link points at, which is the name of the operation that declares it",
+                                "examples": ["exportDiscountVoucherCodes"]
+                            },
+                            "parameters": {
+                                "type": "object",
+                                "description": "Mapping of route parameter to the property path on this resource that provides its value. The link is skipped when a value is null.",
+                                "patternProperties": {
+                                    "^[a-zA-Z][a-zA-Z0-9_]*$": {
+                                        "type": "string"
+                                    }
+                                },
+                                "additionalProperties": false,
+                                "examples": [{ "uuid": "uuid" }]
+                            },
+                            "condition": {
+                                "type": "object",
+                                "description": "Renders the link only when the named property of the resource is identical to the given value",
+                                "required": ["property", "equals"],
+                                "properties": {
+                                    "property": {
+                                        "type": "string",
+                                        "examples": ["discountType"]
+                                    },
+                                    "equals": {
+                                        "examples": ["voucher"]
+                                    }
+                                },
+                                "additionalProperties": false
+                            },
+                            "operations": {
+                                "type": "array",
+                                "description": "Operation types or operation names the link is rendered on. Renders on every operation when omitted.",
+                                "items": {
+                                    "type": "string"
+                                },
+                                "examples": [["Get"]]
+                            },
+                            "description": {
+                                "type": "string",
+                                "description": "Documentation of the link for schema readers"
+                            }
+                        },
+                        "additionalProperties": false
+                    },
+                    "examples": [
+                        [
+                            {
+                                "name": "voucherCodesExport",
+                                "route": "exportDiscountVoucherCodes",
+                                "parameters": { "uuid": "uuid" },
+                                "condition": { "property": "discountType", "equals": "voucher" },
+                                "operations": ["Get"]
+                            }
+                        ]
+                    ]
+                },
                 "sourceFile": {
                     "type": "string",
                     "description": "Full path to the source YAML file (auto-generated, read-only)",
