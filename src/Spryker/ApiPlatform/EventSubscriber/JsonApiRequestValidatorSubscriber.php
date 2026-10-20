@@ -99,7 +99,7 @@ class JsonApiRequestValidatorSubscriber implements EventSubscriberInterface
         if (in_array($method, ['PATCH', 'DELETE'], true) && $this->isMissingResourceId($pathInfo)) {
             // Only throw for API Platform routes; legacy Glue endpoints
             // handle missing resource IDs through their own routing/error logic.
-            if ($this->matchesApiPlatformResource($request, $pathInfo)) {
+            if ($this->matchesApiPlatformResource($request, $pathInfo) && !$this->matchesApiPlatformOperation($request, $pathInfo)) {
                 throw new GlueApiException(
                     Response::HTTP_BAD_REQUEST,
                     '',
@@ -584,6 +584,19 @@ class JsonApiRequestValidatorSubscriber implements EventSubscriberInterface
      * some resources only have PATCH/DELETE operations without a GET route.
      * Legacy Glue routes never set _api_resource_class, so they return false.
      */
+    protected function matchesApiPlatformOperation(Request $request, string $pathInfo): bool
+    {
+        $this->router->getContext()->fromRequest($request);
+
+        try {
+            $match = $this->router->match($pathInfo);
+        } catch (ResourceNotFoundException | MethodNotAllowedException) {
+            return false;
+        }
+
+        return isset($match[RequestAttribute::API_RESOURCE_CLASS]);
+    }
+
     protected function matchesApiPlatformResource(Request $request, string $pathInfo): bool
     {
         // Normalize the path: replace consecutive slashes with placeholder,

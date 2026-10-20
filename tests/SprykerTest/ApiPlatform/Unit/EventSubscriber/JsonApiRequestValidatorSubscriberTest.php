@@ -42,6 +42,12 @@ class JsonApiRequestValidatorSubscriberTest extends Unit
 
     protected const string PATH_COLLECTION = '/test-resources';
 
+    protected const string PATH_NESTED_COLLECTION = '/test-resources/0aa11f2c-9c45-4e21-8a4b-2e2f6f3a9d10/test-items';
+
+    protected const string PATH_NESTED_ITEM_PLACEHOLDER = '/test-resources/0aa11f2c-9c45-4e21-8a4b-2e2f6f3a9d10/test-items/__empty__';
+
+    protected const string ERROR_DETAIL_RESOURCE_ID_NOT_SPECIFIED = 'Resource id is not specified.';
+
     protected const string BODY_WITH_STRING_ATTRIBUTES = '{"data":{"type":"test-resources","attributes":"x"}}';
 
     protected const string BODY_WITH_OBJECT_ATTRIBUTES = '{"data":{"type":"test-resources","attributes":{"name":"x"}}}';
@@ -102,6 +108,50 @@ class JsonApiRequestValidatorSubscriberTest extends Unit
         $subscriber->onKernelRequestTrailingSlash($event);
     }
 
+    public function testGivenPatchOnACollectionPathThatHasAPatchOperationWhenOnKernelRequestThenItIsNotRejected(): void
+    {
+        // Arrange
+        $subscriber = $this->createSubscriber($this->createRouterMatching(static::PATH_NESTED_COLLECTION, static::PATH_NESTED_ITEM_PLACEHOLDER));
+        $event = $this->createRequestEvent(static::PATH_NESTED_COLLECTION, Request::METHOD_PATCH);
+
+        // Act
+        $subscriber->onKernelRequestTrailingSlash($event);
+
+        // Assert
+        $this->assertNull($event->getResponse());
+    }
+
+    public function testGivenPatchOnACollectionPathWithoutAPatchOperationWhenOnKernelRequestThenTheMissingIdIsRejected(): void
+    {
+        // Arrange
+        $subscriber = $this->createSubscriber($this->createRouterMatching(static::PATH_NESTED_ITEM_PLACEHOLDER));
+        $event = $this->createRequestEvent(static::PATH_NESTED_COLLECTION, Request::METHOD_PATCH);
+
+        // Expect
+        $this->expectException(GlueApiException::class);
+        $this->expectExceptionMessage(static::ERROR_DETAIL_RESOURCE_ID_NOT_SPECIFIED);
+
+        // Act
+        $subscriber->onKernelRequestTrailingSlash($event);
+    }
+
+    protected function createRouterMatching(string ...$routedPaths): RouterInterface
+    {
+        $router = $this->createMock(RouterInterface::class);
+        $router->method('getContext')->willReturn(new RequestContext());
+        $router->method('match')->willReturnCallback(
+            static function (string $pathInfo) use ($routedPaths): array {
+                if (!in_array($pathInfo, $routedPaths, true)) {
+                    throw new ResourceNotFoundException();
+                }
+
+                return [RequestAttribute::API_RESOURCE_CLASS => static::RESOURCE_CLASS];
+            },
+        );
+
+        return $router;
+    }
+
     protected function createSubscriber(RouterInterface $router): JsonApiRequestValidatorSubscriber
     {
         return new JsonApiRequestValidatorSubscriber(
@@ -111,11 +161,11 @@ class JsonApiRequestValidatorSubscriberTest extends Unit
         );
     }
 
-    protected function createRequestEvent(string $path): RequestEvent
+    protected function createRequestEvent(string $path, string $method = Request::METHOD_GET): RequestEvent
     {
         return new RequestEvent(
             $this->createMock(HttpKernelInterface::class),
-            Request::create($path),
+            Request::create($path, $method),
             HttpKernelInterface::MAIN_REQUEST,
         );
     }
