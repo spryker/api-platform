@@ -9,8 +9,10 @@ declare(strict_types=1);
 
 namespace SprykerTest\ApiPlatform\Unit\EventSubscriber;
 
+use ApiPlatform\Metadata\ApiResource;
 use ApiPlatform\Metadata\Post;
 use ApiPlatform\Metadata\Resource\Factory\ResourceMetadataCollectionFactoryInterface;
+use ApiPlatform\Metadata\Resource\ResourceMetadataCollection;
 use Codeception\Test\Unit;
 use Spryker\ApiPlatform\EventSubscriber\JsonApiRequestValidatorSubscriber;
 use Spryker\ApiPlatform\Exception\GlueApiException;
@@ -40,6 +42,8 @@ class JsonApiRequestValidatorSubscriberTest extends Unit
 
     protected const string RESOURCE_CLASS = 'Generated\Api\Storefront\TestResource';
 
+    protected const string OPERATION_NAME = '_api_/test-resources_post';
+
     protected const string PATH_COLLECTION = '/test-resources';
 
     protected const string PATH_NESTED_COLLECTION = '/test-resources/0aa11f2c-9c45-4e21-8a4b-2e2f6f3a9d10/test-items';
@@ -51,6 +55,35 @@ class JsonApiRequestValidatorSubscriberTest extends Unit
     protected const string BODY_WITH_STRING_ATTRIBUTES = '{"data":{"type":"test-resources","attributes":"x"}}';
 
     protected const string BODY_WITH_OBJECT_ATTRIBUTES = '{"data":{"type":"test-resources","attributes":{"name":"x"}}}';
+
+    protected const string BODY_WITHOUT_TYPE = '{"data":{"attributes":{"name":"x"}}}';
+
+    protected const string PLAIN_JSON_BODY = '{"isActive":true}';
+
+    protected const string JSON_RPC_BODY = '{"jsonrpc":"2.0","id":1,"method":"tools/list"}';
+
+    protected const string FORM_BODY = 'grant_type=refresh_token&refresh_token=token-value';
+
+    protected const string MEDIA_TYPE_FORM = 'application/x-www-form-urlencoded';
+
+    protected const string MEDIA_TYPE_JSON_API = 'application/vnd.api+json';
+
+    protected const string MEDIA_TYPE_JSON = 'application/json';
+
+    /**
+     * @var array<string, array<string>>
+     */
+    protected const array INPUT_FORMATS_FORM = ['form' => [self::MEDIA_TYPE_FORM]];
+
+    /**
+     * @var array<string, array<string>>
+     */
+    protected const array INPUT_FORMATS_JSON = ['json' => [self::MEDIA_TYPE_JSON]];
+
+    /**
+     * @var array<string, array<string>>
+     */
+    protected const array INPUT_FORMATS_JSON_API = ['jsonapi' => [self::MEDIA_TYPE_JSON_API, self::MEDIA_TYPE_JSON]];
 
     protected ApiUnitTester $tester;
 
@@ -79,6 +112,219 @@ class JsonApiRequestValidatorSubscriberTest extends Unit
 
         // Assert
         $this->assertNull($event->getResponse());
+    }
+
+    public function testGivenAnOperationDeclaringOnlyAFormInputFormatWhenAFormBodyIsPostedThenNoExceptionIsThrown(): void
+    {
+        // Arrange
+        $subscriber = $this->createSubscriber($this->createMock(RouterInterface::class));
+        $event = $this->createWriteRequestEvent(
+            static::FORM_BODY,
+            static::MEDIA_TYPE_FORM,
+            new Post(shortName: static::RESOURCE_SHORT_NAME, deserialize: false, inputFormats: static::INPUT_FORMATS_FORM),
+        );
+
+        // Act
+        $subscriber->onKernelRequestTypeValidation($event);
+
+        // Assert
+        $this->assertNull($event->getResponse());
+        $this->assertSame(static::FORM_BODY, $event->getRequest()->getContent());
+    }
+
+    public function testGivenAnOperationDeclaringOnlyAJsonInputFormatWhenAPlainJsonBodyIsPostedThenNoExceptionIsThrown(): void
+    {
+        // Arrange
+        $subscriber = $this->createSubscriber($this->createMock(RouterInterface::class));
+        $event = $this->createWriteRequestEvent(
+            static::JSON_RPC_BODY,
+            static::MEDIA_TYPE_JSON,
+            new Post(shortName: static::RESOURCE_SHORT_NAME, deserialize: false, inputFormats: static::INPUT_FORMATS_JSON),
+        );
+
+        // Act
+        $subscriber->onKernelRequestTypeValidation($event);
+
+        // Assert
+        $this->assertNull($event->getResponse());
+        $this->assertSame(static::JSON_RPC_BODY, $event->getRequest()->getContent());
+    }
+
+    public function testGivenAnOperationWithTheJsonApiInputFormatWhenAFormBodyIsPostedThenPostDataInvalidIsThrown(): void
+    {
+        // Arrange
+        $subscriber = $this->createSubscriber($this->createMock(RouterInterface::class));
+        $event = $this->createWriteRequestEvent(
+            static::FORM_BODY,
+            static::MEDIA_TYPE_FORM,
+            new Post(shortName: static::RESOURCE_SHORT_NAME, deserialize: false, inputFormats: static::INPUT_FORMATS_JSON_API),
+        );
+
+        // Expect
+        $this->expectException(GlueApiException::class);
+        $this->expectExceptionMessage(JsonApiRequestValidatorSubscriber::ERROR_DETAIL_POST_DATA_INVALID);
+
+        // Act
+        $subscriber->onKernelRequestTypeValidation($event);
+    }
+
+    public function testGivenAnOperationWithTheJsonApiInputFormatWhenAPlainJsonBodyIsPostedThenPostDataInvalidIsThrown(): void
+    {
+        // Arrange
+        $subscriber = $this->createSubscriber($this->createMock(RouterInterface::class));
+        $event = $this->createWriteRequestEvent(
+            static::JSON_RPC_BODY,
+            static::MEDIA_TYPE_JSON,
+            new Post(shortName: static::RESOURCE_SHORT_NAME, inputFormats: static::INPUT_FORMATS_JSON_API),
+        );
+
+        // Expect
+        $this->expectException(GlueApiException::class);
+        $this->expectExceptionMessage(JsonApiRequestValidatorSubscriber::ERROR_DETAIL_POST_DATA_INVALID);
+
+        // Act
+        $subscriber->onKernelRequestTypeValidation($event);
+    }
+
+    public function testGivenAnOperationWithTheJsonApiAndAJsonInputFormatWhenAPlainJsonBodyIsPostedThenPostDataInvalidIsThrown(): void
+    {
+        // Arrange
+        $subscriber = $this->createSubscriber($this->createMock(RouterInterface::class));
+        $event = $this->createWriteRequestEvent(
+            static::JSON_RPC_BODY,
+            static::MEDIA_TYPE_JSON,
+            new Post(shortName: static::RESOURCE_SHORT_NAME, inputFormats: static::INPUT_FORMATS_JSON_API + static::INPUT_FORMATS_JSON),
+        );
+
+        // Expect
+        $this->expectException(GlueApiException::class);
+        $this->expectExceptionMessage(JsonApiRequestValidatorSubscriber::ERROR_DETAIL_POST_DATA_INVALID);
+
+        // Act
+        $subscriber->onKernelRequestTypeValidation($event);
+    }
+
+    public function testGivenAnOperationWithTheJsonApiInputFormatWhenAJsonApiBodyIsPostedThenItPasses(): void
+    {
+        // Arrange
+        $subscriber = $this->createSubscriber($this->createMock(RouterInterface::class));
+        $event = $this->createWriteRequestEvent(
+            static::BODY_WITH_OBJECT_ATTRIBUTES,
+            static::MEDIA_TYPE_JSON_API,
+            new Post(shortName: static::RESOURCE_SHORT_NAME, inputFormats: static::INPUT_FORMATS_JSON_API),
+        );
+
+        // Act
+        $subscriber->onKernelRequestTypeValidation($event);
+
+        // Assert
+        $this->assertNull($event->getResponse());
+    }
+
+    public function testGivenAnOperationWithoutInputFormatsAndDeserializeFalseWhenAFormBodyIsPostedThenPostDataInvalidIsThrown(): void
+    {
+        // Arrange
+        $subscriber = $this->createSubscriber($this->createMock(RouterInterface::class));
+        $event = $this->createWriteRequestEvent(static::FORM_BODY, static::MEDIA_TYPE_FORM, new Post(shortName: static::RESOURCE_SHORT_NAME, deserialize: false));
+
+        // Expect
+        $this->expectException(GlueApiException::class);
+        $this->expectExceptionMessage(JsonApiRequestValidatorSubscriber::ERROR_DETAIL_POST_DATA_INVALID);
+
+        // Act
+        $subscriber->onKernelRequestTypeValidation($event);
+    }
+
+    public function testGivenAnOperationWithoutInputFormatsAndDeserializeFalseWhenAPlainJsonBodyIsPostedThenPostDataInvalidIsThrown(): void
+    {
+        // Arrange
+        $subscriber = $this->createSubscriber($this->createMock(RouterInterface::class));
+        $event = $this->createWriteRequestEvent(static::PLAIN_JSON_BODY, static::MEDIA_TYPE_JSON, new Post(shortName: static::RESOURCE_SHORT_NAME, deserialize: false));
+
+        // Expect
+        $this->expectException(GlueApiException::class);
+        $this->expectExceptionMessage(JsonApiRequestValidatorSubscriber::ERROR_DETAIL_POST_DATA_INVALID);
+
+        // Act
+        $subscriber->onKernelRequestTypeValidation($event);
+    }
+
+    public function testGivenAnOperationWithoutInputFormatsAndDeserializeFalseWhenAJsonApiBodyWithoutTypeIsPostedThenPostDataInvalidIsThrown(): void
+    {
+        // Arrange
+        $subscriber = $this->createSubscriber($this->createMock(RouterInterface::class));
+        $event = $this->createWriteRequestEvent(static::BODY_WITHOUT_TYPE, static::MEDIA_TYPE_JSON_API, new Post(shortName: static::RESOURCE_SHORT_NAME, deserialize: false));
+
+        // Expect
+        $this->expectException(GlueApiException::class);
+        $this->expectExceptionMessage(JsonApiRequestValidatorSubscriber::ERROR_DETAIL_POST_DATA_INVALID);
+
+        // Act
+        $subscriber->onKernelRequestTypeValidation($event);
+    }
+
+    public function testGivenADefaultOperationWhenAFormBodyIsPostedThenPostDataInvalidIsThrown(): void
+    {
+        // Arrange
+        $subscriber = $this->createSubscriber($this->createMock(RouterInterface::class));
+        $event = $this->createWriteRequestEvent(static::FORM_BODY, static::MEDIA_TYPE_FORM, new Post(shortName: static::RESOURCE_SHORT_NAME));
+
+        // Expect
+        $this->expectException(GlueApiException::class);
+        $this->expectExceptionMessage(JsonApiRequestValidatorSubscriber::ERROR_DETAIL_POST_DATA_INVALID);
+
+        // Act
+        $subscriber->onKernelRequestTypeValidation($event);
+    }
+
+    public function testGivenAnOperationThatCannotBeResolvedWhenAFormBodyIsPostedThenPostDataInvalidIsThrown(): void
+    {
+        // Arrange
+        $subscriber = $this->createSubscriber($this->createMock(RouterInterface::class));
+        $event = $this->createWriteRequestEvent(static::FORM_BODY, static::MEDIA_TYPE_FORM);
+        $event->getRequest()->attributes->remove(RequestAttribute::API_OPERATION);
+
+        // Expect
+        $this->expectException(GlueApiException::class);
+        $this->expectExceptionMessage(JsonApiRequestValidatorSubscriber::ERROR_DETAIL_POST_DATA_INVALID);
+
+        // Act
+        $subscriber->onKernelRequestTypeValidation($event);
+    }
+
+    public function testGivenAnOperationNameResolvingToAFormOnlyOperationWhenAFormBodyIsPostedThenNoExceptionIsThrown(): void
+    {
+        // Arrange
+        $operation = new Post(shortName: static::RESOURCE_SHORT_NAME, name: static::OPERATION_NAME, deserialize: false, inputFormats: static::INPUT_FORMATS_FORM);
+        $subscriber = $this->createSubscriber(
+            $this->createMock(RouterInterface::class),
+            $this->createResourceMetadataCollectionFactory(new ResourceMetadataCollection(static::RESOURCE_CLASS, [new ApiResource(operations: [static::OPERATION_NAME => $operation])])),
+        );
+        $event = $this->createOperationNameRequestEvent(static::FORM_BODY, static::MEDIA_TYPE_FORM);
+
+        // Act
+        $subscriber->onKernelRequestTypeValidation($event);
+
+        // Assert
+        $this->assertNull($event->getResponse());
+        $this->assertSame(static::FORM_BODY, $event->getRequest()->getContent());
+    }
+
+    public function testGivenAnOperationNameTheResourceMetadataDoesNotKnowWhenAFormBodyIsPostedThenPostDataInvalidIsThrown(): void
+    {
+        // Arrange
+        $subscriber = $this->createSubscriber(
+            $this->createMock(RouterInterface::class),
+            $this->createResourceMetadataCollectionFactory(new ResourceMetadataCollection(static::RESOURCE_CLASS, [])),
+        );
+        $event = $this->createOperationNameRequestEvent(static::FORM_BODY, static::MEDIA_TYPE_FORM);
+
+        // Expect
+        $this->expectException(GlueApiException::class);
+        $this->expectExceptionMessage(JsonApiRequestValidatorSubscriber::ERROR_DETAIL_POST_DATA_INVALID);
+
+        // Act
+        $subscriber->onKernelRequestTypeValidation($event);
     }
 
     public function testGivenResourceIdPathWhenOnKernelRequestThenMergedSlashRouterProbeIsSkipped(): void
@@ -152,13 +398,24 @@ class JsonApiRequestValidatorSubscriberTest extends Unit
         return $router;
     }
 
-    protected function createSubscriber(RouterInterface $router): JsonApiRequestValidatorSubscriber
-    {
+    protected function createSubscriber(
+        RouterInterface $router,
+        ?ResourceMetadataCollectionFactoryInterface $resourceMetadataCollectionFactory = null
+    ): JsonApiRequestValidatorSubscriber {
         return new JsonApiRequestValidatorSubscriber(
             $router,
-            $this->createMock(ResourceMetadataCollectionFactoryInterface::class),
+            $resourceMetadataCollectionFactory ?? $this->createMock(ResourceMetadataCollectionFactoryInterface::class),
             new IdentityTranslator(),
         );
+    }
+
+    protected function createResourceMetadataCollectionFactory(
+        ResourceMetadataCollection $resourceMetadataCollection
+    ): ResourceMetadataCollectionFactoryInterface {
+        $resourceMetadataCollectionFactory = $this->createMock(ResourceMetadataCollectionFactoryInterface::class);
+        $resourceMetadataCollectionFactory->method('create')->with(static::RESOURCE_CLASS)->willReturn($resourceMetadataCollection);
+
+        return $resourceMetadataCollectionFactory;
     }
 
     protected function createRequestEvent(string $path, string $method = Request::METHOD_GET): RequestEvent
@@ -170,11 +427,25 @@ class JsonApiRequestValidatorSubscriberTest extends Unit
         );
     }
 
-    protected function createWriteRequestEvent(string $body): RequestEvent
+    protected function createWriteRequestEvent(
+        string $body,
+        string $contentType = self::MEDIA_TYPE_JSON_API,
+        ?Post $operation = null
+    ): RequestEvent {
+        $request = Request::create(static::PATH_COLLECTION, Request::METHOD_POST, content: $body);
+        $request->headers->set('Content-Type', $contentType);
+        $request->attributes->set(RequestAttribute::API_RESOURCE_CLASS, static::RESOURCE_CLASS);
+        $request->attributes->set(RequestAttribute::API_OPERATION, $operation ?? new Post(shortName: static::RESOURCE_SHORT_NAME));
+
+        return new RequestEvent($this->createMock(HttpKernelInterface::class), $request, HttpKernelInterface::MAIN_REQUEST);
+    }
+
+    protected function createOperationNameRequestEvent(string $body, string $contentType): RequestEvent
     {
         $request = Request::create(static::PATH_COLLECTION, Request::METHOD_POST, content: $body);
+        $request->headers->set('Content-Type', $contentType);
         $request->attributes->set(RequestAttribute::API_RESOURCE_CLASS, static::RESOURCE_CLASS);
-        $request->attributes->set(RequestAttribute::API_OPERATION, new Post(shortName: static::RESOURCE_SHORT_NAME));
+        $request->attributes->set(RequestAttribute::API_OPERATION_NAME, static::OPERATION_NAME);
 
         return new RequestEvent($this->createMock(HttpKernelInterface::class), $request, HttpKernelInterface::MAIN_REQUEST);
     }

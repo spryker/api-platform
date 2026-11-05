@@ -389,6 +389,10 @@ class ResourceAttributeGenerator
             $parameters['deserialize'] = $operation['deserialize'];
         }
 
+        if (isset($operation[SchemaKey::INPUT_FORMATS]) && is_array($operation[SchemaKey::INPUT_FORMATS]) && $operation[SchemaKey::INPUT_FORMATS] !== []) {
+            $parameters['inputFormats'] = $operation[SchemaKey::INPUT_FORMATS];
+        }
+
         if (isset($operation['normalizationContext']) && is_array($operation['normalizationContext'])) {
             $parameters['normalizationContext'] = $operation['normalizationContext'];
         }

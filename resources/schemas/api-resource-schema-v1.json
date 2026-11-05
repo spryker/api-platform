@@ -76,6 +76,26 @@
                                         "disable_json_schema_serializer_groups": false
                                     }
                                 ]
+                            },
+                            "inputFormats": {
+                                "type": "object",
+                                "description": "Media types the request body of this operation takes, as format name to MIME types. Without it the operation inherits the global formats, 'jsonapi' among them. An operation whose input formats do not include 'jsonapi' skips the JSON:API document checks of JsonApiRequestValidatorSubscriber; with 'deserialize: false' its processor reads the body itself, so no global format or decoder needs registering.",
+                                "minProperties": 1,
+                                "additionalProperties": {
+                                    "type": "array",
+                                    "minItems": 1,
+                                    "items": {
+                                        "type": "string"
+                                    }
+                                },
+                                "examples": [
+                                    {
+                                        "form": ["application/x-www-form-urlencoded"]
+                                    },
+                                    {
+                                        "json": ["application/json"]
+                                    }
+                                ]
                             }
                         },
                         "additionalProperties": true

@@ -731,6 +731,51 @@ class ResourceAttributeGeneratorTest extends Unit
         $this->assertStringNotContainsString('extraProperties:', $result);
     }
 
+    public function testGivenAnOperationDeclaringInputFormatsWhenGeneratingThenTheyAreRenderedAsTheInputFormatsParameter(): void
+    {
+        // Arrange
+        $schema = [
+            'name' => 'OauthToken',
+            'shortName' => 'oauth-token',
+            'operations' => [
+                'Post' => [
+                    'type' => 'Post',
+                    'deserialize' => false,
+                    'inputFormats' => ['form' => ['application/x-www-form-urlencoded']],
+                ],
+            ],
+        ];
+        $uses = [];
+
+        // Act
+        $result = $this->createResourceAttributeGenerator()->generate($schema, $uses);
+
+        // Assert
+        $this->assertStringContainsString("inputFormats: ['form' => ['0' => 'application/x-www-form-urlencoded']]", $result);
+    }
+
+    public function testGivenAnOperationDeclaringEmptyInputFormatsWhenGeneratingThenNoInputFormatsParameterIsEmitted(): void
+    {
+        // Arrange
+        $schema = [
+            'name' => 'OauthToken',
+            'shortName' => 'oauth-token',
+            'operations' => [
+                'Post' => [
+                    'type' => 'Post',
+                    'inputFormats' => [],
+                ],
+            ],
+        ];
+        $uses = [];
+
+        // Act
+        $result = $this->createResourceAttributeGenerator()->generate($schema, $uses);
+
+        // Assert
+        $this->assertStringNotContainsString('inputFormats:', $result);
+    }
+
     public function testGivenAnOperationMarkedInternalWhenGeneratingThenTheFlagRidesInExtraProperties(): void
     {
         // Arrange

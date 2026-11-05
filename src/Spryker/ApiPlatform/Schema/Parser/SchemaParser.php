@@ -335,6 +335,10 @@ class SchemaParser implements SchemaParserInterface
                 $normalizedOperation['deserialize'] = (bool)$operation['deserialize'];
             }
 
+            if (isset($operation[SchemaKey::INPUT_FORMATS]) && is_array($operation[SchemaKey::INPUT_FORMATS]) && $operation[SchemaKey::INPUT_FORMATS] !== []) {
+                $normalizedOperation[SchemaKey::INPUT_FORMATS] = $operation[SchemaKey::INPUT_FORMATS];
+            }
+
             if (isset($operation['normalizationContext']) && is_array($operation['normalizationContext'])) {
                 $normalizedOperation['normalizationContext'] = $operation['normalizationContext'];
             }

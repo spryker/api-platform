@@ -9,6 +9,7 @@ declare(strict_types=1);
 
 namespace SprykerTest\ApiPlatform\Unit\Schema\Parser;
 
+use Codeception\Attribute\DataProvider;
 use Codeception\Test\Unit;
 use SplFileInfo;
 use Spryker\ApiPlatform\Exception\ApiSchemaValidationException;
@@ -838,6 +839,68 @@ class SchemaParserTest extends Unit
         // Assert
         $this->assertArrayHasKey('normalizationContext', $result['operations']['Post']);
         $this->assertFalse($result['operations']['Post']['normalizationContext']['gen_id']);
+    }
+
+    public function testGivenOperationWithInputFormatsWhenParsingThenExtractsInputFormats(): void
+    {
+        // Arrange
+        $rawSchema = [
+            'resource' => [
+                'name' => 'OauthToken',
+                'operations' => [
+                    [
+                        'type' => 'Post',
+                        'deserialize' => false,
+                        'inputFormats' => ['form' => ['application/x-www-form-urlencoded']],
+                    ],
+                ],
+            ],
+        ];
+        $parser = $this->createSchemaParser();
+
+        // Act
+        $result = $parser->parse($rawSchema, new SplFileInfo(__FILE__));
+
+        // Assert
+        $this->assertSame(['form' => ['application/x-www-form-urlencoded']], $result['operations']['Post']['inputFormats']);
+    }
+
+    #[DataProvider('invalidInputFormatsDataProvider')]
+    public function testGivenOperationWithInputFormatsThatIsNotANonEmptyArrayWhenParsingThenDropsInputFormats(mixed $inputFormats): void
+    {
+        // Arrange
+        $rawSchema = [
+            'resource' => [
+                'name' => 'OauthToken',
+                'operations' => [
+                    [
+                        'type' => 'Post',
+                        'deserialize' => false,
+                        'inputFormats' => $inputFormats,
+                    ],
+                ],
+            ],
+        ];
+        $parser = $this->createSchemaParser();
+
+        // Act
+        $result = $parser->parse($rawSchema, new SplFileInfo(__FILE__));
+
+        // Assert
+        $this->assertArrayNotHasKey('inputFormats', $result['operations']['Post']);
+    }
+
+    /**
+     * @return array<string, array{mixed}>
+     */
+    public static function invalidInputFormatsDataProvider(): array
+    {
+        return [
+            'integer' => [1],
+            'false' => [false],
+            'string' => ['application/x-www-form-urlencoded'],
+            'empty array' => [[]],
+        ];
     }
 
     public function testGivenOperationWithDenormalizationContextWhenParsingThenExtractsDenormalizationContext(): void

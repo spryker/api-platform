@@ -148,6 +148,23 @@ input schema, so the JSON:API factory below it is never asked for one; the gener
 `400 Post data is invalid.`, because both media types of the `jsonapi` format
 (`application/vnd.api+json` **and** `application/json`) are read by the JSON:API denormalizer.
 
+An operation whose request body is not a JSON:API document at all — an OAuth 2.0 form-encoded token request or a
+JSON-RPC 2.0 endpoint, for instance — declares the media types it takes with API Platform's own `inputFormats`,
+together with `deserialize: false` so that its processor reads the body itself:
+
+```yaml
+operations:
+    - type: Post
+      uriTemplate: '/oauth/token'
+      deserialize: false
+      inputFormats: { form: ['application/x-www-form-urlencoded'] }
+```
+
+`JsonApiRequestValidatorSubscriber` runs its document checks only for an operation whose input formats include
+`jsonapi`. An operation without `inputFormats` inherits the global formats, `jsonapi` among them, and keeps the checks.
+With `deserialize: false`, API Platform neither negotiates the input format nor decodes the body, so a format named
+here needs no global `formats` entry or decoder, and a wrong media type is answered by the processor, not with `415`.
+
 `JsonApiInputSchemaFactory` decorates `api_platform.json_schema.backward_compatible_schema_factory` —
 above Hydra, where the real format is still known — and wraps the flat schema into the JSON:API
 document:

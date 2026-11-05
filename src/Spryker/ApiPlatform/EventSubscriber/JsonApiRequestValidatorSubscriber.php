@@ -9,6 +9,9 @@ declare(strict_types=1);
 
 namespace Spryker\ApiPlatform\EventSubscriber;
 
+use ApiPlatform\Metadata\Exception\ExceptionInterface as ApiPlatformMetadataExceptionInterface;
+use ApiPlatform\Metadata\HttpOperation;
+use ApiPlatform\Metadata\Operation;
 use ApiPlatform\Metadata\Resource\Factory\ResourceMetadataCollectionFactoryInterface;
 use ReflectionException;
 use ReflectionNamedType;
@@ -35,6 +38,8 @@ class JsonApiRequestValidatorSubscriber implements EventSubscriberInterface
     protected const string EMPTY_SEGMENT_PLACEHOLDER = '__empty__';
 
     protected const string VALIDATORS_DOMAIN = 'validators';
+
+    protected const string FORMAT_JSON_API = 'jsonapi';
 
     public const string ERROR_DETAIL_INVALID_TYPE = 'Invalid type.';
 
@@ -180,6 +185,10 @@ class JsonApiRequestValidatorSubscriber implements EventSubscriberInterface
             return;
         }
 
+        if (!$this->acceptsJsonApiDocument($request)) {
+            return;
+        }
+
         $content = $request->getContent();
 
         // Empty string or empty JSON array — action-style POST that sends no body (e.g. start-picking).
@@ -232,6 +241,41 @@ class JsonApiRequestValidatorSubscriber implements EventSubscriberInterface
         // so the Symfony validator can report proper errors instead of the
         // serializer throwing a raw denormalization exception.
         $this->sanitizeRequestBody($request, $body);
+    }
+
+    protected function acceptsJsonApiDocument(Request $request): bool
+    {
+        $operation = $this->resolveOperation($request);
+        $inputFormats = $operation instanceof HttpOperation ? $operation->getInputFormats() : null;
+
+        // API Platform gives an operation without declared input formats the global formats, `jsonapi` among them.
+        if (!is_array($inputFormats) || $inputFormats === []) {
+            return true;
+        }
+
+        return array_key_exists(static::FORMAT_JSON_API, $inputFormats);
+    }
+
+    protected function resolveOperation(Request $request): ?Operation
+    {
+        $operation = $request->attributes->get(RequestAttribute::API_OPERATION);
+
+        if ($operation instanceof Operation) {
+            return $operation;
+        }
+
+        $resourceClass = $request->attributes->get(RequestAttribute::API_RESOURCE_CLASS);
+        $operationName = $request->attributes->get(RequestAttribute::API_OPERATION_NAME);
+
+        if (!is_string($resourceClass) || !is_string($operationName)) {
+            return null;
+        }
+
+        try {
+            return $this->resourceMetadataCollectionFactory->create($resourceClass)->getOperation($operationName);
+        } catch (ApiPlatformMetadataExceptionInterface) {
+            return null;
+        }
     }
 
     /**

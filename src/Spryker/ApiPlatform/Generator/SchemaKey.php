@@ -70,6 +70,8 @@ class SchemaKey
 
     public const string EXTRA_PROPERTIES = 'extraProperties';
 
+    public const string INPUT_FORMATS = 'inputFormats';
+
     public const string CONTROLLER = 'controller';
 
     public const string INTERNAL = 'internal';
