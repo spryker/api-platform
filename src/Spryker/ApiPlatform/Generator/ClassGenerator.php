@@ -237,7 +237,6 @@ class ClassGenerator
             'properties' => $properties,
             'codeBucket' => $codeBucket,
             'metadata' => [
-                'timestamp' => date('Y-m-d H:i:s'),
                 'sourceFiles' => $sourceFiles,
                 'validationSourceFiles' => $schema['validationSourceFiles'] ?? [],
             ],
@@ -811,7 +810,7 @@ class ClassGenerator
                 continue;
             }
 
-            foreach ($validationSchema[$httpMethod] as $propertyName => $constraints) {
+            foreach ($validationSchema[$httpMethod] as $constraints) {
                 foreach ($constraints as $constraint) {
                     $this->extractFqcnFromConstraint($constraint, $fqcnConstraints);
                 }

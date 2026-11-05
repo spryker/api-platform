@@ -160,7 +160,6 @@ class NestedObjectClassGenerator
             'codeBucket' => null,
             'synthesizeMissingFieldsWhenEmpty' => $synthesizeMissingFieldsWhenEmpty,
             'metadata' => [
-                'timestamp' => date('Y-m-d H:i:s'),
                 'sourceFiles' => $sourceFiles,
                 'validationSourceFiles' => [],
             ],

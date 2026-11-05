@@ -12,6 +12,7 @@ namespace SprykerTest\ApiPlatform\Unit\DependencyInjection;
 use Codeception\Test\Unit;
 use ReflectionProperty;
 use Spryker\ApiPlatform\DependencyInjection\Compiler\ApiClassAutoDiscoveryPass;
+use Spryker\ApiPlatform\DependencyInjection\Compiler\ApiSchemaResourcePass;
 use Spryker\ApiPlatform\DependencyInjection\Compiler\RelationshipConfigurationPass;
 use Spryker\ApiPlatform\DependencyInjection\Compiler\SchemaServiceRegistrationPass;
 use Spryker\ApiPlatform\DependencyInjection\Compiler\SecurityServiceRegistrationPass;
@@ -66,6 +67,28 @@ class SprykerApiPlatformBundleTest extends Unit
         $this->assertSame(
             $this->readProperty($schemaFileDiscovery, 'apiDirectoryLocator'),
             $this->readProperty($passesByClass[ApiClassAutoDiscoveryPass::class], 'apiDirectoryLocator'),
+        );
+    }
+
+    public function testGivenBundleBuildWhenPassesAreRegisteredThenTheSchemaResourcePassSharesTheLocatorInstance(): void
+    {
+        // Arrange
+        $containerBuilder = new ContainerBuilder();
+
+        // Act
+        (new SprykerApiPlatformBundle())->build($containerBuilder);
+
+        // Assert
+        $passesByClass = [];
+
+        foreach ($containerBuilder->getCompilerPassConfig()->getBeforeOptimizationPasses() as $pass) {
+            $passesByClass[get_class($pass)] = $pass;
+        }
+
+        $this->assertArrayHasKey(ApiSchemaResourcePass::class, $passesByClass);
+        $this->assertSame(
+            $this->readProperty($passesByClass[ApiClassAutoDiscoveryPass::class], 'apiDirectoryLocator'),
+            $this->readProperty($passesByClass[ApiSchemaResourcePass::class], 'apiDirectoryLocator'),
         );
     }
 

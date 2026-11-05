@@ -56,7 +56,7 @@ class ApiResourceCacheWarmer implements CacheWarmerInterface
             }
         }
 
-        // The ResourceGenerator cleans up the generated resource directories when generating resources.
+        // The ResourceGenerator creates an output directory only when it writes a file into it.
         // When no Resources have been created, we have to make sure we do not break the ApiPlatform by ensuring the directories exist.
         $this->ensureGeneratedResourceDirectoriesExist();
 

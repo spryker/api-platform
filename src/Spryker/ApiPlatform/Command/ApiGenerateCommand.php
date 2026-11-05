@@ -73,7 +73,7 @@ class ApiGenerateCommand extends Command
                 'keep-existing',
                 null,
                 InputOption::VALUE_NONE,
-                'Keep previously generated files instead of dropping them before generation',
+                'Keep previously generated files that the current schemas no longer produce, instead of removing them after generation',
             );
     }
 

@@ -9,10 +9,13 @@ declare(strict_types=1);
 
 namespace Spryker\ApiPlatform\Generator;
 
+use FilesystemIterator;
 use Generated\Shared\Transfer\ApiPlatformResourceGenerationRequestTransfer;
 use Generator;
 use Psr\Log\LoggerInterface;
 use Psr\Log\NullLogger;
+use RecursiveDirectoryIterator;
+use RecursiveIteratorIterator;
 use SplFileInfo;
 use Spryker\ApiPlatform\Configuration\ApiPlatformConfig;
 use Spryker\ApiPlatform\Exception\ApiSchemaGenerationException;
@@ -74,6 +77,11 @@ class ResourceGenerator implements ResourceGeneratorInterface
     protected const string CODEBUCKET_DELIMITER = '#';
 
     /**
+     * @var array<string, true> Keys are the paths of the files the current run generated.
+     */
+    protected array $generatedFilePaths = [];
+
+    /**
      * @param iterable<\Spryker\ApiPlatform\Schema\Loader\SchemaLoaderInterface> $loaders
      */
     public function __construct(
@@ -106,10 +114,7 @@ class ResourceGenerator implements ResourceGeneratorInterface
      */
     public function generateResources(ApiPlatformResourceGenerationRequestTransfer $apiPlatformResourceGenerationRequestTransfer): Generator
     {
-        $apiType = $this->prepareGeneration(
-            $apiPlatformResourceGenerationRequestTransfer->getApiTypeOrFail(),
-            (bool)$apiPlatformResourceGenerationRequestTransfer->getIsKeepExisting(),
-        );
+        $apiType = $this->prepareGeneration($apiPlatformResourceGenerationRequestTransfer->getApiTypeOrFail());
 
         $parseResult = $this->parseSchemas($apiType);
 
@@ -160,6 +165,12 @@ class ResourceGenerator implements ResourceGeneratorInterface
             yield $result;
         }
 
+        // Runs only when the caller reads the generator to this point. A caller that stops at the first
+        // error (the cache warmer) keeps the files of the previous run until a run completes.
+        if (!$apiPlatformResourceGenerationRequestTransfer->getIsKeepExisting()) {
+            $this->cleanOutputDirectory($apiType);
+        }
+
         yield from $this->reportExcludedValidationRules($apiType, $validationResult->getValidatedSchemas());
 
         if ($generatedCount === 0) {
@@ -207,6 +218,13 @@ class ResourceGenerator implements ResourceGeneratorInterface
         );
     }
 
+    /**
+     * Removes what the current run did not generate and leaves the output directory itself in place.
+     *
+     * The debug container tracks the output directory as a resource, and the cache warmer generates
+     * after the container dump. A removed and recreated directory, or a rewritten unchanged file,
+     * makes the container stale again, so it is rebuilt on every request.
+     */
     protected function cleanOutputDirectory(string $apiType): void
     {
         $outputDir = $this->config->getApiResourceDirectory($apiType);
@@ -215,7 +233,42 @@ class ResourceGenerator implements ResourceGeneratorInterface
             return;
         }
 
-        $this->filesystem->remove($outputDir);
+        $outputDirIterator = new RecursiveIteratorIterator(
+            new RecursiveDirectoryIterator($outputDir, FilesystemIterator::SKIP_DOTS),
+            RecursiveIteratorIterator::CHILD_FIRST,
+        );
+
+        foreach (iterator_to_array($outputDirIterator, false) as $fileInfo) {
+            $this->removeStaleOutputPath($fileInfo);
+        }
+    }
+
+    protected function removeStaleOutputPath(SplFileInfo $fileInfo): void
+    {
+        $path = $fileInfo->getPathname();
+
+        if (!$fileInfo->isDir() || $fileInfo->isLink()) {
+            if (!isset($this->generatedFilePaths[$path])) {
+                $this->filesystem->remove($path);
+            }
+
+            return;
+        }
+
+        if (!(new FilesystemIterator($path))->valid()) {
+            $this->filesystem->remove($path);
+        }
+    }
+
+    protected function dumpGeneratedFile(string $filePath, string $generatedCode): void
+    {
+        // A path counts as generated only after its content is current, so a failed write cannot
+        // protect the outdated file from the cleanup.
+        if (!is_file($filePath) || file_get_contents($filePath) !== $generatedCode) {
+            $this->filesystem->dumpFile($filePath, $generatedCode);
+        }
+
+        $this->generatedFilePaths[$filePath] = true;
     }
 
     protected function writeResourceFile(string $resourceName, string $apiType, string $generatedCode, ?string $codeBucket = null): string
@@ -229,7 +282,7 @@ class ResourceGenerator implements ResourceGeneratorInterface
             $fileName = sprintf('%s%s%sResource.php', $resourceName, $codeBucket, $apiType);
             $filePath = sprintf('%s/%s', $outputDir, $fileName);
 
-            $this->filesystem->dumpFile($filePath, $generatedCode);
+            $this->dumpGeneratedFile($filePath, $generatedCode);
 
             return $filePath;
         }
@@ -237,7 +290,7 @@ class ResourceGenerator implements ResourceGeneratorInterface
         $fileName = sprintf('%s%sResource.php', $resourceName, $apiType);
         $filePath = sprintf('%s/%s', $outputDir, $fileName);
 
-        $this->filesystem->dumpFile($filePath, $generatedCode);
+        $this->dumpGeneratedFile($filePath, $generatedCode);
 
         return $filePath;
     }
@@ -262,7 +315,7 @@ class ResourceGenerator implements ResourceGeneratorInterface
             ? sprintf('%s/%s.php', $outputDir, $className)
             : sprintf('%s/%s/%s.php', $outputDir, $ownerSubdir, $className);
 
-        $this->filesystem->dumpFile($filePath, $generatedCode);
+        $this->dumpGeneratedFile($filePath, $generatedCode);
 
         return $filePath;
     }
@@ -559,19 +612,16 @@ class ResourceGenerator implements ResourceGeneratorInterface
         return $key;
     }
 
-    protected function prepareGeneration(string $apiType, bool $isKeepExisting = false): string
+    protected function prepareGeneration(string $apiType): string
     {
         $normalizedApiType = ApiTypeNormalizer::normalizeForGeneration($apiType);
+        $this->generatedFilePaths = [];
 
         $this->logger->debug(sprintf(
             'Preparing generation for API type: %s (normalized: %s)',
             $apiType,
             $normalizedApiType,
         ));
-
-        if (!$isKeepExisting) {
-            $this->cleanOutputDirectory($normalizedApiType);
-        }
 
         return $normalizedApiType;
     }

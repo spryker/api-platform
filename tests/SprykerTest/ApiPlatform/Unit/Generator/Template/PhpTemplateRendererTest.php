@@ -41,6 +41,18 @@ class PhpTemplateRendererTest extends Unit
         $this->assertStringContainsString('<?php', $result);
     }
 
+    public function testGivenTemplateDataWhenRenderingThenTheGeneratedTagHasNoValue(): void
+    {
+        // Arrange
+        $templateData = $this->createMinimalTemplateData();
+
+        // Act
+        $result = (new PhpTemplateRenderer())->render($templateData);
+
+        // Assert
+        $this->assertStringContainsString("\n * @generated\n", $result);
+    }
+
     public function testGivenClassNameWhenRenderingThenIncludesClassName(): void
     {
         // Arrange
@@ -212,7 +224,7 @@ PHP,
     }
 
     /**
-     * @return array{className: string, namespace: string, uses: array<string>, resourceAttribute: string, codeBucket: string|null, properties: array<mixed>, metadata: array{timestamp: string, sourceFiles: array<string>, validationSourceFiles: array<string>}}
+     * @return array{className: string, namespace: string, uses: array<string>, resourceAttribute: string, codeBucket: string|null, properties: array<mixed>, metadata: array{sourceFiles: array<string>, validationSourceFiles: array<string>}}
      */
     protected function createTemplateDataWithCollectionProperty(bool $nullable): array
     {
@@ -238,7 +250,7 @@ PHP,
                     'nullable' => $nullable,
                 ],
             ],
-            'metadata' => ['timestamp' => '2026-01-01 00:00:00', 'sourceFiles' => [], 'validationSourceFiles' => []],
+            'metadata' => ['sourceFiles' => [], 'validationSourceFiles' => []],
         ];
     }
 
@@ -259,7 +271,7 @@ PHP,
     }
 
     /**
-     * @return array{className: string, namespace: string, uses: array<string>, resourceAttribute: string, properties: array<mixed>, metadata: array{timestamp: string, sourceFiles: array<string>, validationSourceFiles: array<string>}}
+     * @return array{className: string, namespace: string, uses: array<string>, resourceAttribute: string, properties: array<mixed>, metadata: array{sourceFiles: array<string>, validationSourceFiles: array<string>}}
      */
     protected function createMinimalTemplateData(): array
     {
@@ -270,7 +282,6 @@ PHP,
             'resourceAttribute' => '#[ApiResource]',
             'properties' => [],
             'metadata' => [
-                'timestamp' => '2024-01-01',
                 'sourceFiles' => ['test.yaml'],
                 'validationSourceFiles' => [],
             ],
@@ -278,7 +289,7 @@ PHP,
     }
 
     /**
-     * @return array{className: string, namespace: string, uses: array<string>, resourceAttribute: string, properties: array<array{name: string, type: string, phpType: string, attributes: string, description: string}>, metadata: array{timestamp: string, sourceFiles: array<string>, validationSourceFiles: array<string>}}
+     * @return array{className: string, namespace: string, uses: array<string>, resourceAttribute: string, properties: array<array{name: string, type: string, phpType: string, attributes: string, description: string}>, metadata: array{sourceFiles: array<string>, validationSourceFiles: array<string>}}
      */
     protected function createTemplateDataWithProperties(): array
     {
@@ -298,7 +309,6 @@ PHP,
                 ],
             ],
             'metadata' => [
-                'timestamp' => '2024-01-01',
                 'sourceFiles' => ['test.yaml'],
                 'validationSourceFiles' => [],
             ],
@@ -306,7 +316,7 @@ PHP,
     }
 
     /**
-     * @return array{className: string, namespace: string, uses: array<string>, resourceAttribute: string, properties: array<array{name: string, type: string, phpType: string, attributes: string, description: string}>, metadata: array{timestamp: string, sourceFiles: array<string>, validationSourceFiles: array<string>}}
+     * @return array{className: string, namespace: string, uses: array<string>, resourceAttribute: string, properties: array<array{name: string, type: string, phpType: string, attributes: string, description: string}>, metadata: array{sourceFiles: array<string>, validationSourceFiles: array<string>}}
      */
     protected function createTemplateDataWithMultipleProperties(): array
     {
@@ -334,7 +344,6 @@ PHP,
                 ],
             ],
             'metadata' => [
-                'timestamp' => '2024-01-01',
                 'sourceFiles' => ['test.yaml'],
                 'validationSourceFiles' => [],
             ],

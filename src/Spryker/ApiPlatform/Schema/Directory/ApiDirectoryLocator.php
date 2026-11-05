@@ -76,6 +76,19 @@ class ApiDirectoryLocator
     }
 
     /**
+     * @return array<string>
+     */
+    public function getResourceSchemaDirectoryGlobPatterns(string $apiType): array
+    {
+        $apiType = $this->escapeGlobMetacharacters(strtolower($apiType));
+
+        return array_map(
+            static fn (string $pattern): string => sprintf($pattern, '', $apiType),
+            static::RESOURCE_DIRECTORY_PATTERNS,
+        );
+    }
+
+    /**
      * @param array<string> $sourceDirectories
      *
      * @return array<string>

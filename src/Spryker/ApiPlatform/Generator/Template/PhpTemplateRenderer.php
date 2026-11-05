@@ -26,12 +26,12 @@ namespace Spryker\ApiPlatform\Generator\Template;
  *         ['name' => 'email', 'phpType' => 'string', 'attributes' => '#[ApiProperty(...)]'],
  *     ],
  *     'codeBucket' => null,
- *     'metadata' => ['timestamp' => '2026-01-21 10:00:00', 'sourceFiles' => [...]],
+ *     'metadata' => ['sourceFiles' => [...]],
  * ]
  * ```
  *
  * Generated output structure contains:
- * - File header with copyright, generation timestamp, and source file references
+ * - File header with copyright and source file references
  * - Namespace declaration (Generated\Api\{ApiType})
  * - Use statements for API Platform, Symfony validation, and custom classes
  * - Class declaration with ApiResource attribute
@@ -47,7 +47,7 @@ namespace Spryker\ApiPlatform\Generator\Template;
 class PhpTemplateRenderer
 {
     /**
-     * @param array{className: string, namespace: string, uses: array<string>, resourceAttribute: string, properties: array<array{name: string, type: string, phpType: string, itemClass: string|null, attributes: string, description: string, phpDoc: string, serializedName?: string, serializedPath?: string, nullable?: bool}>, codeBucket: ?string, synthesizeMissingFieldsWhenEmpty?: bool, metadata: array{timestamp: string, sourceFiles: array<string>, validationSourceFiles: array<string>}}|array $templateData
+     * @param array{className: string, namespace: string, uses: array<string>, resourceAttribute: string, properties: array<array{name: string, type: string, phpType: string, itemClass: string|null, attributes: string, description: string, phpDoc: string, serializedName?: string, serializedPath?: string, nullable?: bool}>, codeBucket: ?string, synthesizeMissingFieldsWhenEmpty?: bool, metadata: array{sourceFiles: array<string>, validationSourceFiles: array<string>}}|array<string, mixed> $templateData
      */
     public function render(array $templateData): string
     {
@@ -76,7 +76,7 @@ class PhpTemplateRenderer
     }
 
     /**
-     * @param array{timestamp: string, sourceFiles: array<string>, validationSourceFiles: array<string>}|array $metadata
+     * @param array{sourceFiles: array<string>, validationSourceFiles: array<string>}|array<string, mixed> $metadata
      */
     protected function renderFileHeader(array $metadata): string
     {
@@ -100,7 +100,7 @@ TEXT;
 /**
  * @copyright (c) Spryker Systems GmbH copyright protected
  *
- * @generated {$metadata['timestamp']}
+ * @generated
  *
  * Source schema files:
  * - {$sourceFiles}{$validationSection}
