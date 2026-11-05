@@ -16,6 +16,7 @@ use ApiPlatform\State\ProviderInterface;
 use BadMethodCallException;
 use Generated\Shared\Transfer\PaginationTransfer;
 use Spryker\ApiPlatform\Exception\ApiPlatformContextException;
+use Spryker\ApiPlatform\Request\RequestAttribute;
 use Spryker\ApiPlatform\ResponseTransform\PaginationLinksTransform;
 use Spryker\ApiPlatform\State\Trait\LocaleAwareTrait;
 use Spryker\ApiPlatform\State\Trait\StoreAwareTrait;
@@ -173,6 +174,17 @@ abstract class AbstractProvider implements ProviderInterface
             PaginationLinksTransform::REQUEST_ATTRIBUTE_PAGINATION,
             $this->calculatePagination($offset, $limit, $nbResults),
         );
+    }
+
+    protected function addCollectionMeta(string $member, mixed $value): void
+    {
+        if (!$this->hasRequest()) {
+            return;
+        }
+
+        $collectionMeta = $this->getRequest()->attributes->get(RequestAttribute::COLLECTION_META, []);
+        $collectionMeta[$member] = $value;
+        $this->getRequest()->attributes->set(RequestAttribute::COLLECTION_META, $collectionMeta);
     }
 
     /**

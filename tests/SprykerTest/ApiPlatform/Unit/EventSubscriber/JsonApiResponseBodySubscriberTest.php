@@ -12,6 +12,8 @@ namespace SprykerTest\ApiPlatform\Unit\EventSubscriber;
 use Codeception\Test\Unit;
 use Spryker\ApiPlatform\EventSubscriber\JsonApiResponseBodySubscriber;
 use Spryker\ApiPlatform\Metadata\ResourceClassIndexProviderInterface;
+use Spryker\ApiPlatform\Request\RequestAttribute;
+use Spryker\ApiPlatform\ResponseTransform\CollectionMetaTransform;
 use Spryker\ApiPlatform\ResponseTransform\JsonApiRelationshipNormalizerTransform;
 use Spryker\ApiPlatform\ResponseTransform\JsonApiResolvedRelationshipTransform;
 use Spryker\ApiPlatform\ResponseTransform\PaginationLinksTransform;
@@ -91,15 +93,23 @@ class JsonApiResponseBodySubscriberTest extends Unit
                 return false;
             },
         );
+        $collectionMeta = $this->createMock(CollectionMetaTransform::class);
+        $collectionMeta->expects($this->once())->method('applyTo')->willReturnCallback(
+            static function () use (&$invocations): bool {
+                $invocations[] = 'collectionMeta';
 
-        $subscriber = new JsonApiResponseBodySubscriber($relationshipNormalizer, $resolvedRelationship, $paginationLinks);
+                return false;
+            },
+        );
+
+        $subscriber = new JsonApiResponseBodySubscriber($relationshipNormalizer, $resolvedRelationship, $paginationLinks, $collectionMeta);
         $event = $this->createResponseEvent('{"data":{"id":"1","type":"test-resources","relationships":{}}}');
 
         // Act
         $subscriber->onKernelResponse($event);
 
-        // Assert: same order as the former subscriber priorities -257 -> -258 -> -259
-        $this->assertSame(['relationshipNormalizer', 'resolvedRelationship', 'paginationLinks'], $invocations);
+        // Assert: same order as the former subscriber priorities -257 -> -258 -> -259, then the collection meta transform
+        $this->assertSame(['relationshipNormalizer', 'resolvedRelationship', 'paginationLinks', 'collectionMeta'], $invocations);
     }
 
     public function testGivenNullPaginationAttributeWhenOnKernelResponseThenAttributeIsStripped(): void
@@ -258,6 +268,39 @@ class JsonApiResponseBodySubscriberTest extends Unit
         $this->assertSame($content, $event->getResponse()->getContent());
     }
 
+    public function testGivenCollectionMetaRequestAttributeWhenOnKernelResponseThenItsMembersJoinTheMetaWithNullKept(): void
+    {
+        // Arrange
+        $content = '{"links":{"self":"http://localhost/test-resources"},"meta":{"totalItems":0},"data":[]}';
+        $request = Request::create('/test-resources');
+        $request->attributes->set(RequestAttribute::COLLECTION_META, ['status' => null]);
+        $subscriber = $this->createSubscriberWithRealTransforms();
+        $event = $this->createResponseEventForRequest($content, $request);
+
+        // Act
+        $subscriber->onKernelResponse($event);
+
+        // Assert
+        $data = json_decode((string)$event->getResponse()->getContent(), true);
+        $this->assertSame(['totalItems' => 0, 'status' => null], $data['meta']);
+    }
+
+    public function testGivenCollectionMetaRequestAttributeOnItemDocumentWhenOnKernelResponseThenBodyIsUntouched(): void
+    {
+        // Arrange
+        $content = '{"data":{"id":"1","type":"test-resources","attributes":{"name":"first"}}}';
+        $request = Request::create('/test-resources/1');
+        $request->attributes->set(RequestAttribute::COLLECTION_META, ['status' => 'waiting']);
+        $subscriber = $this->createSubscriberWithRealTransforms();
+        $event = $this->createResponseEventForRequest($content, $request);
+
+        // Act
+        $subscriber->onKernelResponse($event);
+
+        // Assert
+        $this->assertSame($content, $event->getResponse()->getContent());
+    }
+
     protected function createSubscriberWithNeverInvokedTransforms(): JsonApiResponseBodySubscriber
     {
         $relationshipNormalizer = $this->createMock(JsonApiRelationshipNormalizerTransform::class);
@@ -266,8 +309,10 @@ class JsonApiResponseBodySubscriberTest extends Unit
         $resolvedRelationship->expects($this->never())->method('applyTo');
         $paginationLinks = $this->createMock(PaginationLinksTransform::class);
         $paginationLinks->expects($this->never())->method('applyTo');
+        $collectionMeta = $this->createMock(CollectionMetaTransform::class);
+        $collectionMeta->expects($this->never())->method('applyTo');
 
-        return new JsonApiResponseBodySubscriber($relationshipNormalizer, $resolvedRelationship, $paginationLinks);
+        return new JsonApiResponseBodySubscriber($relationshipNormalizer, $resolvedRelationship, $paginationLinks, $collectionMeta);
     }
 
     protected function createSubscriberWithRealTransforms(): JsonApiResponseBodySubscriber
@@ -276,6 +321,7 @@ class JsonApiResponseBodySubscriberTest extends Unit
             new JsonApiRelationshipNormalizerTransform(),
             new JsonApiResolvedRelationshipTransform($this->createMock(NormalizerInterface::class), $this->createMock(ResourceClassIndexProviderInterface::class)),
             new PaginationLinksTransform(),
+            new CollectionMetaTransform(),
         );
     }
 

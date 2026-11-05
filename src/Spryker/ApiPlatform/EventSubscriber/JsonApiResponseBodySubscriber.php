@@ -9,6 +9,8 @@ declare(strict_types=1);
 
 namespace Spryker\ApiPlatform\EventSubscriber;
 
+use Spryker\ApiPlatform\Request\RequestAttribute;
+use Spryker\ApiPlatform\ResponseTransform\CollectionMetaTransform;
 use Spryker\ApiPlatform\ResponseTransform\JsonApiRelationshipNormalizerTransform;
 use Spryker\ApiPlatform\ResponseTransform\JsonApiResolvedRelationshipTransform;
 use Spryker\ApiPlatform\ResponseTransform\PaginationLinksTransform;
@@ -40,6 +42,7 @@ class JsonApiResponseBodySubscriber implements EventSubscriberInterface
         protected JsonApiRelationshipNormalizerTransform $relationshipNormalizer,
         protected JsonApiResolvedRelationshipTransform $resolvedRelationship,
         protected PaginationLinksTransform $paginationLinks,
+        protected CollectionMetaTransform $collectionMeta,
     ) {
     }
 
@@ -80,6 +83,7 @@ class JsonApiResponseBodySubscriber implements EventSubscriberInterface
             && !str_contains($content, '"pagination":null')
             && !$request->attributes->get(JsonApiResolvedRelationshipTransform::REQUEST_ATTRIBUTE_RESOLVED_RELATIONSHIPS)
             && !$request->attributes->has(PaginationLinksTransform::REQUEST_ATTRIBUTE_PAGINATION)
+            && !$request->attributes->has(RequestAttribute::COLLECTION_META)
         ) {
             return;
         }
@@ -95,6 +99,7 @@ class JsonApiResponseBodySubscriber implements EventSubscriberInterface
         $modified = $this->relationshipNormalizer->applyTo($data);
         $modified = $this->resolvedRelationship->applyTo($data, $request) || $modified;
         $modified = $this->paginationLinks->applyTo($data, $request) || $modified;
+        $modified = $this->collectionMeta->applyTo($data, $request) || $modified;
 
         if ($modified) {
             $response->setContent((string)json_encode($data, JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE));

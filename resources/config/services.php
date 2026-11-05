@@ -72,6 +72,7 @@ use Spryker\ApiPlatform\Processor\RelationshipProcessor;
 use Spryker\ApiPlatform\Provider\RelationshipProvider;
 use Spryker\ApiPlatform\Relationship\ApiPlatformRelationshipResolver;
 use Spryker\ApiPlatform\Relationship\ApiPlatformRelationshipResolverInterface;
+use Spryker\ApiPlatform\ResponseTransform\CollectionMetaTransform;
 use Spryker\ApiPlatform\ResponseTransform\JsonApiRelationshipNormalizerTransform;
 use Spryker\ApiPlatform\ResponseTransform\JsonApiResolvedRelationshipTransform;
 use Spryker\ApiPlatform\ResponseTransform\PaginationLinksTransform;
@@ -474,9 +475,11 @@ return static function (ContainerConfigurator $container): void {
     // Add pagination links (first, last, prev, next) for resources with internal pagination
     $services->set(PaginationLinksTransform::class);
 
-    // Single-pass orchestrator: decodes the JSON:API body once, applies the three transforms above
-    // in their original priority order (-257 -> -258 -> -259), and encodes once. Replaces the three
-    // separate RESPONSE subscribers that each decoded and re-encoded the whole body.
+    // Add the members a provider set via addCollectionMeta() to the top-level meta of a collection
+    $services->set(CollectionMetaTransform::class);
+
+    // Single-pass orchestrator: decodes the JSON:API body once, applies the four transforms above
+    // in order (-257 -> -258 -> -259, then collection meta) and encodes once.
     $services->set(JsonApiResponseBodySubscriber::class);
 
     // Locale resolution from Accept-Language header (storefront: negotiated against the current store)

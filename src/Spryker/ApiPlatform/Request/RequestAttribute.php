@@ -77,6 +77,11 @@ class RequestAttribute
      */
     public const string PAGINATION = '_spryker_api_platform_pagination';
 
+    /**
+     * @see \Spryker\ApiPlatform\ResponseTransform\CollectionMetaTransform
+     */
+    public const string COLLECTION_META = '_spryker_collection_meta';
+
     public const string CUSTOMER_ACCESS_DENIED = '_customer_access_denied';
 
     /**
