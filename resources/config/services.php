@@ -36,6 +36,7 @@ use Spryker\ApiPlatform\Generator\ClassGenerator;
 use Spryker\ApiPlatform\Generator\ConstraintFormatter;
 use Spryker\ApiPlatform\Generator\DeclaredErrorCodeResolver;
 use Spryker\ApiPlatform\Generator\FqcnConstraintResolver;
+use Spryker\ApiPlatform\Generator\McpToolInputClassGenerator;
 use Spryker\ApiPlatform\Generator\MediaType\MediaTypeFormatterRegistry;
 use Spryker\ApiPlatform\Generator\NestedObjectClassGenerator;
 use Spryker\ApiPlatform\Generator\NestedObjectValidationLifter;
@@ -81,6 +82,7 @@ use Spryker\ApiPlatform\Schema\Directory\ApiDirectoryLocator;
 use Spryker\ApiPlatform\Schema\Finder\SchemaFinder;
 use Spryker\ApiPlatform\Schema\Finder\SchemaFinderInterface;
 use Spryker\ApiPlatform\Schema\Loader\YamlSchemaLoader;
+use Spryker\ApiPlatform\Schema\McpToolSchemaResolver;
 use Spryker\ApiPlatform\Schema\Merger\SchemaMerger;
 use Spryker\ApiPlatform\Schema\Merger\SchemaMergerInterface;
 use Spryker\ApiPlatform\Schema\Object\CanonicalObjectDefinitionResolver;
@@ -105,6 +107,7 @@ use Spryker\ApiPlatform\Schema\Validator\PreMergeValidatorInterface;
 use Spryker\ApiPlatform\Schema\Validator\Rules\ErrorCodesValidationRule;
 use Spryker\ApiPlatform\Schema\Validator\Rules\ErrorMappingsValidationRule;
 use Spryker\ApiPlatform\Schema\Validator\Rules\LinksValidationRule;
+use Spryker\ApiPlatform\Schema\Validator\Rules\McpValidationRule;
 use Spryker\ApiPlatform\Schema\Validator\Rules\MergeValidationRule;
 use Spryker\ApiPlatform\Schema\Validator\Rules\OperationTypeReferenceValidationRule;
 use Spryker\ApiPlatform\Schema\Validator\Rules\PaginationValidationRule;
@@ -235,6 +238,11 @@ return static function (ContainerConfigurator $container): void {
     $services->set(LinksValidationRule::class)
         ->tag('spryker_api_platform.validation_rule.post_merge');
 
+    $services->set(McpToolSchemaResolver::class);
+
+    $services->set(McpValidationRule::class)
+        ->tag('spryker_api_platform.validation_rule.post_merge');
+
     $services->set(MergeValidationRule::class);
 
     // Dependencies: Security-aware ExpressionLanguage auto-registers is_granted() and other security functions
@@ -292,6 +300,8 @@ return static function (ContainerConfigurator $container): void {
 
     // Generator: Nested Object Class Generator
     $services->set(NestedObjectClassGenerator::class);
+
+    $services->set(McpToolInputClassGenerator::class);
 
     // Generator: lifts an object property's Collection field validation onto its value-object class.
     $services->set(NestedObjectValidationLifter::class);

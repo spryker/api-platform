@@ -12,6 +12,11 @@ namespace SprykerTest\ApiPlatform\Unit\DependencyInjection;
 use Codeception\Test\Unit;
 use Spryker\ApiPlatform\Configuration\ApiPlatformConfig;
 use Spryker\ApiPlatform\DependencyInjection\SprykerApiPlatformExtension;
+use Spryker\ApiPlatform\EventSubscriber\McpAccessDeniedSubscriber;
+use Spryker\ApiPlatform\Schema\Validator\Rules\McpValidationRule;
+use Spryker\ApiPlatform\State\McpAccessDeniedToHttpProcessor;
+use Spryker\ApiPlatform\State\McpAccessDeniedToHttpProvider;
+use Spryker\ApiPlatform\State\McpOperationToolProcessor;
 use SprykerTest\ApiPlatform\ApiUnitTester;
 use Symfony\Component\Config\Definition\Exception\InvalidConfigurationException;
 use Symfony\Component\DependencyInjection\ContainerBuilder;
@@ -211,6 +216,40 @@ class SprykerApiPlatformExtensionTest extends Unit
 
         // Act
         (new SprykerApiPlatformExtension())->load([['contract_coverage_enforced_dimensions' => ['error-code']]], $container);
+    }
+
+    /**
+     * @dataProvider provideMcpBundleRegistrations
+     *
+     * @param array<string, string> $bundles
+     */
+    public function testGivenRegisteredBundlesWhenLoadingThenTheMcpRuntimeServicesAreLoadedOnlyWithTheMcpBundle(array $bundles, bool $expectMcpServices): void
+    {
+        // Arrange
+        $container = new ContainerBuilder();
+        $container->setParameter('kernel.project_dir', static::PROJECT_DIR);
+        $container->setParameter('kernel.bundles', $bundles);
+
+        // Act
+        (new SprykerApiPlatformExtension())->load([[]], $container);
+
+        // Assert
+        foreach ([McpAccessDeniedToHttpProvider::class, McpAccessDeniedToHttpProcessor::class, McpAccessDeniedSubscriber::class, McpOperationToolProcessor::class] as $serviceId) {
+            $this->assertSame($expectMcpServices, $container->hasDefinition($serviceId), $serviceId);
+        }
+
+        $this->assertTrue($container->hasDefinition(McpValidationRule::class));
+    }
+
+    /**
+     * @return array<string, array<mixed>>
+     */
+    public function provideMcpBundleRegistrations(): array
+    {
+        return [
+            'without McpBundle' => [[], false],
+            'with McpBundle' => [['McpBundle' => 'Symfony\AI\McpBundle\McpBundle'], true],
+        ];
     }
 
     /**

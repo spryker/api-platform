@@ -443,6 +443,73 @@ YAML;
         $this->assertSame([], $warnings);
     }
 
+    public function testGivenTwoResourcesDeclaringTheSameMcpToolNameWhenGeneratingThenBothResourcesFailValidation(): void
+    {
+        // Arrange
+        $this->tester->createDirectoryStructure([
+            'FirstModule' => ['resources' => ['api' => ['storefront' => ['first.resource.yml' => $this->createMcpToolResourceSchema('First', 'same-tool')]]]],
+            'SecondModule' => ['resources' => ['api' => ['storefront' => ['second.resource.yml' => $this->createMcpToolResourceSchema('Second', 'same-tool')]]]],
+        ]);
+        $generator = $this->createResourceGenerator();
+
+        // Act
+        $request = (new ApiPlatformResourceGenerationRequestTransfer())
+            ->setApiType('Storefront')
+            ->setIsKeepExisting(true);
+        $results = iterator_to_array($generator->generateResources($request), false);
+
+        // Assert
+        $errors = array_values(array_filter($results, static fn (array $result): bool => $result['status'] === 'error'));
+        $this->assertCount(2, $errors);
+        $this->assertStringContainsString('MCP tool name "same-tool" is declared by more than one resource', $errors[0]['message'] ?? '');
+    }
+
+    public function testGivenProjectSchemaOverridingTheOperationOfACoreToolWhenGeneratingThenOneToolWithTheProjectValuesIsGenerated(): void
+    {
+        // Arrange
+        $this->tester->createDirectoryStructure([
+            'Spryker' => ['HealthCheck' => ['resources' => ['api' => ['storefront' => ['health-check.resource.yml' => $this->createMcpToolResourceSchema('HealthCheck', 'health-check', 'Core description')]]]]],
+            'Pyz' => ['HealthCheck' => ['resources' => ['api' => ['storefront' => ['health-check.resource.yml' => $this->createMcpToolResourceSchema('HealthCheck', 'health-check', 'Project description')]]]]],
+        ]);
+        $generator = $this->createResourceGenerator();
+
+        // Act
+        $request = (new ApiPlatformResourceGenerationRequestTransfer())
+            ->setApiType('Storefront')
+            ->setIsKeepExisting(true);
+        $results = iterator_to_array($generator->generateResources($request), false);
+
+        // Assert
+        $errors = array_filter($results, static fn (array $result): bool => $result['status'] === 'error');
+        $this->assertSame([], $errors);
+        $generatedResources = array_values(array_filter($results, static fn (array $result): bool => ($result['className'] ?? null) === 'HealthCheckStorefrontResource'));
+        $this->assertCount(1, $generatedResources);
+        $generatedCode = (string)file_get_contents($generatedResources[0]['file']);
+        $this->assertSame(1, substr_count($generatedCode, 'new McpTool('));
+        $this->assertStringContainsString("description: 'Project description'", $generatedCode);
+        $this->assertStringNotContainsString('Core description', $generatedCode);
+    }
+
+    protected function createMcpToolResourceSchema(string $resourceName, string $toolName, string $toolDescription = 'Tool'): string
+    {
+        return <<<YAML
+        resource:
+            name: {$resourceName}
+            shortName: {$resourceName}
+            description: "Resource with an MCP tool"
+
+            operations:
+                - type: Get
+                  mcp:
+                      name: {$toolName}
+                      description: '{$toolDescription}'
+
+            properties:
+                name:
+                    type: string
+        YAML;
+    }
+
     protected function createCustomersResourceSchema(): string
     {
         return <<<YAML

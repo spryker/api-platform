@@ -27,6 +27,8 @@ class SprykerApiPlatformExtension extends Extension implements PrependExtensionI
 {
     protected const string SECURITY_BUNDLE_NAME = 'SecurityBundle';
 
+    protected const string MCP_BUNDLE_NAME = 'McpBundle';
+
     public function prepend(ContainerBuilder $container): void
     {
         $configs = $container->getExtensionConfig($this->getAlias());
@@ -121,6 +123,7 @@ class SprykerApiPlatformExtension extends Extension implements PrependExtensionI
         $loader->load('services.php');
 
         $this->loadSecurityServices($container, $loader);
+        $this->loadMcpServices($container, $loader);
     }
 
     protected function loadSecurityServices(ContainerBuilder $container, PhpFileLoader $loader): void
@@ -132,6 +135,17 @@ class SprykerApiPlatformExtension extends Extension implements PrependExtensionI
         }
 
         $loader->load('security_services.php');
+    }
+
+    protected function loadMcpServices(ContainerBuilder $container, PhpFileLoader $loader): void
+    {
+        $bundles = $container->getParameter('kernel.bundles');
+
+        if (!is_array($bundles) || !isset($bundles[static::MCP_BUNDLE_NAME])) {
+            return;
+        }
+
+        $loader->load('mcp_services.php');
     }
 
     /**

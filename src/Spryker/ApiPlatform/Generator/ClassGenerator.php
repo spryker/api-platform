@@ -137,6 +137,7 @@ class ClassGenerator
         protected readonly RelationshipPhpDocGenerator $relationshipPhpDocGenerator,
         protected readonly NestedObjectClassGenerator $nestedObjectClassGenerator,
         protected readonly NestedObjectValidationLifter $nestedObjectValidationLifter,
+        protected readonly McpToolInputClassGenerator $mcpToolInputClassGenerator,
     ) {
     }
 
@@ -225,7 +226,10 @@ class ClassGenerator
             $uses[] = sprintf('%s\\%s\\%s', static::GENERATED_NAMESPACE_PREFIX, $apiType, $canonicalShortName);
         }
 
-        $resourceAttribute = $this->resourceAttributeGenerator->generate($schema, $uses);
+        $mcpToolInputResult = $this->mcpToolInputClassGenerator->generate($schema, $apiType, $resourceClassBaseName, $sourceFiles);
+        $this->nestedObjectClasses += $mcpToolInputResult[McpToolInputClassGenerator::CLASSES];
+
+        $resourceAttribute = $this->resourceAttributeGenerator->generate($schema, $uses, $mcpToolInputResult[McpToolInputClassGenerator::INPUT_CLASSES]);
 
         $uses = array_values(array_unique($uses));
 

@@ -58,6 +58,25 @@ class RequestAttribute
     public const string API_INCLUDED = '_api_included';
 
     /**
+     * The links that API Platform writes to the `Link` response header.
+     *
+     * @see \Psr\Link\EvolvableLinkProviderInterface
+     */
+    public const string API_PLATFORM_LINKS = '_api_platform_links';
+
+    /**
+     * @see \Spryker\ApiPlatform\EventSubscriber\McpAccessDeniedSubscriber
+     */
+    public const string MCP_ACCESS_DENIED = '_spryker_mcp_access_denied';
+
+    /**
+     * The HTTP status code a provider or processor answers with a response body, instead of an exception.
+     *
+     * @see \Spryker\ApiPlatform\State\McpOperationToolProcessor
+     */
+    public const string RESPONSE_STATUS_CODE = '_spryker_response_status_code';
+
+    /**
      * Marks a request forwarded by the GlueApplication proxy to the API Platform kernel.
      */
     public const string API_PLATFORM_REQUEST = 'api-platform-request';

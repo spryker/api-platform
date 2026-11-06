@@ -110,6 +110,8 @@ class SchemaKey
 
     public const string PAGINATION_ENABLED = 'paginationEnabled';
 
+    public const string MCP = 'mcp';
+
     public const string PAGINATION_ITEMS_PER_PAGE = 'paginationItemsPerPage';
 
     public const string PAGINATION_MAXIMUM_ITEMS_PER_PAGE = 'paginationMaximumItemsPerPage';

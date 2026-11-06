@@ -25,6 +25,7 @@ use Spryker\ApiPlatform\Generator\Result\ResourceParseResult;
 use Spryker\ApiPlatform\Generator\Result\ValidationParseResult;
 use Spryker\ApiPlatform\Generator\Result\ValidationResult;
 use Spryker\ApiPlatform\Schema\Finder\SchemaFinderInterface;
+use Spryker\ApiPlatform\Schema\McpToolSchemaResolver;
 use Spryker\ApiPlatform\Schema\Merger\SchemaMergerInterface;
 use Spryker\ApiPlatform\Schema\Object\CanonicalObjectDefinitionResolver;
 use Spryker\ApiPlatform\Schema\Object\Finder\ObjectSchemaFinderInterface;
@@ -100,6 +101,7 @@ class ResourceGenerator implements ResourceGeneratorInterface
         protected readonly CanonicalObjectDefinitionResolver $canonicalObjectDefinitionResolver,
         protected readonly CanonicalObjectRegistry $canonicalObjectRegistry,
         protected readonly ExcludedValidationRuleCollector $excludedValidationRuleCollector,
+        protected readonly McpToolSchemaResolver $mcpToolSchemaResolver,
         protected LoggerInterface $logger = new NullLogger(),
     ) {
     }
@@ -876,6 +878,16 @@ class ResourceGenerator implements ResourceGeneratorInterface
             }
         }
 
+        foreach ($this->findDuplicateMcpToolNames($validatedSchemas) as $toolName => $resourceKeys) {
+            foreach ($resourceKeys as $resourceKey) {
+                unset($validatedSchemas[$resourceKey]);
+                $failedValidations[] = [
+                    'resource' => $resourceKey,
+                    'error' => sprintf('MCP tool name "%s" is declared by more than one resource: %s', $toolName, implode(', ', $resourceKeys)),
+                ];
+            }
+        }
+
         $this->logger->debug(sprintf(
             'Successfully validated %d resource(s)',
             count($validatedSchemas),
@@ -885,6 +897,24 @@ class ResourceGenerator implements ResourceGeneratorInterface
             validatedSchemas: $validatedSchemas,
             failedValidations: $failedValidations,
         );
+    }
+
+    /**
+     * @param array<string, array<string, mixed>> $schemas
+     *
+     * @return array<string, array<string>>
+     */
+    protected function findDuplicateMcpToolNames(array $schemas): array
+    {
+        $resourceKeysByToolName = [];
+
+        foreach ($schemas as $resourceKey => $schema) {
+            foreach (array_keys($this->mcpToolSchemaResolver->resolveTools($schema)) as $toolName) {
+                $resourceKeysByToolName[(string)$toolName][] = (string)$resourceKey;
+            }
+        }
+
+        return array_filter($resourceKeysByToolName, static fn (array $resourceKeys): bool => count($resourceKeys) > 1);
     }
 
     /**

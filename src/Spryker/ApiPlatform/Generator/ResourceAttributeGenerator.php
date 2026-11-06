@@ -9,7 +9,13 @@ declare(strict_types=1);
 
 namespace Spryker\ApiPlatform\Generator;
 
+use ApiPlatform\Mcp\State\ToolProvider;
+use ApiPlatform\Metadata\McpTool;
 use Spryker\ApiPlatform\Schema\LinkSchemaKeys;
+use Spryker\ApiPlatform\Schema\McpSchemaKeys;
+use Spryker\ApiPlatform\Schema\McpToolDefinition;
+use Spryker\ApiPlatform\Schema\McpToolSchemaResolver;
+use Spryker\ApiPlatform\State\McpOperationToolProcessor;
 
 /**
  * Generates the class-level #[ApiResource(...)] attribute for API Platform resource classes.
@@ -108,17 +114,21 @@ class ResourceAttributeGenerator
      */
     protected const string EXTRA_PROPERTY_INTERNAL = 'internal';
 
+    protected const string ANONYMOUS_CUSTOMER_SECURITY_SUFFIX = " or request.headers.has('X-Anonymous-Customer-Unique-Id')";
+
     public function __construct(
         protected OpenApiOperationBuilder $openApiOperationBuilder,
         protected DeclaredErrorCodeResolver $declaredErrorCodeResolver,
+        protected McpToolSchemaResolver $mcpToolSchemaResolver,
     ) {
     }
 
     /**
      * @param array<string, mixed> $schema
      * @param array<string> $uses
+     * @param array<string, string> $mcpToolInputClasses Keys are the MCP tool names.
      */
-    public function generate(array $schema, array &$uses): string
+    public function generate(array $schema, array &$uses, array $mcpToolInputClasses = []): string
     {
         $operations = $schema['operations'] ?? [];
         $operationsParts = [];
@@ -182,7 +192,7 @@ class ResourceAttributeGenerator
             $securityExpression = $schema['security'];
 
             if (!empty($schema['securityAnonymousAuthRequired'])) {
-                $securityExpression .= " or request.headers.has('X-Anonymous-Customer-Unique-Id')";
+                $securityExpression .= static::ANONYMOUS_CUSTOMER_SECURITY_SUFFIX;
             }
 
             $escapedSecurity = str_replace("'", "\\'", $securityExpression);
@@ -263,6 +273,12 @@ class ResourceAttributeGenerator
             $attributeParts[] = sprintf('openapiContext: %s', $this->formatArrayParameter($schema[SchemaKey::OPEN_API_CONTEXT]));
         }
 
+        $mcpTools = $this->mcpToolSchemaResolver->resolveTools($schema);
+
+        if ($mcpTools !== []) {
+            $attributeParts[] = $this->generateMcpParameter($schema, $mcpTools, $mcpToolInputClasses, $uses);
+        }
+
         $this->addOperationUseStatements($operations, $uses, implode("\n", $operationsParts));
 
         if ($attributeParts === []) {
@@ -311,6 +327,161 @@ class ResourceAttributeGenerator
         }
 
         return $declaredIncludes;
+    }
+
+    /**
+     * @param array<string, mixed> $schema
+     * @param array<string, \Spryker\ApiPlatform\Schema\McpToolDefinition> $mcpTools
+     * @param array<string, string> $mcpToolInputClasses
+     * @param array<string> $uses
+     */
+    protected function generateMcpParameter(array $schema, array $mcpTools, array $mcpToolInputClasses, array &$uses): string
+    {
+        $parts = [];
+
+        foreach ($mcpTools as $toolName => $mcpToolDefinition) {
+            $parameters = $this->buildMcpToolParameters($schema, $mcpToolDefinition, $mcpToolInputClasses, $uses);
+
+            $parameterIndent = $this->indent(3);
+            $parts[] = sprintf(
+                "'%s' => new McpTool(\n%s,\n%s)",
+                $this->escapeSingleQuoted((string)$toolName),
+                $parameterIndent . implode(",\n" . $parameterIndent, $parameters),
+                $this->indent(2),
+            );
+        }
+
+        $uses[] = McpTool::class;
+        $uses[] = ToolProvider::class;
+        $uses[] = McpOperationToolProcessor::class;
+        $itemIndent = $this->indent(2);
+
+        return sprintf("mcp: [\n%s,\n%s]", $itemIndent . implode(",\n" . $itemIndent, $parts), $this->indent(1));
+    }
+
+    /**
+     * @param array<string, mixed> $schema
+     * @param array<string, string> $mcpToolInputClasses
+     * @param array<string> $uses
+     *
+     * @return array<string>
+     */
+    protected function buildMcpToolParameters(array $schema, McpToolDefinition $mcpToolDefinition, array $mcpToolInputClasses, array &$uses): array
+    {
+        $toolName = $mcpToolDefinition->toolName;
+        $operation = $mcpToolDefinition->operation;
+        $tool = $mcpToolDefinition->tool;
+        $operationType = (string)($operation[SchemaKey::TYPE] ?? $mcpToolDefinition->operationKey);
+
+        $parameters = [sprintf("name: '%s'", $this->escapeSingleQuoted($toolName))];
+
+        if (isset($tool[McpSchemaKeys::TITLE]) && is_string($tool[McpSchemaKeys::TITLE]) && $tool[McpSchemaKeys::TITLE] !== '') {
+            $parameters[] = sprintf("title: '%s'", $this->escapeSingleQuoted($tool[McpSchemaKeys::TITLE]));
+        }
+
+        $description = $tool[McpSchemaKeys::DESCRIPTION] ?? $operation[SchemaKey::DESCRIPTION] ?? $schema[SchemaKey::DESCRIPTION] ?? null;
+
+        if (is_string($description) && $description !== '') {
+            $parameters[] = sprintf("description: '%s'", $this->escapeSingleQuoted($description));
+        }
+
+        if (isset($mcpToolInputClasses[$toolName])) {
+            $uses[] = $mcpToolInputClasses[$toolName];
+            $parameters[] = sprintf('input: %s::class', $this->extractShortClassName($mcpToolInputClasses[$toolName]));
+        }
+
+        $parameters[] = 'provider: ToolProvider::class';
+        $parameters[] = 'processor: McpOperationToolProcessor::class';
+
+        foreach ($this->resolveMcpToolSecurity($schema, $operation) as $parameter => $value) {
+            $parameters[] = sprintf("%s: '%s'", $parameter, $this->escapeSingleQuoted($value));
+        }
+
+        $structuredContent = $tool[McpSchemaKeys::STRUCTURED_CONTENT] ?? false;
+        $parameters[] = sprintf('%s: %s', McpSchemaKeys::STRUCTURED_CONTENT, $structuredContent === true ? 'true' : 'false');
+
+        if (isset($tool[McpSchemaKeys::ANNOTATIONS]) && is_array($tool[McpSchemaKeys::ANNOTATIONS]) && $tool[McpSchemaKeys::ANNOTATIONS] !== []) {
+            $parameters[] = sprintf('%s: %s', McpSchemaKeys::ANNOTATIONS, $this->formatMcpAnnotations($tool[McpSchemaKeys::ANNOTATIONS]));
+        }
+
+        $parameters[] = sprintf('extraProperties: %s', $this->formatArrayParameter([
+            McpOperationToolProcessor::EXTRA_PROPERTY_SOURCE_OPERATION => array_filter([
+                McpOperationToolProcessor::SOURCE_OPERATION_TYPE => $operationType,
+                McpOperationToolProcessor::SOURCE_OPERATION_URI_TEMPLATE => $operation[SchemaKey::URI_TEMPLATE] ?? null,
+                McpOperationToolProcessor::SOURCE_OPERATION_QUERY_PARAMETER_NAMES => $this->resolveRenamedQueryParameterNames($operation),
+            ], static fn (mixed $value): bool => $value !== null && $value !== []),
+        ]));
+
+        return $parameters;
+    }
+
+    /**
+     * @param array<string, mixed> $operation
+     *
+     * @return array<string, string> Keys are the tool argument names, values are the query parameter names.
+     */
+    protected function resolveRenamedQueryParameterNames(array $operation): array
+    {
+        $queryParameterNames = [];
+
+        foreach ($this->mcpToolSchemaResolver->resolveQueryParameters($operation) as $argumentName => $parameter) {
+            if ($argumentName !== $parameter['name']) {
+                $queryParameterNames[$argumentName] = (string)$parameter['name'];
+            }
+        }
+
+        return $queryParameterNames;
+    }
+
+    /**
+     * @param array<string, mixed> $schema
+     * @param array<string, mixed> $operation
+     *
+     * @return array<string, string>
+     */
+    protected function resolveMcpToolSecurity(array $schema, array $operation): array
+    {
+        if (isset($operation[SchemaKey::SECURITY]) && is_string($operation[SchemaKey::SECURITY])) {
+            return array_filter([
+                'security' => $operation[SchemaKey::SECURITY],
+                'securityMessage' => is_string($operation['securityMessage'] ?? null) ? $operation['securityMessage'] : null,
+            ], static fn (?string $value): bool => $value !== null);
+        }
+
+        if (!isset($schema[SchemaKey::SECURITY]) || !is_string($schema[SchemaKey::SECURITY])) {
+            return [];
+        }
+
+        $security = $schema[SchemaKey::SECURITY];
+
+        if (!empty($schema['securityAnonymousAuthRequired'])) {
+            $security .= static::ANONYMOUS_CUSTOMER_SECURITY_SUFFIX;
+        }
+
+        return array_filter([
+            'security' => $security,
+            'securityMessage' => is_string($schema['securityMessage'] ?? null) ? $schema['securityMessage'] : null,
+        ], static fn (?string $value): bool => $value !== null);
+    }
+
+    /**
+     * @param array<string, mixed> $annotations
+     */
+    protected function formatMcpAnnotations(array $annotations): string
+    {
+        $parts = [];
+
+        foreach ($annotations as $key => $value) {
+            $formattedValue = is_bool($value) ? var_export($value, true) : sprintf("'%s'", $this->escapeSingleQuoted((string)$value));
+            $parts[] = sprintf("'%s' => %s", $this->escapeSingleQuoted((string)$key), $formattedValue);
+        }
+
+        return '[' . implode(', ', $parts) . ']';
+    }
+
+    protected function escapeSingleQuoted(string $value): string
+    {
+        return str_replace(['\\', "'"], ['\\\\', "\\'"], $value);
     }
 
     protected function extractShortClassName(string $fullyQualifiedClassName): string

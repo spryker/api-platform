@@ -9,11 +9,14 @@ declare(strict_types=1);
 
 namespace SprykerTest\ApiPlatform\Unit\Generator;
 
+use ApiPlatform\Mcp\State\ToolProvider;
+use ApiPlatform\Metadata\McpTool;
 use Codeception\Test\Unit;
 use Spryker\ApiPlatform\Generator\DeclaredErrorCodeResolver;
 use Spryker\ApiPlatform\Generator\MediaType\MediaTypeFormatterRegistry;
 use Spryker\ApiPlatform\Generator\OpenApiOperationBuilder;
 use Spryker\ApiPlatform\Generator\ResourceAttributeGenerator;
+use Spryker\ApiPlatform\State\McpOperationToolProcessor;
 use SprykerTest\ApiPlatform\ApiUnitTester;
 
 /**
@@ -913,6 +916,225 @@ class ResourceAttributeGeneratorTest extends Unit
 
         // Assert
         $this->assertStringContainsString("extraProperties: ['declaredIncludes' => ['vouchers' => ['0' => 'Get']]]", $result);
+    }
+
+    public function testGivenOperationWithMcpWhenGeneratingThenTheToolRunsTheOperationWithTheGeneratedInput(): void
+    {
+        // Arrange
+        $schema = [
+            'name' => 'HealthCheck',
+            'shortName' => 'health-check',
+            'description' => 'Resource description',
+            'operations' => [
+                'GetCollection' => [
+                    'type' => 'GetCollection',
+                    'uriTemplate' => '/health-check',
+                    'description' => 'Operation description',
+                    'mcp' => [
+                        'name' => 'health-check',
+                        'title' => 'Health check',
+                        'annotations' => ['readOnlyHint' => true],
+                    ],
+                ],
+            ],
+        ];
+        $uses = [];
+
+        // Act
+        $result = $this->createResourceAttributeGenerator()->generate($schema, $uses, ['health-check' => 'Generated\Api\Storefront\HealthCheck\HealthCheckMcpToolInput']);
+
+        // Assert
+        $this->assertStringContainsString("'health-check' => new McpTool(", $result);
+        $this->assertStringContainsString("name: 'health-check'", $result);
+        $this->assertStringContainsString("title: 'Health check'", $result);
+        $this->assertStringContainsString("description: 'Operation description'", $result);
+        $this->assertStringContainsString('input: HealthCheckMcpToolInput::class', $result);
+        $this->assertStringContainsString('provider: ToolProvider::class', $result);
+        $this->assertStringContainsString('processor: McpOperationToolProcessor::class', $result);
+        $this->assertStringContainsString('structuredContent: false', $result);
+        $this->assertStringContainsString("annotations: ['readOnlyHint' => true]", $result);
+        $this->assertStringContainsString("extraProperties: ['mcpSourceOperation' => ['type' => 'GetCollection', 'uriTemplate' => '/health-check']]", $result);
+        $this->assertContains(McpTool::class, $uses);
+        $this->assertContains(ToolProvider::class, $uses);
+        $this->assertContains(McpOperationToolProcessor::class, $uses);
+        $this->assertContains('Generated\Api\Storefront\HealthCheck\HealthCheckMcpToolInput', $uses);
+    }
+
+    public function testGivenItemOperationWithShortFormMcpWhenGeneratingThenTheToolHasTheDefaultNameAndDescription(): void
+    {
+        // Arrange
+        $schema = [
+            'name' => 'Stores',
+            'shortName' => 'stores',
+            'description' => 'Resource description',
+            'operations' => ['Get' => ['type' => 'Get', 'mcp' => true]],
+        ];
+        $uses = [];
+
+        // Act
+        $result = $this->createResourceAttributeGenerator()->generate($schema, $uses);
+
+        // Assert
+        $this->assertStringContainsString("'stores-get' => new McpTool(", $result);
+        $this->assertStringContainsString("description: 'Resource description'", $result);
+        $this->assertStringContainsString('structuredContent: false', $result);
+        $this->assertStringContainsString("extraProperties: ['mcpSourceOperation' => ['type' => 'Get']]", $result);
+    }
+
+    public function testGivenToolWithStructuredContentWhenGeneratingThenTheToolHasStructuredContent(): void
+    {
+        // Arrange
+        $schema = [
+            'name' => 'Stores',
+            'shortName' => 'stores',
+            'operations' => ['Get' => ['type' => 'Get', 'mcp' => ['structuredContent' => true]]],
+        ];
+        $uses = [];
+
+        // Act
+        $result = $this->createResourceAttributeGenerator()->generate($schema, $uses);
+
+        // Assert
+        $this->assertStringContainsString('structuredContent: true', $result);
+    }
+
+    public function testGivenToolWithBracketedQueryParametersWhenGeneratingThenTheSourceOperationMapsTheArgumentsToTheQueryNames(): void
+    {
+        // Arrange
+        $schema = [
+            'name' => 'Merchants',
+            'shortName' => 'merchants',
+            'operations' => [
+                'GetCollection' => [
+                    'type' => 'GetCollection',
+                    'uriTemplate' => '/merchants',
+                    'mcp' => true,
+                    'openapiContext' => [
+                        'parameters' => [
+                            ['name' => 'page[limit]', 'in' => 'query'],
+                            ['name' => 'locale', 'in' => 'query'],
+                        ],
+                    ],
+                ],
+            ],
+        ];
+        $uses = [];
+
+        // Act
+        $result = $this->createResourceAttributeGenerator()->generate($schema, $uses);
+
+        // Assert
+        $this->assertStringContainsString("extraProperties: ['mcpSourceOperation' => ['type' => 'GetCollection', 'uriTemplate' => '/merchants', 'queryParameterNames' => ['pageLimit' => 'page[limit]']]]", $result);
+    }
+
+    public function testGivenOperationWithoutMcpWhenGeneratingThenNoToolIsGenerated(): void
+    {
+        // Arrange
+        $schema = [
+            'name' => 'Stores',
+            'shortName' => 'stores',
+            'operations' => ['Get' => ['type' => 'Get'], 'GetCollection' => ['type' => 'GetCollection', 'mcp' => false]],
+        ];
+        $uses = [];
+
+        // Act
+        $result = $this->createResourceAttributeGenerator()->generate($schema, $uses);
+
+        // Assert
+        $this->assertStringNotContainsString('mcp:', $result);
+        $this->assertNotContains(McpTool::class, $uses);
+    }
+
+    /**
+     * @dataProvider provideMcpToolSecurity
+     *
+     * @param array<string, mixed> $schema
+     */
+    public function testGivenSecuredOperationOrResourceWhenGeneratingThenTheToolCarriesTheSecurityOfTheOperation(
+        array $schema,
+        string $expectedSecurity,
+        string $expectedSecurityMessage
+    ): void {
+        // Arrange
+        $uses = [];
+
+        // Act
+        $result = $this->createResourceAttributeGenerator()->generate($schema, $uses);
+
+        // Assert
+        $mcpPart = substr($result, (int)strpos($result, 'mcp: ['));
+        $this->assertStringContainsString(sprintf('security: %s', $expectedSecurity), $mcpPart);
+        $this->assertStringContainsString(sprintf("securityMessage: '%s'", $expectedSecurityMessage), $mcpPart);
+    }
+
+    /**
+     * @return array<string, array<mixed>>
+     */
+    public function provideMcpToolSecurity(): array
+    {
+        return [
+            'operation security' => [
+                [
+                    'name' => 'HealthCheck',
+                    'shortName' => 'health-check',
+                    'security' => "is_granted('ROLE_USER')",
+                    'operations' => [
+                        'GetCollection' => [
+                            'type' => 'GetCollection',
+                            'security' => "is_granted('ROLE_CUSTOMER')",
+                            'securityMessage' => 'Customer only.',
+                            'mcp' => true,
+                        ],
+                    ],
+                ],
+                "'is_granted(\\'ROLE_CUSTOMER\\')'",
+                'Customer only.',
+            ],
+            'resource security with anonymous customers' => [
+                [
+                    'name' => 'Carts',
+                    'shortName' => 'carts',
+                    'security' => "is_granted('ROLE_CUSTOMER')",
+                    'securityMessage' => 'Customer only.',
+                    'securityAnonymousAuthRequired' => true,
+                    'operations' => ['Get' => ['type' => 'Get', 'mcp' => true]],
+                ],
+                "'is_granted(\\'ROLE_CUSTOMER\\') or request.headers.has(\\'X-Anonymous-Customer-Unique-Id\\')'",
+                'Customer only.',
+            ],
+        ];
+    }
+
+    public function testGivenMcpToolTextWithQuotesAndBackslashesWhenGeneratingThenTheGeneratedLiteralsAreEscapedForSingleQuotes(): void
+    {
+        // Arrange
+        $text = <<<'TEXT'
+        Use "storage" or 'search' in C:\path\
+        TEXT;
+        $expectedLiteral = <<<'PHP'
+        'Use "storage" or \'search\' in C:\\path\\'
+        PHP;
+        $schema = [
+            'name' => 'HealthCheck',
+            'shortName' => 'health-check',
+            'operations' => [
+                'GetCollection' => [
+                    'type' => 'GetCollection',
+                    'mcp' => [
+                        'description' => $text,
+                        'annotations' => ['title' => $text, 'readOnlyHint' => true],
+                    ],
+                ],
+            ],
+        ];
+        $uses = [];
+
+        // Act
+        $result = $this->createResourceAttributeGenerator()->generate($schema, $uses);
+
+        // Assert
+        $this->assertStringContainsString(sprintf('description: %s', $expectedLiteral), $result);
+        $this->assertStringContainsString(sprintf("annotations: ['title' => %s, 'readOnlyHint' => true]", $expectedLiteral), $result);
     }
 
     protected function createResourceAttributeGenerator(): ResourceAttributeGenerator

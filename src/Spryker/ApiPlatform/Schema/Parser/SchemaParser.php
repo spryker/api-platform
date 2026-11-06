@@ -361,6 +361,10 @@ class SchemaParser implements SchemaParserInterface
                 $normalizedOperation['extraProperties'] = $operation['extraProperties'];
             }
 
+            if (array_key_exists(SchemaKey::MCP, $operation)) {
+                $normalizedOperation[SchemaKey::MCP] = $operation[SchemaKey::MCP];
+            }
+
             // The schema author's own statement that an operation exists only to mint IRIs for its
             // sub-resources. Carried as a flag rather than inferred from `controller:`, so the
             // classification follows stated intent rather than an incidental framework class.

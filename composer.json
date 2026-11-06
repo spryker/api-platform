@@ -14,13 +14,14 @@
         "api-platform/json-api": "^4.3.14",
         "api-platform/json-schema": "^4.3.0",
         "api-platform/jsonld": "^4.3.0",
-        "api-platform/metadata": "^4.3.0",
+        "api-platform/metadata": "^4.3.5",
         "api-platform/openapi": "^4.3.0",
         "api-platform/serializer": "^4.3.0",
         "api-platform/state": "^4.3.0",
         "api-platform/symfony": "^4.3.17",
         "api-platform/validator": "^4.3.0",
         "friendsofcxml/cxml-php": "^2.2.2",
+        "mcp/sdk": "^0.8.1 || ^0.9",
         "nikic/php-parser": "^5.0.0",
         "php": ">=8.3",
         "spryker/doctrine-inflector": "^1.0.0 || ^2.0.0",
@@ -65,6 +66,10 @@
         "spryker/user": "*",
         "spryker/zed-request": "*",
         "symfony/framework-bundle": "*"
+    },
+    "suggest": {
+        "api-platform/mcp": "Required to expose resource operations as MCP tools.",
+        "symfony/mcp-bundle": "Required to serve the MCP tools over HTTP."
     },
     "autoload": {
         "psr-4": {
