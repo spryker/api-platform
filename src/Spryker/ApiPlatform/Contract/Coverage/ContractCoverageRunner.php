@@ -35,6 +35,8 @@ class ContractCoverageRunner
 
     protected const string TESTS_PATH = '/tests';
 
+    protected const string GLUE_TESTS_PATH = '/Glue';
+
     protected const string TEST_FILE_SUFFIX = 'Test.php';
 
     protected const string PATTERN_TRAILING_STATUS = '/ \d{3}$/';
@@ -52,6 +54,8 @@ class ContractCoverageRunner
      *   application's `contract_coverage_enforced_dimensions`.
      * @param \Spryker\ApiPlatform\Contract\Coverage\ContractCoverageBaseline $baseline The items known product bugs keep
      *   uncovered, from the application's `contract_coverage_baseline`.
+     * @param array<string> $moduleSourceDirectories Directories of modules, such as `src/SprykerFeature`, whose
+     *   own `tests/<namespace>/Glue` directories hold API tests too; their annotations count beside the project's `tests`.
      */
     public function __construct(
         protected readonly string $apiType,
@@ -67,6 +71,7 @@ class ContractCoverageRunner
         protected readonly ErrorMappingResolver $errorMappingResolver,
         protected readonly ErrorMappingDiscovery $errorMappingDiscovery,
         protected readonly ContractCoverageBaseline $baseline,
+        protected readonly array $moduleSourceDirectories = [],
     ) {
     }
 
@@ -89,9 +94,13 @@ class ContractCoverageRunner
         $selectedResources = $this->resourceNameMatcher->match($enforcedResources, $moduleFilters);
         $unmatchedFilters = $this->resourceNameMatcher->unmatchedFilters($enforcedResources, $moduleFilters);
 
-        $annotations = $this->annotationCollector->collect(
-            $this->discoverTestClasses($applicationRoot . static::TESTS_PATH),
-        );
+        $testClasses = [];
+
+        foreach ($this->getTestRoots($applicationRoot) as $testRoot) {
+            $testClasses = [...$testClasses, ...$this->discoverTestClasses($testRoot)];
+        }
+
+        $annotations = $this->annotationCollector->collect($testClasses);
 
         $scope = $this->scopeResolver->resolve($truthByResource, $selectedResources);
         $report = $this->applyBaseline(
@@ -529,6 +538,48 @@ class ContractCoverageRunner
         }
 
         return $classes;
+    }
+
+    /**
+     * @return array<string>
+     */
+    protected function getTestRoots(string $applicationRoot): array
+    {
+        $testRoots = [$applicationRoot . static::TESTS_PATH];
+
+        foreach ($this->moduleSourceDirectories as $moduleSourceDirectory) {
+            foreach ($this->findSubdirectories($moduleSourceDirectory) as $moduleDirectory) {
+                foreach ($this->findSubdirectories($moduleDirectory . static::TESTS_PATH) as $testNamespaceDirectory) {
+                    $glueTestRoot = $testNamespaceDirectory . static::GLUE_TESTS_PATH;
+
+                    if (is_dir($glueTestRoot)) {
+                        $testRoots[] = $glueTestRoot;
+                    }
+                }
+            }
+        }
+
+        return $testRoots;
+    }
+
+    /**
+     * @return array<string>
+     */
+    protected function findSubdirectories(string $directory): array
+    {
+        if (!is_dir($directory)) {
+            return [];
+        }
+
+        $subdirectories = [];
+
+        foreach (scandir($directory) ?: [] as $entry) {
+            if ($entry !== '.' && $entry !== '..' && is_dir($directory . '/' . $entry)) {
+                $subdirectories[] = $directory . '/' . $entry;
+            }
+        }
+
+        return $subdirectories;
     }
 
     /**

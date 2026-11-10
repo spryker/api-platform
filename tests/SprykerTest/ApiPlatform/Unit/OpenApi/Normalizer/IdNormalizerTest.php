@@ -9,8 +9,15 @@ declare(strict_types=1);
 
 namespace SprykerTest\ApiPlatform\Unit\OpenApi\Normalizer;
 
+use ApiPlatform\Metadata\ApiProperty;
 use ApiPlatform\Metadata\Exception\InvalidArgumentException;
+use ApiPlatform\Metadata\Get;
 use ApiPlatform\Metadata\IdentifiersExtractorInterface;
+use ApiPlatform\Metadata\Link;
+use ApiPlatform\Metadata\Post;
+use ApiPlatform\Metadata\Property\Factory\PropertyMetadataFactoryInterface;
+use ApiPlatform\Metadata\Property\Factory\PropertyNameCollectionFactoryInterface;
+use ApiPlatform\Metadata\Property\PropertyNameCollection;
 use Codeception\Test\Unit;
 use RuntimeException;
 use Spryker\ApiPlatform\Exception\GlueApiException;
@@ -32,6 +39,12 @@ use Symfony\Component\Serializer\Normalizer\NormalizerInterface;
  */
 class IdNormalizerTest extends Unit
 {
+    protected const string URI_TEMPLATE_WITHOUT_URI_VARIABLES = '/principal';
+
+    protected const string URI_TEMPLATE_WITH_URI_VARIABLES = '/wishlists/{uuid}';
+
+    protected const string URI_VARIABLE_UUID = 'uuid';
+
     public function testGivenGenIdFalseWhenNormalizingThenSetsContextIriToIdentifier(): void
     {
         // Arrange
@@ -164,6 +177,194 @@ class IdNormalizerTest extends Unit
         $this->assertEquals('order-item-uuid', $result['data']['id']);
     }
 
+    public function testGivenAResourceWithoutUriVariablesWhenNormalizingThenTheIdIsTheDeclaredIdentifierProperty(): void
+    {
+        // Arrange
+        $object = new class {
+            public ?string $consent = 'consent-uuid';
+
+            public ?string $store = 'DE';
+        };
+        $identifiersExtractor = $this->createMock(IdentifiersExtractorInterface::class);
+        $identifiersExtractor->method('getIdentifiersFromItem')->willReturn([]);
+
+        $innerNormalizer = $this->createMock(NormalizerInterface::class);
+        $innerNormalizer->method('normalize')->willReturn([
+            'data' => [
+                'type' => 'agentic-commerce-principals',
+                'id' => null,
+            ],
+        ]);
+
+        $normalizer = new IdNormalizer(
+            $identifiersExtractor,
+            $this->createPropertyNameCollectionFactory(['store', 'consent']),
+            $this->createPropertyMetadataFactory(['consent']),
+        );
+        $normalizer->setNormalizer($innerNormalizer);
+
+        // Act
+        $result = $normalizer->normalize($object, 'jsonapi', ['gen_id' => false, 'operation' => $this->createOperationWithoutUriVariables()]);
+
+        // Assert
+        $this->assertSame('consent-uuid', $result['data']['id']);
+    }
+
+    public function testGivenAResourceWithoutUriVariablesAndWithoutADeclaredIdentifierWhenNormalizingThenTheIdStaysNull(): void
+    {
+        // Arrange
+        $object = new class {
+            public ?string $store = 'DE';
+        };
+        $identifiersExtractor = $this->createMock(IdentifiersExtractorInterface::class);
+        $identifiersExtractor->method('getIdentifiersFromItem')->willReturn([]);
+
+        $innerNormalizer = $this->createMock(NormalizerInterface::class);
+        $innerNormalizer->method('normalize')->willReturn([
+            'data' => [
+                'type' => 'stores',
+                'id' => null,
+            ],
+        ]);
+
+        $normalizer = new IdNormalizer(
+            $identifiersExtractor,
+            $this->createPropertyNameCollectionFactory(['store']),
+            $this->createPropertyMetadataFactory([]),
+        );
+        $normalizer->setNormalizer($innerNormalizer);
+
+        // Act
+        $result = $normalizer->normalize($object, 'jsonapi', ['gen_id' => false, 'operation' => $this->createOperationWithoutUriVariables()]);
+
+        // Assert
+        $this->assertNull($result['data']['id']);
+    }
+
+    public function testGivenAPostOperationWithoutUriVariablesAndADeclaredIdentifierWhenNormalizingThenTheIdStaysNull(): void
+    {
+        // Arrange
+        $object = new class {
+            public ?string $accessToken = 'jwt';
+        };
+        $identifiersExtractor = $this->createMock(IdentifiersExtractorInterface::class);
+        $identifiersExtractor->method('getIdentifiersFromItem')->willReturn([]);
+
+        $innerNormalizer = $this->createMock(NormalizerInterface::class);
+        $innerNormalizer->method('normalize')
+            ->with(
+                $object,
+                'jsonapi',
+                $this->callback(fn (array $context): bool => ($context['iri'] ?? null) !== 'jwt'),
+            )
+            ->willReturn([
+                'data' => [
+                    'type' => 'access-tokens',
+                    'id' => null,
+                ],
+            ]);
+
+        $normalizer = new IdNormalizer(
+            $identifiersExtractor,
+            $this->createPropertyNameCollectionFactory(['accessToken']),
+            $this->createPropertyMetadataFactory(['accessToken']),
+        );
+        $normalizer->setNormalizer($innerNormalizer);
+
+        // Act
+        $result = $normalizer->normalize($object, 'jsonapi', ['gen_id' => false, 'operation' => new Post(uriTemplate: '/access-tokens', uriVariables: [])]);
+
+        // Assert
+        $this->assertNull($result['data']['id']);
+    }
+
+    public function testGivenAResourceWithUriVariablesThatReturnsANullIdWithoutAnIdentifierPropertyWhenNormalizingThenTheIdStaysNull(): void
+    {
+        // Arrange
+        $object = new class {
+            public ?string $name = 'Default wishlist';
+        };
+        $identifiersExtractor = $this->createMock(IdentifiersExtractorInterface::class);
+        $identifiersExtractor->method('getIdentifiersFromItem')
+            ->willThrowException(new RuntimeException('Not able to retrieve identifiers.'));
+
+        $innerNormalizer = $this->createMock(NormalizerInterface::class);
+        $innerNormalizer->method('normalize')->willReturn([
+            'data' => [
+                'type' => 'wishlists',
+                'id' => null,
+            ],
+        ]);
+
+        $normalizer = new IdNormalizer(
+            $identifiersExtractor,
+            $this->createPropertyNameCollectionFactory(['name']),
+            $this->createPropertyMetadataFactory([]),
+        );
+        $normalizer->setNormalizer($innerNormalizer);
+
+        // Act
+        $result = $normalizer->normalize($object, 'jsonapi', ['operation' => $this->createOperationWithUriVariables()]);
+
+        // Assert
+        $this->assertNull($result['data']['id']);
+    }
+
+    public function testGivenAResourceWithUriVariablesThatReturnsANullIdWhenItHasAUuidPropertyThenTheIdStaysNull(): void
+    {
+        // Arrange
+        $object = new class {
+            public ?string $uuid = 'wishlist-uuid';
+        };
+        $identifiersExtractor = $this->createMock(IdentifiersExtractorInterface::class);
+        $identifiersExtractor->method('getIdentifiersFromItem')
+            ->willThrowException(new RuntimeException('Not able to retrieve identifiers.'));
+
+        $innerNormalizer = $this->createMock(NormalizerInterface::class);
+        $innerNormalizer->method('normalize')->willReturn([
+            'data' => [
+                'type' => 'wishlists',
+                'id' => null,
+            ],
+        ]);
+
+        $normalizer = new IdNormalizer($identifiersExtractor);
+        $normalizer->setNormalizer($innerNormalizer);
+
+        // Act
+        $result = $normalizer->normalize($object, 'jsonapi', ['operation' => $this->createOperationWithUriVariables()]);
+
+        // Assert
+        $this->assertNull($result['data']['id']);
+    }
+
+    public function testGivenANullIdWithoutAnOperationInTheContextWhenNormalizingThenTheIdStaysNull(): void
+    {
+        // Arrange
+        $object = new class {
+            public ?string $uuid = 'wishlist-uuid';
+        };
+        $identifiersExtractor = $this->createMock(IdentifiersExtractorInterface::class);
+        $identifiersExtractor->method('getIdentifiersFromItem')->willReturn([]);
+
+        $innerNormalizer = $this->createMock(NormalizerInterface::class);
+        $innerNormalizer->method('normalize')->willReturn([
+            'data' => [
+                'type' => 'wishlists',
+                'id' => null,
+            ],
+        ]);
+
+        $normalizer = new IdNormalizer($identifiersExtractor);
+        $normalizer->setNormalizer($innerNormalizer);
+
+        // Act
+        $result = $normalizer->normalize($object, 'jsonapi', []);
+
+        // Assert
+        $this->assertNull($result['data']['id']);
+    }
+
     public function testGivenASingletonResourceWhenNormalizingThenTheIdStaysNull(): void
     {
         // Arrange
@@ -242,5 +443,39 @@ class IdNormalizerTest extends Unit
 
         // Act
         $normalizer->normalize($object, 'jsonapi');
+    }
+
+    protected function createOperationWithoutUriVariables(): Get
+    {
+        return new Get(uriTemplate: static::URI_TEMPLATE_WITHOUT_URI_VARIABLES, uriVariables: []);
+    }
+
+    protected function createOperationWithUriVariables(): Get
+    {
+        return new Get(uriTemplate: static::URI_TEMPLATE_WITH_URI_VARIABLES, uriVariables: [static::URI_VARIABLE_UUID => new Link(fromClass: stdClass::class, identifiers: [static::URI_VARIABLE_UUID])]);
+    }
+
+    /**
+     * @param list<string> $propertyNames
+     */
+    protected function createPropertyNameCollectionFactory(array $propertyNames): PropertyNameCollectionFactoryInterface
+    {
+        $propertyNameCollectionFactory = $this->createMock(PropertyNameCollectionFactoryInterface::class);
+        $propertyNameCollectionFactory->method('create')->willReturn(new PropertyNameCollection($propertyNames));
+
+        return $propertyNameCollectionFactory;
+    }
+
+    /**
+     * @param list<string> $identifierPropertyNames
+     */
+    protected function createPropertyMetadataFactory(array $identifierPropertyNames): PropertyMetadataFactoryInterface
+    {
+        $propertyMetadataFactory = $this->createMock(PropertyMetadataFactoryInterface::class);
+        $propertyMetadataFactory->method('create')->willReturnCallback(
+            fn (string $resourceClass, string $propertyName): ApiProperty => new ApiProperty(identifier: in_array($propertyName, $identifierPropertyNames, true)),
+        );
+
+        return $propertyMetadataFactory;
     }
 }

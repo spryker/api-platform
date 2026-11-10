@@ -7,9 +7,14 @@
 
 namespace Spryker\ApiPlatform\OpenApi\Normalizer;
 
+use ApiPlatform\Metadata\Exception\ExceptionInterface as ApiPlatformMetadataExceptionInterface;
 use ApiPlatform\Metadata\Exception\InvalidArgumentException;
+use ApiPlatform\Metadata\Get;
 use ApiPlatform\Metadata\GetCollection;
 use ApiPlatform\Metadata\IdentifiersExtractorInterface;
+use ApiPlatform\Metadata\Property\Factory\PropertyMetadataFactoryInterface;
+use ApiPlatform\Metadata\Property\Factory\PropertyNameCollectionFactoryInterface;
+use Psr\Log\LoggerInterface;
 use RuntimeException;
 use Spryker\ApiPlatform\Exception\GlueApiException;
 use Symfony\Component\HttpFoundation\Response;
@@ -32,6 +37,9 @@ class IdNormalizer implements NormalizerInterface, NormalizerAwareInterface
 
     public function __construct(
         protected readonly IdentifiersExtractorInterface $identifiersExtractor,
+        protected readonly ?PropertyNameCollectionFactoryInterface $propertyNameCollectionFactory = null,
+        protected readonly ?PropertyMetadataFactoryInterface $propertyMetadataFactory = null,
+        protected readonly ?LoggerInterface $logger = null,
     ) {
     }
 
@@ -57,6 +65,10 @@ class IdNormalizer implements NormalizerInterface, NormalizerAwareInterface
 
             if ($identifier === null) {
                 $identifier = $this->extractFallbackIdentifier($object);
+            }
+
+            if ($identifier === null && $this->isGetWithoutUriVariables($context)) {
+                $identifier = $this->extractDeclaredIdentifier($object);
             }
 
             if ($identifier !== null) {
@@ -97,8 +109,8 @@ class IdNormalizer implements NormalizerInterface, NormalizerAwareInterface
             return $data;
         }
 
-        if (isset($data['data']['type']) && isset($data['data']['id'])) {
-            $identifier = $this->resolveDataIdentifier($object, $data['data']);
+        if (isset($data['data']['type']) && $this->hasResolvableDataIdentifier($data['data'], $context)) {
+            $identifier = $this->resolveDataIdentifier($object, $data['data'], $context);
 
             // JSON:API requires `id` to be a string, and a resource whose identifier is an integer
             // column would otherwise put a JSON number on the wire. The synthetic-identifier null
@@ -220,11 +232,43 @@ class IdNormalizer implements NormalizerInterface, NormalizerAwareInterface
     }
 
     /**
+     * A null `data.id` is resolved only for a Get operation without URI variables: with URI variables the id
+     * comes from them, so a null id means the resource has none and another property must not stand in.
+     * A write operation on a fixed path, such as `POST /access-tokens`, keeps its null id.
+     *
+     * @param array<string, mixed> $resourceData
+     * @param array<string, mixed> $context
+     */
+    protected function hasResolvableDataIdentifier(array $resourceData, array $context): bool
+    {
+        if (isset($resourceData['id'])) {
+            return true;
+        }
+
+        if (!array_key_exists('id', $resourceData)) {
+            return false;
+        }
+
+        return $this->isGetWithoutUriVariables($context);
+    }
+
+    /**
+     * @param array<string, mixed> $context
+     */
+    protected function isGetWithoutUriVariables(array $context): bool
+    {
+        $operation = $context['operation'] ?? null;
+
+        return $operation instanceof Get && ($operation->getUriVariables() ?? []) === [];
+    }
+
+    /**
      * The value that belongs in `data.id`, or null when the resource has none of its own.
      *
      * @param array<string, mixed> $resourceData
+     * @param array<string, mixed> $context
      */
-    protected function resolveDataIdentifier(object $object, array &$resourceData): mixed
+    protected function resolveDataIdentifier(object $object, array &$resourceData, array $context): mixed
     {
         $identifiers = $this->extractIdentifiersSafely($object);
         $identifier = array_pop($identifiers);
@@ -234,7 +278,13 @@ class IdNormalizer implements NormalizerInterface, NormalizerAwareInterface
             // uriVariable (e.g. `orderReference` on `/orders/{orderReference}/order-items/{uuid}`)
             // makes IdentifiersExtractor throw, because that Link points at another resource
             // class. The resource's own identifier property still carries the value.
-            return $this->extractFallbackIdentifier($object);
+            $identifier = $this->extractFallbackIdentifier($object);
+
+            if ($identifier === null && $this->isGetWithoutUriVariables($context)) {
+                return $this->extractDeclaredIdentifier($object);
+            }
+
+            return $identifier;
         }
 
         if ($identifier !== $resourceData['type']) {
@@ -264,6 +314,38 @@ class IdNormalizer implements NormalizerInterface, NormalizerAwareInterface
                     return (string)$value;
                 }
             }
+        }
+
+        return null;
+    }
+
+    /**
+     * A resource read by a Get operation without URI variables, such as a singleton on a fixed path,
+     * gets nothing from IdentifiersExtractor; the property it declares `identifier: true` is read then.
+     */
+    protected function extractDeclaredIdentifier(object $object): ?string
+    {
+        if ($this->propertyNameCollectionFactory === null || $this->propertyMetadataFactory === null) {
+            return null;
+        }
+
+        try {
+            foreach ($this->propertyNameCollectionFactory->create($object::class) as $propertyName) {
+                if (!$this->propertyMetadataFactory->create($object::class, $propertyName)->isIdentifier()) {
+                    continue;
+                }
+
+                $value = property_exists($object, $propertyName) ? $object->{$propertyName} : null;
+
+                return $value === null ? null : (string)$value;
+            }
+        } catch (ApiPlatformMetadataExceptionInterface $exception) {
+            $this->logger?->warning(
+                sprintf('Identifier property metadata of "%s" could not be read: %s', $object::class, $exception->getMessage()),
+                ['exception' => $exception],
+            );
+
+            return null;
         }
 
         return null;

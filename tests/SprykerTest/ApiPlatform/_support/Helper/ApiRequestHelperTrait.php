@@ -29,6 +29,15 @@ trait ApiRequestHelperTrait
     }
 
     /**
+     * @param array<string, string> $formParameters
+     * @param array<string, string> $headers
+     */
+    protected function handleApiFormRequest(string $method, string $uri, array $formParameters, array $headers = []): Response
+    {
+        return $this->getApiRequestHelper()->handleApiFormRequest($method, $uri, $formParameters, $headers);
+    }
+
+    /**
      * @param array<string, mixed> $attributes
      */
     protected function encodeJsonApiBody(string $type, array $attributes, ?string $id = null): string

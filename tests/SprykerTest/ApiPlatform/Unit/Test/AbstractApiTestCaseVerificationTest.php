@@ -9,11 +9,14 @@ declare(strict_types=1);
 
 namespace SprykerTest\ApiPlatform\Unit\Test;
 
+use ApiPlatform\Metadata\Post;
 use Codeception\Test\Unit;
 use Spryker\ApiPlatform\Contract\Coverage\ApiOperation;
 use Spryker\ApiPlatform\Contract\Coverage\ContractCoverageBaseline;
 use Spryker\ApiPlatform\Contract\Coverage\ContractCoverageEnforcement;
 use Spryker\ApiPlatform\Contract\Coverage\RecordedExchange;
+use Symfony\Component\HttpFoundation\Response;
+use Symfony\Component\HttpKernel\HttpKernelInterface;
 
 /**
  * Auto-generated group annotations
@@ -30,6 +33,18 @@ class AbstractApiTestCaseVerificationTest extends Unit
     protected const string CART_CODE_REMOVAL_DISPATCH_KEY = 'DELETE /carts/{cartUuid}/cart-codes/{code}';
 
     protected const string CART_UPDATE_DISPATCH_KEY = 'PATCH /carts/{cartUuid}';
+
+    protected const string TOKEN_URI_TEMPLATE = '/oauth-tokens';
+
+    protected const string TOKEN_SHORT_NAME = 'oauth-tokens';
+
+    protected const string TOKEN_RESPONSE_BODY = '{"access_token":"token-value","token_type":"Bearer","expires_in":3600}';
+
+    protected const string MEDIA_TYPE_JSON = 'application/json';
+
+    protected const string MEDIA_TYPE_JSON_API = 'application/vnd.api+json';
+
+    protected const string MEDIA_TYPE_JSON_API_MIXED_CASE_WITH_PARAMETER = 'Application/Vnd.Api+Json; charset=UTF-8';
 
     public function testGivenErrorCodesEnforcedWhenAResponseCarriesAnUndeclaredCodeThenTheTestFails(): void
     {
@@ -173,6 +188,68 @@ class AbstractApiTestCaseVerificationTest extends Unit
 
         // Assert
         $this->assertNull($failure);
+    }
+
+    public function testGivenAnOperationWithDeserializeFalseWhenItAnswersAPlainJsonBodyThenNoEnvelopeViolationIsRecorded(): void
+    {
+        // Arrange
+        $probe = $this->createProbe('probeOrderRead', ContractCoverageEnforcement::none());
+
+        // Act
+        $violations = $this->recordTokenResponse($probe, false, static::MEDIA_TYPE_JSON);
+
+        // Assert
+        $this->assertSame([], $violations);
+    }
+
+    public function testGivenADefaultOperationWhenItAnswersAPlainJsonBodyThenEnvelopeViolationsAreRecorded(): void
+    {
+        // Arrange
+        $probe = $this->createProbe('probeOrderRead', ContractCoverageEnforcement::none());
+
+        // Act
+        $violations = $this->recordTokenResponse($probe, null, static::MEDIA_TYPE_JSON);
+
+        // Assert
+        $this->assertNotSame([], $violations);
+    }
+
+    public function testGivenAnOperationWithDeserializeFalseWhenItAnswersInTheJsonApiMediaTypeThenTheEnvelopeIsStillVerified(): void
+    {
+        // Arrange
+        $probe = $this->createProbe('probeOrderRead', ContractCoverageEnforcement::none());
+
+        // Act
+        $violations = $this->recordTokenResponse($probe, false, static::MEDIA_TYPE_JSON_API);
+
+        // Assert
+        $this->assertNotSame([], $violations);
+    }
+
+    public function testGivenAnOperationWithDeserializeFalseWhenItAnswersInAMixedCaseJsonApiMediaTypeWithAParameterThenTheEnvelopeIsStillVerified(): void
+    {
+        // Arrange
+        $probe = $this->createProbe('probeOrderRead', ContractCoverageEnforcement::none());
+
+        // Act
+        $violations = $this->recordTokenResponse($probe, false, static::MEDIA_TYPE_JSON_API_MIXED_CASE_WITH_PARAMETER);
+
+        // Assert
+        $this->assertNotSame([], $violations);
+    }
+
+    /**
+     * @return array<string>
+     */
+    protected function recordTokenResponse(ContractCoverageBaselineProbe $probe, ?bool $deserialize, string $mediaType): array
+    {
+        return $probe->recordEnvelopeOf(
+            $this->createMock(HttpKernelInterface::class),
+            new ApiOperation('POST', static::TOKEN_URI_TEMPLATE),
+            new Post(shortName: static::TOKEN_SHORT_NAME, deserialize: $deserialize),
+            new Response(static::TOKEN_RESPONSE_BODY, Response::HTTP_OK, ['Content-Type' => $mediaType]),
+            [static::TOKEN_SHORT_NAME],
+        );
     }
 
     protected function createCartCodeRemovalProbe(ContractCoverageEnforcement $enforcement): ContractCoverageBaselineProbe

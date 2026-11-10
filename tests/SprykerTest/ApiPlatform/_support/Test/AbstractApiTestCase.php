@@ -259,6 +259,8 @@ abstract class AbstractApiTestCase extends Unit
 
     protected const string MEDIA_TYPE_JSON_API = 'application/vnd.api+json';
 
+    protected const string MEDIA_TYPE_FORM = 'application/x-www-form-urlencoded';
+
     protected static function getModuleRoot(): string
     {
         $dataDir = rtrim(codecept_data_dir(), DIRECTORY_SEPARATOR);
@@ -536,12 +538,24 @@ abstract class AbstractApiTestCase extends Unit
             return;
         }
 
+        if (static::isProtocolResponse($operation, $event->getResponse())) {
+            return;
+        }
+
         $shortName = (string)$operation->getShortName();
         if ($shortName === '') {
             return;
         }
 
         $envelopeRecorder->record($apiOperation, $event->getResponse(), $shortName);
+    }
+
+    protected static function isProtocolResponse(Operation $operation, Response $response): bool
+    {
+        $mediaType = strtolower(trim(explode(';', (string)$response->headers->get('Content-Type'))[0]));
+
+        // A `deserialize: false` operation answering outside JSON:API, such as an OAuth 2.0 token endpoint, owes the protocol's body.
+        return $operation->canDeserialize() === false && $mediaType !== static::MEDIA_TYPE_JSON_API;
     }
 
     /**
@@ -1182,18 +1196,45 @@ abstract class AbstractApiTestCase extends Unit
      */
     public function handleApiRequest(string $method, string $uri, ?string $content = null, array $headers = []): Response
     {
-        $kernel = $this->getTestKernel();
-
-        if (str_starts_with($uri, '/')) {
-            $uri = rtrim(static::DEFAULT_BASE_URL, '/') . $uri;
-        }
-
-        $request = Request::create($uri, $method, [], [], [], [], $content);
-        $request->headers->set('Accept', static::DEFAULT_ACCEPT_HEADER);
+        $request = Request::create($this->toAbsoluteUri($uri), $method, [], [], [], [], $content);
 
         if ($content !== null) {
             $request->headers->set('Content-Type', static::DEFAULT_CONTENT_TYPE_HEADER);
         }
+
+        return $this->dispatchApiRequest($request, $headers);
+    }
+
+    /**
+     * @param array<string, string> $formParameters
+     * @param array<string, string> $headers
+     */
+    public function handleApiFormRequest(string $method, string $uri, array $formParameters, array $headers = []): Response
+    {
+        // the parameters land in the request bag and the raw body, as Request::createFromGlobals() presents them
+        $request = Request::create($this->toAbsoluteUri($uri), $method, $formParameters, [], [], [], http_build_query($formParameters));
+        $request->headers->set('Content-Type', static::MEDIA_TYPE_FORM);
+
+        return $this->dispatchApiRequest($request, $headers);
+    }
+
+    protected function toAbsoluteUri(string $uri): string
+    {
+        if (!str_starts_with($uri, '/')) {
+            return $uri;
+        }
+
+        return rtrim(static::DEFAULT_BASE_URL, '/') . $uri;
+    }
+
+    /**
+     * @param array<string, string> $headers
+     */
+    protected function dispatchApiRequest(Request $request, array $headers): Response
+    {
+        $kernel = $this->getTestKernel();
+
+        $request->headers->set('Accept', static::DEFAULT_ACCEPT_HEADER);
 
         // Per-call headers win over the defaults registered by helpers (e.g. the Authorization
         // header set by BackendApiLoginHelper::actingAsUser()).

@@ -10,10 +10,12 @@ declare(strict_types=1);
 namespace SprykerTest\ApiPlatform\Unit\Coverage;
 
 use Codeception\Test\Unit;
+use org\bovigo\vfs\vfsStream;
 use Spryker\ApiPlatform\Contract\Coverage\Exception\ResourcesNotGeneratedException;
 use SprykerTest\ApiPlatform\Coverage\ContractCoverageFactory;
 use SprykerTest\ApiPlatform\Unit\Coverage\Fixture\ExcludedUndeclaredResponsesContractCoverageRunner;
 use SprykerTest\ApiPlatform\Unit\Coverage\Fixture\IdentifierDeclarationContractCoverageRunner;
+use SprykerTest\ApiPlatform\Unit\Coverage\Fixture\ModuleTestRootsContractCoverageRunner;
 use SprykerTest\ApiPlatform\Unit\Coverage\Fixture\ResponseAttributesContractCoverageRunner;
 use SprykerTest\ApiPlatform\Unit\Coverage\Fixture\ResponseAttributesDeclaringCoverageFixture;
 use SprykerTest\ApiPlatform\Unit\Coverage\Fixture\ResponseAttributesMarkedCoverageFixture;
@@ -49,6 +51,66 @@ class ContractCoverageRunnerTest extends Unit
 
         // Act
         $runner->run(static::APPLICATION_ROOT_WITHOUT_GENERATED_RESOURCES);
+    }
+
+    public function testGivenModuleSourceDirectoriesWhenFindingTestRootsThenTheGlueTestsOfEveryModuleCountBesideTheProjectTests(): void
+    {
+        // Arrange
+        $root = vfsStream::setup('application', null, [
+            'tests' => [],
+            'src' => [
+                'SprykerFeature' => [
+                    'AgenticCommerce' => ['tests' => ['SprykerFeatureTest' => ['Glue' => []]], 'src' => []],
+                    'Untested' => ['src' => []],
+                ],
+            ],
+        ]);
+        $runner = new ModuleTestRootsContractCoverageRunner([
+            $root->url() . '/src/SprykerFeature',
+            $root->url() . '/src/Missing',
+        ]);
+
+        // Act
+        $testRoots = $runner->findTestRoots($root->url());
+
+        // Assert
+        $this->assertSame([
+            $root->url() . '/tests',
+            $root->url() . '/src/SprykerFeature/AgenticCommerce/tests/SprykerFeatureTest/Glue',
+        ], $testRoots);
+    }
+
+    public function testGivenAModuleTestTreeWithoutAGlueDirectoryWhenFindingTestRootsThenItIsNotScanned(): void
+    {
+        // Arrange
+        $root = vfsStream::setup('application', null, [
+            'tests' => [],
+            'src' => [
+                'Spryker' => [
+                    'Customer' => ['tests' => ['SprykerTest' => ['Zed' => [], 'Shared' => []]]],
+                ],
+            ],
+        ]);
+        $runner = new ModuleTestRootsContractCoverageRunner([$root->url() . '/src/Spryker']);
+
+        // Act
+        $testRoots = $runner->findTestRoots($root->url());
+
+        // Assert
+        $this->assertSame([$root->url() . '/tests'], $testRoots);
+    }
+
+    public function testGivenNoModuleSourceDirectoriesWhenFindingTestRootsThenOnlyTheProjectTestsCount(): void
+    {
+        // Arrange
+        $root = vfsStream::setup('application', null, ['tests' => []]);
+        $runner = new ModuleTestRootsContractCoverageRunner([]);
+
+        // Act
+        $testRoots = $runner->findTestRoots($root->url());
+
+        // Assert
+        $this->assertSame([$root->url() . '/tests'], $testRoots);
     }
 
     public function testGivenTwoResourceClassesSharingAShortNameWhenRunningThenTheOperationsOfBothClassesAreDemanded(): void

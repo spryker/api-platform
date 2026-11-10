@@ -23,6 +23,8 @@ use Symfony\Component\DependencyInjection\Container;
 use Symfony\Component\DependencyInjection\ContainerInterface;
 use Symfony\Component\DependencyInjection\Exception\InvalidArgumentException;
 use Symfony\Component\EventDispatcher\EventDispatcher;
+use Symfony\Component\HttpFoundation\Request;
+use Symfony\Component\HttpFoundation\Response;
 use Symfony\Component\HttpKernel\KernelEvents;
 use Symfony\Component\HttpKernel\KernelInterface;
 
@@ -39,6 +41,15 @@ use Symfony\Component\HttpKernel\KernelInterface;
 class AbstractApiTestCaseBootTest extends Unit
 {
     protected const string SERVICE_ID_EVENT_DISPATCHER = 'event_dispatcher';
+
+    protected const string TOKEN_PATH = '/oauth-tokens';
+
+    protected const string MEDIA_TYPE_FORM = 'application/x-www-form-urlencoded';
+
+    /**
+     * @var array<string, string>
+     */
+    protected const array TOKEN_FORM_PARAMETERS = ['grant_type' => 'refresh_token', 'refresh_token' => 'token-value'];
 
     protected TestMode $suiteMode;
 
@@ -325,6 +336,33 @@ class AbstractApiTestCaseBootTest extends Unit
 
         // Act
         $case->exposeBoot();
+    }
+
+    public function testGivenFormParametersWhenHandlingAnApiFormRequestThenTheKernelReceivesThemInTheRequestBag(): void
+    {
+        // Arrange
+        $handledRequests = [];
+        $fakeKernel = Stub::makeEmpty(KernelInterface::class, [
+            'getContainer' => new Container(),
+            'handle' => function (Request $request) use (&$handledRequests): Response {
+                $handledRequests[] = $request;
+
+                return new Response();
+            },
+        ]);
+        $case = $this->createFakeKernelCase($fakeKernel);
+
+        // Act
+        $case->exposeHandleApiFormRequest(Request::METHOD_POST, static::TOKEN_PATH, static::TOKEN_FORM_PARAMETERS);
+
+        // Assert
+        $this->assertCount(1, $handledRequests);
+        $request = $handledRequests[0];
+        $this->assertSame(Request::METHOD_POST, $request->getMethod());
+        $this->assertSame(static::TOKEN_PATH, $request->getPathInfo());
+        $this->assertSame(static::TOKEN_FORM_PARAMETERS, $request->request->all());
+        $this->assertSame(http_build_query(static::TOKEN_FORM_PARAMETERS), $request->getContent());
+        $this->assertSame(static::MEDIA_TYPE_FORM, $request->headers->get('Content-Type'));
     }
 
     /**

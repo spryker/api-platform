@@ -10,6 +10,7 @@ declare(strict_types=1);
 namespace SprykerTest\ApiPlatform\Unit\Test;
 
 use SprykerTest\ApiPlatform\Test\StorefrontApiTestCase;
+use Symfony\Component\HttpFoundation\Response;
 use Symfony\Component\HttpKernel\KernelInterface;
 
 /**
@@ -39,5 +40,14 @@ class FakeKernelProbe extends StorefrontApiTestCase
     public function exposeBoot(): KernelInterface
     {
         return $this->getTestKernel();
+    }
+
+    /**
+     * @param array<string, string> $formParameters
+     * @param array<string, string> $headers
+     */
+    public function exposeHandleApiFormRequest(string $method, string $uri, array $formParameters, array $headers = []): Response
+    {
+        return $this->handleApiFormRequest($method, $uri, $formParameters, $headers);
     }
 }

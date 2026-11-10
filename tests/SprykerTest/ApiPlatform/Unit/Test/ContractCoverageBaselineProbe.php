@@ -9,6 +9,7 @@ declare(strict_types=1);
 
 namespace SprykerTest\ApiPlatform\Unit\Test;
 
+use ApiPlatform\Metadata\Operation;
 use Spryker\ApiPlatform\Contract\Attribute\CoversApiIncludes;
 use Spryker\ApiPlatform\Contract\Attribute\CoversApiOperation;
 use Spryker\ApiPlatform\Contract\Attribute\CoversApiRequestAttributes;
@@ -16,6 +17,7 @@ use Spryker\ApiPlatform\Contract\Attribute\CoversApiRequiredResponseAttributes;
 use Spryker\ApiPlatform\Contract\Attribute\CoversApiValidation;
 use Spryker\ApiPlatform\Contract\Attribute\Rule;
 use Spryker\ApiPlatform\Contract\Coverage\AnnotationCollector;
+use Spryker\ApiPlatform\Contract\Coverage\ApiOperation;
 use Spryker\ApiPlatform\Contract\Coverage\ContractCoverageBaseline;
 use Spryker\ApiPlatform\Contract\Coverage\ContractCoverageEnforcement;
 use Spryker\ApiPlatform\Contract\Coverage\IncludedRelationshipRecorder;
@@ -23,7 +25,10 @@ use Spryker\ApiPlatform\Contract\Coverage\RecordedExchange;
 use Spryker\ApiPlatform\Contract\Coverage\ResponseAttributeRecorder;
 use SprykerTest\ApiPlatform\Coverage\ContractCoverageFactory;
 use SprykerTest\ApiPlatform\Test\StorefrontApiTestCase;
+use Symfony\Component\HttpFoundation\Request;
 use Symfony\Component\HttpFoundation\Response;
+use Symfony\Component\HttpKernel\Event\ResponseEvent;
+use Symfony\Component\HttpKernel\HttpKernelInterface;
 use Throwable;
 
 /**
@@ -84,6 +89,33 @@ class ContractCoverageBaselineProbe extends StorefrontApiTestCase
     public function recordExchange(RecordedExchange $exchange): void
     {
         $this->operationRecorder?->recordExchange($exchange);
+    }
+
+    /**
+     * @param array<string> $schemaResourceShortNames
+     *
+     * @return array<string>
+     */
+    public function recordEnvelopeOf(
+        HttpKernelInterface $kernel,
+        ApiOperation $apiOperation,
+        Operation $operation,
+        Response $response,
+        array $schemaResourceShortNames
+    ): array {
+        $envelopeRecorder = ContractCoverageFactory::createJsonApiEnvelopeRecorder($schemaResourceShortNames, []);
+        static::$activeEnvelopeRecorder = $envelopeRecorder;
+
+        $request = Request::create($apiOperation->uriTemplate, $apiOperation->verb);
+        $request->attributes->set(static::API_OPERATION_ATTRIBUTE, $operation);
+
+        try {
+            static::recordEnvelope($apiOperation, new ResponseEvent($kernel, $request, HttpKernelInterface::MAIN_REQUEST, $response));
+        } finally {
+            static::$activeEnvelopeRecorder = null;
+        }
+
+        return $envelopeRecorder->violations();
     }
 
     /**

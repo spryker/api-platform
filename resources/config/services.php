@@ -455,7 +455,7 @@ return static function (ContainerConfigurator $container): void {
         'Spryker\\Glue\\GlueApplication\\Compatibility\\RequestBuilder\\SyntheticRestRequestBuilderInterface',
         'Spryker\\Glue\\GlueApplication\\Compatibility\\RequestBuilder\\SyntheticRestRequestBuilder',
     );
-    $services->set('Spryker\\Glue\\GlueApplication\\Compatibility\\EventSubscriber\\LegacyPluginBridgeSubscriber');
+    $services->set('Spryker\\Glue\\GlueApplication\\Compatibility\\EventSubscriber\\GlueRestPluginStackSubscriber');
     $services->set(
         'Spryker\\Glue\\GlueApplication\\Compatibility\\Transfer\\NullCollectionNormalizer',
     );
@@ -571,6 +571,9 @@ return static function (ContainerConfigurator $container): void {
      */
     $services->set(IdNormalizer::class)
         ->arg('$identifiersExtractor', service('api_platform.api.identifiers_extractor'))
+        ->arg('$propertyNameCollectionFactory', service('api_platform.metadata.property.name_collection_factory'))
+        ->arg('$propertyMetadataFactory', service('api_platform.metadata.property.metadata_factory'))
+        ->arg('$logger', service('logger'))
         ->tag('serializer.normalizer', ['priority' => 64]);
 
     /**

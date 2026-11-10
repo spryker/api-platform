@@ -59,6 +59,15 @@ class ApiRequestHelper extends Module
     }
 
     /**
+     * @param array<string, string> $formParameters
+     * @param array<string, string> $headers
+     */
+    public function handleApiFormRequest(string $method, string $uri, array $formParameters, array $headers = []): Response
+    {
+        return $this->getTestCase()->handleApiFormRequest($method, $uri, $formParameters, $headers);
+    }
+
+    /**
      * @param array<string, mixed> $attributes
      */
     public function encodeJsonApiBody(string $type, array $attributes, ?string $id = null): string

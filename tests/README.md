@@ -183,11 +183,13 @@ APPLICATION_ENV=devtest vendor/bin/codecept run -c tests/PyzTest/Glue/Wishlists/
 
 The `API Platform Tests` job in `.github/workflows/ci.yml` runs those same steps on a bare runner.
 
-It finds its work by convention: every `tests/PyzTest/Glue/*/codeception.yml` declaring a
+It finds its work by convention: every `tests/PyzTest/Glue/*/codeception.yml`, and every
+`codeception.yml` one or two levels below a feature's `tests/SprykerFeatureTest/Glue/*`, declaring a
 `StorefrontApiLogic:` or `StorefrontApiIntegration:` suite is picked up, one codecept process per
-module config, and the shared Glue lane in `_codeception.yml` skips those two suite names. Use
-exactly those names and a new module needs no workflow change; use different ones and the suites
-either run nowhere or land in the docker lane, which is not a lane they can survive.
+config, and the shared Glue lane and the feature lane in `_codeception.yml` skip those two suite
+names. Use exactly those names and a new module or feature needs no workflow change; use different
+ones and the suites either run nowhere or land in the docker lane, which is not a lane they can
+survive.
 
 One process per module config is not a style choice. These suites boot the Glue kernel in-process
 and need `APPLICATION=GLUE_STOREFRONT`; the constant is process-global and first-wins, so a suite
