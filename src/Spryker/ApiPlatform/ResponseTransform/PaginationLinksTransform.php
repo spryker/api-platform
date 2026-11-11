@@ -62,6 +62,7 @@ class PaginationLinksTransform
     public function applyTo(array &$data, Request $request): bool
     {
         $modified = $this->stripNullPaginationAttribute($data);
+        $modified = $this->stripPageParameterFromCollectionSelfLink($data) || $modified;
 
         $requestPagination = $request->attributes->get(static::REQUEST_ATTRIBUTE_PAGINATION);
         if (is_array($requestPagination) && $this->isCollectionDocument($data)) {
@@ -182,6 +183,46 @@ class PaginationLinksTransform
         }
 
         return (int)($pagination[static::PAGINATION_KEY_CURRENT_ITEMS_PER_PAGE] ?? $pagination['config']['defaultItemsPerPage'] ?? 12);
+    }
+
+    /**
+     * A collection's `links.self` names the collection, not the page: `first`, `prev`, `next` and
+     * `last` carry the page. API Platform 4 dropped the whole `page` parameter from it; API Platform 5
+     * keeps `page[offset]` and `page[limit]`, so they are removed here. Every other query parameter is
+     * kept exactly as it was encoded.
+     *
+     * @param array<string, mixed> $data
+     */
+    protected function stripPageParameterFromCollectionSelfLink(array &$data): bool
+    {
+        $selfLink = $data[static::DOCUMENT_SECTION_LINKS]['self'] ?? null;
+
+        if (!is_string($selfLink) || !$this->isCollectionDocument($data) || !str_contains($selfLink, '?')) {
+            return false;
+        }
+
+        [$path, $query] = explode('?', $selfLink, 2);
+        $keptParameters = array_filter(
+            explode('&', $query),
+            fn (string $parameter): bool => !$this->isPageParameter($parameter),
+        );
+
+        $strippedLink = $keptParameters === [] ? $path : $path . '?' . implode('&', $keptParameters);
+
+        if ($strippedLink === $selfLink) {
+            return false;
+        }
+
+        $data[static::DOCUMENT_SECTION_LINKS]['self'] = $strippedLink;
+
+        return true;
+    }
+
+    protected function isPageParameter(string $parameter): bool
+    {
+        $name = urldecode(explode('=', $parameter, 2)[0]);
+
+        return $name === static::PAGINATION_PARAM_PAGE || str_starts_with($name, static::PAGINATION_PARAM_PAGE . '[');
     }
 
     protected function buildPaginationLink(Request $request, int $offset, int $limit): string

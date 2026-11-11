@@ -10,8 +10,10 @@ declare(strict_types=1);
 namespace Symfony\Component\DependencyInjection\Loader\Configurator;
 
 use ApiPlatform\JsonApi\State\JsonApiProvider;
+use ApiPlatform\JsonApi\Util\ResourceLinkageResolver;
 use ApiPlatform\Serializer\Filter\PropertyFilter;
 use ApiPlatform\Serializer\SerializerContextBuilder;
+use ApiPlatform\State\DenormalizationViolationFactoryInterface;
 use ApiPlatform\State\ErrorProvider;
 use Spryker\ApiPlatform\Cache\ApiResourceCacheWarmer;
 use Spryker\ApiPlatform\Command\ApiCollectionsReportCommand;
@@ -133,6 +135,7 @@ use Spryker\ApiPlatform\Translation\ApiCsvFileLoader;
 use Spryker\ApiPlatform\Validation\BoolValidationErrorAugmenter;
 use Spryker\ApiPlatform\Validation\Constraint\StrictBooleanValidator;
 use Spryker\ApiPlatform\Validation\DenormalizationErrorMatcher;
+use Spryker\ApiPlatform\Validation\NestedObjectDenormalizationViolationFactory;
 use Spryker\ApiPlatform\Validation\NestedObjectValidationErrorAugmenter;
 use Spryker\ApiPlatform\Validation\NumericValidationErrorAugmenter;
 use Spryker\ApiPlatform\Validation\ValidationConstraintReader;
@@ -541,10 +544,28 @@ return static function (ContainerConfigurator $container): void {
         ->tag('api_platform.filter');
 
     // Enable API Platform's JsonApiProvider to parse ?include= parameter
-    $services->set(JsonApiProvider::class)
+    $jsonApiProvider = $services->set(JsonApiProvider::class)
         ->decorate('api_platform.state_provider.locator')
         ->arg('$decorated', service('.inner'))
         ->arg('$orderParameterName', 'order');
+
+    if (class_exists(ResourceLinkageResolver::class)) {
+        $services->set(ResourceLinkageResolver::class)
+            ->arg('$resourceClassResolver', service('api_platform.resource_class_resolver'));
+
+        $jsonApiProvider
+            ->arg('$propertyNameCollectionFactory', service('api_platform.metadata.property.name_collection_factory'))
+            ->arg('$propertyMetadataFactory', service('api_platform.metadata.property.metadata_factory'))
+            ->arg('$resourceMetadataCollectionFactory', service('api_platform.metadata.resource.metadata_collection_factory'))
+            ->arg('$resourceLinkageResolver', service(ResourceLinkageResolver::class));
+    }
+
+    if (interface_exists(DenormalizationViolationFactoryInterface::class)) {
+        $services->set(NestedObjectDenormalizationViolationFactory::class)
+            ->autoconfigure(false)
+            ->decorate('api_platform.state.denormalization_violation_factory', null, 0, ContainerInterface::IGNORE_ON_INVALID_REFERENCE)
+            ->arg('$decorated', service('.inner'));
+    }
 
     $services->set(RelationshipProvider::class)
         ->autoconfigure(false)

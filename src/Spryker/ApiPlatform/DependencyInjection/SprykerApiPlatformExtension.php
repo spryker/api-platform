@@ -29,6 +29,8 @@ class SprykerApiPlatformExtension extends Extension implements PrependExtensionI
 
     protected const string MCP_BUNDLE_NAME = 'McpBundle';
 
+    protected const string API_PLATFORM_EXTENSION_ALIAS = 'api_platform';
+
     public function prepend(ContainerBuilder $container): void
     {
         $configs = $container->getExtensionConfig($this->getAlias());
@@ -38,6 +40,20 @@ class SprykerApiPlatformExtension extends Extension implements PrependExtensionI
 
         $this->ensureGeneratedDirectoriesExist($container, $config['generated_dir'], $config['api_types']);
         $this->ensureAssetsDirectoryExist($container);
+        $this->prependJsonApiIriAsId($container);
+    }
+
+    /**
+     * The JSON:API normalizers of this module build `links.self` and the relationship links from the IRI in `id`.
+     * API Platform 5 defaults `jsonapi.use_iri_as_id` to false, so it is kept on; a project can still turn it off.
+     */
+    protected function prependJsonApiIriAsId(ContainerBuilder $container): void
+    {
+        if (!$container->hasExtension(static::API_PLATFORM_EXTENSION_ALIAS)) {
+            return;
+        }
+
+        $container->prependExtensionConfig(static::API_PLATFORM_EXTENSION_ALIAS, ['jsonapi' => ['use_iri_as_id' => true]]);
     }
 
     /**
