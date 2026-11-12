@@ -35,6 +35,7 @@ use SprykerTest\ApiPlatform\Unit\Coverage\Fixture\IncludesFixtureResource;
 use SprykerTest\ApiPlatform\Unit\Coverage\Fixture\OwnershipSecuredFixtureResource;
 use SprykerTest\ApiPlatform\Unit\Coverage\Fixture\ResponseAttributesFixtureResource;
 use SprykerTest\ApiPlatform\Unit\Coverage\Fixture\RestorePasswordShapeFixtureResource;
+use SprykerTest\ApiPlatform\Unit\Coverage\Fixture\SharedErrorCodesFixtureResource;
 use SprykerTest\ApiPlatform\Unit\Coverage\Fixture\SyntheticIdentifierFixtureResource;
 use SprykerTest\ApiPlatform\Unit\Coverage\Fixture\UndeclaredResponsesFixtureResource;
 use SprykerTest\ApiPlatform\Unit\Coverage\Fixture\UnservableItemGetFixtureResource;
@@ -582,6 +583,22 @@ class SchemaTruthLoaderTest extends Unit
             ['DELETE /carts/{cartUuid}/cart-codes/{code}' => [422 => ['3301', '3303']], 'GET /cart-codes' => [400 => ['104']]],
             $truthSet->declaredErrorCodes,
         );
+    }
+
+    public function testGivenASharedErrorCodeWhenLoadingThenTheStatusAcceptsItWithoutOwingATestForIt(): void
+    {
+        // Arrange
+        $loader = ContractCoverageFactory::createSchemaTruthLoader();
+
+        // Act
+        $truthSet = $loader->load([SharedErrorCodesFixtureResource::class]);
+
+        // Assert
+        $this->assertSame(
+            ['GET /shared-error-codes 403 code 802'],
+            array_map(static fn (ApiOperation $operation): string => $operation->key(), $truthSet->errorCodeOperations),
+        );
+        $this->assertSame(['GET /shared-error-codes' => [403 => ['802', '803']]], $truthSet->declaredErrorCodes);
     }
 
     public function testGivenResourceSecurityWithAnOwnershipAttributeWhenLoadingThenEveryServableOperationOwesAForeignOwnerScenario(): void

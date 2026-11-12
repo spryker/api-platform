@@ -12,10 +12,12 @@ namespace SprykerTest\ApiPlatform\Unit\Generator;
 use ApiPlatform\Mcp\State\ToolProvider;
 use ApiPlatform\Metadata\McpTool;
 use Codeception\Test\Unit;
+use Spryker\ApiPlatform\Configuration\ApiPlatformConfig;
 use Spryker\ApiPlatform\Generator\DeclaredErrorCodeResolver;
 use Spryker\ApiPlatform\Generator\MediaType\MediaTypeFormatterRegistry;
 use Spryker\ApiPlatform\Generator\OpenApiOperationBuilder;
 use Spryker\ApiPlatform\Generator\ResourceAttributeGenerator;
+use Spryker\ApiPlatform\Schema\McpToolSchemaResolver;
 use Spryker\ApiPlatform\State\McpOperationToolProcessor;
 use SprykerTest\ApiPlatform\ApiUnitTester;
 
@@ -832,6 +834,34 @@ class ResourceAttributeGeneratorTest extends Unit
         $this->assertStringContainsString('new Operation(', $result);
     }
 
+    public function testGivenStorefrontSharedErrorCodesWhenGeneratingThenTheyRideInExtraPropertiesApartFromTheDeclaredCodes(): void
+    {
+        // Arrange
+        $schema = [
+            'name' => 'Carts',
+            'shortName' => 'carts',
+            'tags' => ['carts'],
+            'operations' => [
+                'Get' => [
+                    'type' => 'Get',
+                    'openapiContext' => [
+                        'responses' => [
+                            200 => ['description' => 'Returned.'],
+                            403 => ['description' => 'Forbidden.', 'codes' => ['802']],
+                        ],
+                    ],
+                ],
+            ],
+        ];
+        $uses = [];
+
+        // Act
+        $result = $this->createStorefrontResourceAttributeGenerator()->generate($schema, $uses);
+
+        // Assert
+        $this->assertStringContainsString("extraProperties: ['declaredErrorCodes' => ['403' => ['0' => '802']], 'sharedErrorCodes' => ['403' => ['0' => '803']]]", $result);
+    }
+
     public function testGivenDeclaredCodesWhenGeneratingAHiddenOperationThenTheyRideInExtraPropertiesNextToDeclaredResponses(): void
     {
         // Arrange
@@ -1135,6 +1165,19 @@ class ResourceAttributeGeneratorTest extends Unit
         // Assert
         $this->assertStringContainsString(sprintf('description: %s', $expectedLiteral), $result);
         $this->assertStringContainsString(sprintf("annotations: ['title' => %s, 'readOnlyHint' => true]", $expectedLiteral), $result);
+    }
+
+    protected function createStorefrontResourceAttributeGenerator(): ResourceAttributeGenerator
+    {
+        $mediaTypeFormatterRegistry = $this->createMock(MediaTypeFormatterRegistry::class);
+        $mediaTypeFormatterRegistry->method('getFormattersForMediaTypes')->willReturn([]);
+        $declaredErrorCodeResolver = new DeclaredErrorCodeResolver(new ApiPlatformConfig([], '', '', [ApiPlatformConfig::API_TYPE_STOREFRONT], false));
+
+        return new ResourceAttributeGenerator(
+            new OpenApiOperationBuilder($mediaTypeFormatterRegistry, [], $declaredErrorCodeResolver),
+            $declaredErrorCodeResolver,
+            new McpToolSchemaResolver(),
+        );
     }
 
     protected function createResourceAttributeGenerator(): ResourceAttributeGenerator

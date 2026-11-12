@@ -118,6 +118,23 @@ class ApiUserProviderTest extends Unit
         $this->assertContains('ROLE_MERCHANT_USER', $apiUser->getRoles());
     }
 
+    public function testGivenIdentifierWithUserDataWhenLoadingUserThenClaimsAreExposed(): void
+    {
+        // Arrange
+        $identifier = (string)json_encode([
+            ApiUser::CLAIM_USER_ID => 'DE--1',
+            ApiUser::CLAIM_OAUTH_SCOPES => ['customer'],
+            ApiUser::CLAIM_USER_DATA => ['customer_reference' => 'DE--1', 'id_customer' => 1],
+        ]);
+
+        // Act
+        /** @var \Spryker\ApiPlatform\Security\ApiUser $apiUser */
+        $apiUser = (new ApiUserProvider())->loadUserByIdentifier($identifier);
+
+        // Assert
+        $this->assertSame(['customer_reference' => 'DE--1', 'id_customer' => 1], $apiUser->getUserData());
+    }
+
     public function testGivenIdentifierWithoutUserIdWhenLoadingUserThenThrowsUserNotFoundException(): void
     {
         // Arrange

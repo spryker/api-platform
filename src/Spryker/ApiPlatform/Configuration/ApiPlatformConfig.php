@@ -9,7 +9,9 @@ declare(strict_types=1);
 
 namespace Spryker\ApiPlatform\Configuration;
 
+use Spryker\ApiPlatform\Security\AccessDeniedErrorResponseBuilder;
 use Spryker\ApiPlatform\Utility\ApiTypeNormalizer;
+use Symfony\Component\HttpFoundation\Response;
 
 class ApiPlatformConfig
 {
@@ -116,6 +118,33 @@ class ApiPlatformConfig
         $apiType = ApiTypeNormalizer::normalizeForSchemaLookup($apiType);
 
         return $this->canonicalObjectSearchDirectories[$apiType] ?? [];
+    }
+
+    /**
+     * Specification:
+     * - Returns the error codes the API answers on a status of any operation, so they are documented once instead of per resource.
+     * - The Storefront API answers 403 with the content restriction to an authenticated caller whom a Customer Access content type
+     *   linked to the operation refuses; the Backend API has no shared codes.
+     * - A shared code joins the status of every operation that documents it, and no operation owes a test for it.
+     *
+     * @api
+     *
+     * @return array<int, list<array{code: string, description: string}>> Status => codes.
+     */
+    public function getSharedErrorCodes(): array
+    {
+        if (!$this->hasApiType(static::API_TYPE_STOREFRONT)) {
+            return [];
+        }
+
+        return [
+            Response::HTTP_FORBIDDEN => [
+                [
+                    'code' => AccessDeniedErrorResponseBuilder::ERROR_CODE_CONTENT_RESTRICTED,
+                    'description' => AccessDeniedErrorResponseBuilder::ERROR_DETAIL_CONTENT_RESTRICTED,
+                ],
+            ],
+        ];
     }
 
     /**

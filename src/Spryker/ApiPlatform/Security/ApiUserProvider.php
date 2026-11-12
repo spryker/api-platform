@@ -56,6 +56,7 @@ class ApiUserProvider implements UserProviderInterface
             $roles,
             $claims[ApiUser::CLAIM_OAUTH_CLIENT_ID] ?? null,
             $claims[ApiUser::CLAIM_OAUTH_ACCESS_TOKEN_ID] ?? null,
+            is_array($claims[ApiUser::CLAIM_USER_DATA] ?? null) ? $claims[ApiUser::CLAIM_USER_DATA] : [],
         );
     }
 

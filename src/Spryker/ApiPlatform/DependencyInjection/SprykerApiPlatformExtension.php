@@ -138,6 +138,10 @@ class SprykerApiPlatformExtension extends Extension implements PrependExtensionI
         $loader = new PhpFileLoader($container, new FileLocator(__DIR__ . '/../../../../resources/config'));
         $loader->load('services.php');
 
+        if ($config['operation_permission_check']) {
+            $loader->load('permission_services.php');
+        }
+
         $this->loadSecurityServices($container, $loader);
         $this->loadMcpServices($container, $loader);
     }

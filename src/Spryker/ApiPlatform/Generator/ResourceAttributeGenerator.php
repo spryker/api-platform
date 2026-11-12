@@ -87,6 +87,11 @@ class ResourceAttributeGenerator
     protected const string EXTRA_PROPERTY_DECLARED_ERROR_CODES = 'declaredErrorCodes';
 
     /**
+     * @uses \Spryker\ApiPlatform\Contract\Coverage\SchemaTruthLoader::EXTRA_PROPERTY_SHARED_ERROR_CODES
+     */
+    protected const string EXTRA_PROPERTY_SHARED_ERROR_CODES = 'sharedErrorCodes';
+
+    /**
      * @uses \Spryker\ApiPlatform\Contract\Coverage\SchemaTruthLoader::EXTRA_PROPERTY_ERROR_MAPPINGS
      */
     protected const string EXTRA_PROPERTY_ERROR_MAPPINGS = 'errorMappings';
@@ -816,7 +821,8 @@ class ResourceAttributeGenerator
      * The codes each error status declares ride in `extraProperties` on every operation, hidden or
      * not: `OpenApi\Model\Response` has no slot a generated attribute could fill with them, and the
      * contract coverage reads them back from there -
-     * {@see \Spryker\ApiPlatform\Contract\Coverage\SchemaTruthLoader::declaredErrorCodes()}.
+     * {@see \Spryker\ApiPlatform\Contract\Coverage\SchemaTruthLoader::declaredErrorCodes()}. The API's shared
+     * codes of those statuses ride apart, so the coverage accepts them without owing a test for them.
      *
      * @param array<string, mixed> $schema
      * @param array<string, mixed> $operation
@@ -841,6 +847,16 @@ class ResourceAttributeGenerator
             static fn (array $codes): array => array_map('strval', array_keys($codes)),
             $declaredErrorCodes,
         );
+
+        $sharedErrorCodes = $this->declaredErrorCodeResolver->resolveSharedErrorCodes($declaredErrorCodes);
+
+        if ($sharedErrorCodes !== []) {
+            $extraProperties[static::EXTRA_PROPERTY_SHARED_ERROR_CODES] = array_map(
+                static fn (array $codes): array => array_map('strval', array_keys($codes)),
+                $sharedErrorCodes,
+            );
+        }
+
         $parameters['extraProperties'] = $extraProperties;
 
         return $parameters;

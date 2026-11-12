@@ -104,6 +104,18 @@ class RequestAttribute
     public const string CUSTOMER_ACCESS_DENIED = '_customer_access_denied';
 
     /**
+     * Set by the permission voter in `enforce` mode when an ownership declaration names the response for the refusal:
+     * an array of `status` (int), `code` (string) and `detail` (string).
+     */
+    public const string SECURITY_OWNERSHIP_DENIAL = '_security_ownership_denial';
+
+    /**
+     * Set by the permission voter in `enforce` mode when a list operation is restricted to ownership scopes:
+     * the `list<string>` of scopes the result may contain.
+     */
+    public const string SECURITY_GRANTED_OWNERSHIP_SCOPES = '_security_granted_ownership_scopes';
+
+    /**
      * The constraints the synthesized validation errors of the response stand for.
      *
      * @see \Spryker\ApiPlatform\Validation\SynthesizedViolation

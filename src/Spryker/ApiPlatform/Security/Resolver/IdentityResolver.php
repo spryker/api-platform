@@ -9,6 +9,7 @@ declare(strict_types=1);
 
 namespace Spryker\ApiPlatform\Security\Resolver;
 
+use Spryker\ApiPlatform\Security\ApiUser;
 use Symfony\Component\Security\Core\Authentication\Token\Storage\TokenStorageInterface;
 
 /**
@@ -37,7 +38,13 @@ class IdentityResolver
             return null;
         }
 
-        $userIdentifier = $token->getUser()->getUserIdentifier();
+        $user = $token->getUser();
+
+        if ($user instanceof ApiUser && $user->getUserData() !== []) {
+            return $user->getUserData();
+        }
+
+        $userIdentifier = $user->getUserIdentifier();
         $userData = json_decode($userIdentifier, true);
 
         if (!is_array($userData)) {

@@ -11,6 +11,7 @@ namespace SprykerTest\ApiPlatform\Unit\Generator;
 
 use Codeception\Test\Unit;
 use PhpToken;
+use Spryker\ApiPlatform\Configuration\ApiPlatformConfig;
 use Spryker\ApiPlatform\Exception\ApiSchemaGenerationException;
 use Spryker\ApiPlatform\Generator\DeclaredErrorCodeResolver;
 use Spryker\ApiPlatform\Generator\MediaType\MediaTypeFormatterRegistry;
@@ -422,6 +423,66 @@ class OpenApiOperationBuilderTest extends Unit
         $this->assertStringNotContainsString("'002'", $result);
     }
 
+    public function testGivenStorefrontSharedErrorCodesWhenGeneratingThenTheyJoinAForbiddenStatusThatDeclaresCodes(): void
+    {
+        // Arrange
+        $operation = [
+            'type' => static::OPERATION_TYPE_PATCH,
+            'openapiContext' => [
+                'responses' => [
+                    403 => ['description' => 'Forbidden.', 'codes' => [['code' => '802', 'description' => 'Unauthorized request.']]],
+                ],
+            ],
+        ];
+
+        // Act
+        $result = $this->createBuilder([ApiPlatformConfig::API_TYPE_STOREFRONT])->generateOpenApiOperation([], $operation, static::OPERATION_TYPE_PATCH);
+
+        // Assert
+        $this->assertStringContainsString("'802' => ['summary' => 'Unauthorized request.'", $result);
+        $this->assertStringContainsString("'803' => ['summary' => 'Access to this content is restricted.', 'value' => ['errors' => [['code' => '803', 'status' => 403, 'detail' => 'Access to this content is restricted.']]]]", $result);
+    }
+
+    public function testGivenStorefrontSharedErrorCodesWhenGeneratingThenAForbiddenStatusWithoutCodesIsLeftToTheDefaultExamples(): void
+    {
+        // Arrange
+        $operation = [
+            'type' => static::OPERATION_TYPE_PATCH,
+            'openapiContext' => [
+                'responses' => [
+                    403 => ['description' => 'Forbidden.'],
+                ],
+            ],
+        ];
+
+        // Act
+        $result = $this->createBuilder([ApiPlatformConfig::API_TYPE_STOREFRONT])->generateOpenApiOperation([], $operation, static::OPERATION_TYPE_PATCH);
+
+        // Assert
+        $this->assertStringContainsString("403 => new Response(description: 'Forbidden.')", $result);
+        $this->assertStringNotContainsString("'803'", $result);
+    }
+
+    public function testGivenBackendApiWhenGeneratingThenNoSharedErrorCodeJoinsTheForbiddenStatus(): void
+    {
+        // Arrange
+        $operation = [
+            'type' => static::OPERATION_TYPE_PATCH,
+            'openapiContext' => [
+                'responses' => [
+                    403 => ['description' => 'Forbidden.', 'codes' => ['802']],
+                ],
+            ],
+        ];
+
+        // Act
+        $result = $this->createBuilder([ApiPlatformConfig::API_TYPE_BACKEND])->generateOpenApiOperation([], $operation, static::OPERATION_TYPE_PATCH);
+
+        // Assert
+        $this->assertStringContainsString("'802' =>", $result);
+        $this->assertStringNotContainsString("'803'", $result);
+    }
+
     public function testGivenCodesOnASuccessStatusWhenGeneratingThenGenerationFailsNamingTheOperation(): void
     {
         // Arrange
@@ -473,8 +534,15 @@ class OpenApiOperationBuilderTest extends Unit
         $this->createBuilder()->generateOpenApiOperation(['shortName' => 'carts'], $operation, static::OPERATION_TYPE_PATCH);
     }
 
-    protected function createBuilder(): OpenApiOperationBuilder
+    /**
+     * @param array<string> $apiTypes
+     */
+    protected function createBuilder(array $apiTypes = []): OpenApiOperationBuilder
     {
-        return new OpenApiOperationBuilder(new MediaTypeFormatterRegistry([]), [], new DeclaredErrorCodeResolver());
+        return new OpenApiOperationBuilder(
+            new MediaTypeFormatterRegistry([]),
+            [],
+            new DeclaredErrorCodeResolver(new ApiPlatformConfig([], '', '', $apiTypes, false)),
+        );
     }
 }

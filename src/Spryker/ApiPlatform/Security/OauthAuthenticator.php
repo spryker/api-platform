@@ -177,6 +177,7 @@ class OauthAuthenticator extends AbstractAuthenticator
             ApiUser::CLAIM_OAUTH_CLIENT_ID => $validationResponse->getOauthClientId(),
             ApiUser::CLAIM_OAUTH_ACCESS_TOKEN_ID => $validationResponse->getOauthAccessTokenId(),
             ApiUser::CLAIM_OAUTH_SCOPES => $validationResponse->getOauthScopes(),
+            ApiUser::CLAIM_USER_DATA => $this->resolveUserData($validationResponse),
         ];
 
         return json_encode($claims, JSON_THROW_ON_ERROR);
@@ -205,5 +206,21 @@ class OauthAuthenticator extends AbstractAuthenticator
         }
 
         return (string)$userData[static::OAUTH_USER_DATA_KEY];
+    }
+
+    /**
+     * @return array<string, mixed>
+     */
+    protected function resolveUserData(OauthAccessTokenValidationResponseTransfer $validationResponse): array
+    {
+        $oauthUserId = $validationResponse->getOauthUserId();
+
+        if ($oauthUserId === null) {
+            return [];
+        }
+
+        $userData = json_decode($oauthUserId, true);
+
+        return is_array($userData) ? $userData : [];
     }
 }

@@ -12,6 +12,7 @@ namespace Spryker\ApiPlatform\Security;
 use ApiPlatform\Metadata\ApiResource;
 use ReflectionClass;
 use Spryker\ApiPlatform\Error\JsonApiErrorResponseFactory;
+use Spryker\ApiPlatform\Exception\GlueApiException;
 use Spryker\ApiPlatform\OpenApi\ErrorResponse\ProviderNotFoundErrorResolver;
 use Spryker\ApiPlatform\Request\RequestAttribute;
 use Spryker\ApiPlatform\Validation\Trait\ValidationMessageTranslationTrait;
@@ -31,6 +32,14 @@ class AccessDeniedErrorResponseBuilder
     public const string ERROR_CODE_UNAUTHORIZED_REQUEST = '802';
 
     public const string ERROR_DETAIL_UNAUTHORIZED_REQUEST = 'Unauthorized request.';
+
+    /**
+     * Answered to an authenticated caller whom a Customer Access content type linked to the operation refuses.
+     * The Storefront API documents it on every 403 through {@see \Spryker\ApiPlatform\Configuration\ApiPlatformConfig::getSharedErrorCodes()}.
+     */
+    public const string ERROR_CODE_CONTENT_RESTRICTED = '803';
+
+    public const string ERROR_DETAIL_CONTENT_RESTRICTED = 'Access to this content is restricted.';
 
     protected const string ERROR_CODE_MISSING_ACCESS_TOKEN = '002';
 
@@ -53,6 +62,16 @@ class AccessDeniedErrorResponseBuilder
 
     public function createAccessDeniedResponse(Request $request): JsonResponse
     {
+        $ownershipDenial = $this->resolveOwnershipDenial($request);
+
+        // The permission layer refused on ownership and named the error today's provider throws for that caller.
+        // Rendering the same exception keeps the body identical to the provider's.
+        if ($ownershipDenial !== null) {
+            return $this->errorResponseFactory->createGlueApiErrorResponse(
+                new GlueApiException($ownershipDenial['status'], $ownershipDenial['code'], $ownershipDenial['detail']),
+            );
+        }
+
         $authorizationValue = (string)$request->headers->get(static::AUTHORIZATION_HEADER, '');
         $hasValidBearerToken = str_starts_with($authorizationValue, 'Bearer ') && strlen($authorizationValue) > 7;
         $hasAnonymousCustomerHeader = $request->headers->has(static::ANONYMOUS_CUSTOMER_HEADER);
@@ -62,12 +81,30 @@ class AccessDeniedErrorResponseBuilder
 
         // Resources that accept either bearer or anonymous customer auth (e.g. checkout)
         // return 400 with a dedicated code when neither header is present — UNLESS the access denial
-        // was raised by the CustomerAccess voter (b2b projects restricting `order-place-submit`/`price`
+        // was raised by Customer Access (b2b projects restricting `order-place-submit`/`price`
         // content types). In that case the legacy 403/002 "Missing access token." response takes
         // precedence so customer-access protection keeps behaving the way Glue REST did before the
-        // API Platform migration. The flag is set in
-        // {@see \Spryker\Glue\CustomerAccessRestApi\Api\Storefront\Security\CustomerAccessVoter}.
+        // API Platform migration. The flag is set by
+        // {@see \Spryker\Glue\CustomerAccessRestApi\Api\Storefront\Security\CustomerAccessVoter} in the
+        // authorization modes `off` and `shadow`, and by the permission layer for a linked content type in `enforce`.
         $isCustomerAccessDenied = (bool)$request->attributes->get(RequestAttribute::CUSTOMER_ACCESS_DENIED, false);
+
+        // The Customer Access voter flags only a caller without an authenticated user, so with a bearer token the flag
+        // comes from the permission layer refusing an authenticated caller on a linked content type, which it does in `enforce`.
+        if ($isCustomerAccessDenied && $hasValidBearerToken) {
+            return $this->errorResponseFactory->createJsonApiResponse(
+                [
+                    'errors' => [
+                        [
+                            'code' => static::ERROR_CODE_CONTENT_RESTRICTED,
+                            'status' => Response::HTTP_FORBIDDEN,
+                            'detail' => $this->translateValidationMessage(static::ERROR_DETAIL_CONTENT_RESTRICTED),
+                        ],
+                    ],
+                ],
+                Response::HTTP_FORBIDDEN,
+            );
+        }
 
         if (!$hasValidBearerToken && !$hasAnonymousCustomerHeader && ($extraProperties['securityAnonymousAuthRequired'] ?? false) && !$isCustomerAccessDenied) {
             return $this->errorResponseFactory->createJsonApiResponse(
@@ -149,6 +186,38 @@ class AccessDeniedErrorResponseBuilder
             ],
             Response::HTTP_FORBIDDEN,
         );
+    }
+
+    /**
+     * Returns the declared denial only when it carries a 4xx int status and a non-empty string code and detail.
+     *
+     * @return array{status: int, code: string, detail: string}|null
+     */
+    protected function resolveOwnershipDenial(Request $request): ?array
+    {
+        $ownershipDenial = $request->attributes->get(RequestAttribute::SECURITY_OWNERSHIP_DENIAL);
+
+        if (!is_array($ownershipDenial)) {
+            return null;
+        }
+
+        $status = $ownershipDenial['status'] ?? null;
+        $code = $ownershipDenial['code'] ?? null;
+        $detail = $ownershipDenial['detail'] ?? null;
+
+        if (
+            !is_int($status)
+            || $status < Response::HTTP_BAD_REQUEST
+            || $status >= Response::HTTP_INTERNAL_SERVER_ERROR
+            || !is_string($code)
+            || $code === ''
+            || !is_string($detail)
+            || $detail === ''
+        ) {
+            return null;
+        }
+
+        return ['status' => $status, 'code' => $code, 'detail' => $detail];
     }
 
     /**

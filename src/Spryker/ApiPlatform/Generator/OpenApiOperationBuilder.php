@@ -143,14 +143,16 @@ class OpenApiOperationBuilder
             $operationParts[] = $parameters;
         }
 
+        $declaredErrorCodes = $this->declaredErrorCodeResolver->resolve(
+            $parsedSchema,
+            $operation,
+            $this->describeOperation($parsedSchema, $operation, $operationType),
+        );
+
         $responses = $this->formatResponses(
             $openapiContext[static::CONTEXT_KEY_RESPONSES] ?? null,
             $indentLevel,
-            $this->declaredErrorCodeResolver->resolve(
-                $parsedSchema,
-                $operation,
-                $this->describeOperation($parsedSchema, $operation, $operationType),
-            ),
+            $this->mergeSharedErrorCodes($declaredErrorCodes),
         );
 
         if ($responses !== '') {
@@ -342,6 +344,22 @@ class OpenApiOperationBuilder
         }
 
         return $this->formatNamedList(static::CONTEXT_KEY_RESPONSES, $responseParts, $indentLevel);
+    }
+
+    /**
+     * @param array<int, array<string, string>> $declaredErrorCodes Status => code => description.
+     *
+     * @return array<int, array<string, string>> Status => code => description, codes sorted.
+     */
+    protected function mergeSharedErrorCodes(array $declaredErrorCodes): array
+    {
+        foreach ($this->declaredErrorCodeResolver->resolveSharedErrorCodes($declaredErrorCodes) as $status => $sharedCodes) {
+            $codes = $declaredErrorCodes[$status] + $sharedCodes;
+            ksort($codes, SORT_STRING);
+            $declaredErrorCodes[$status] = $codes;
+        }
+
+        return $declaredErrorCodes;
     }
 
     /**

@@ -27,14 +27,18 @@ class ApiUser implements UserInterface
 
     public const string CLAIM_OAUTH_SCOPES = 'oauth_scopes';
 
+    public const string CLAIM_USER_DATA = 'user_data';
+
     /**
      * @param array<string> $roles
+     * @param array<string, mixed> $userData
      */
     public function __construct(
         protected readonly string $userIdentifier,
         protected readonly array $roles = [],
         protected readonly ?string $oauthClientId = null,
         protected readonly ?string $oauthAccessTokenId = null,
+        protected readonly array $userData = [],
     ) {
     }
 
@@ -75,5 +79,13 @@ class ApiUser implements UserInterface
     public function getOauthAccessTokenId(): ?string
     {
         return $this->oauthAccessTokenId;
+    }
+
+    /**
+     * @return array<string, mixed>
+     */
+    public function getUserData(): array
+    {
+        return $this->userData;
     }
 }

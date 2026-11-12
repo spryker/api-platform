@@ -39,6 +39,10 @@ class ErrorResponseBuilderTest extends Unit
 {
     protected const string SECURITY_CODE = '411';
 
+    protected const string ERROR_CODE_CONTENT_RESTRICTED = '803';
+
+    protected const string DETAIL_CONTENT_RESTRICTED = 'Access to this content is restricted.';
+
     protected const string SECURITY_MESSAGE_AGENT = 'Action is available to agent user only.';
 
     protected const string SECURITY_MESSAGE_EXTRA_PROPERTY = 'Only an extra property.';
@@ -153,7 +157,7 @@ class ErrorResponseBuilderTest extends Unit
         $this->assertSame(static::SECURITY_CODE, $this->getExampleValue($examples, ErrorResponseBuilder::EXAMPLE_FORBIDDEN)['errors'][0]['code']);
     }
 
-    public function testGivenStorefrontApiWhenBuildingForbiddenExamplesThenMissingTokenAndGenericDenialAreShown(): void
+    public function testGivenStorefrontApiWhenBuildingForbiddenExamplesThenMissingTokenGenericDenialAndSharedCodesAreShown(): void
     {
         // Arrange
         $operation = new Get(security: static::SECURITY_BACK_OFFICE_USER);
@@ -163,8 +167,8 @@ class ErrorResponseBuilderTest extends Unit
 
         // Assert
         $this->assertSame(
-            [ErrorResponseBuilder::EXAMPLE_MISSING_ACCESS_TOKEN, ErrorResponseBuilder::EXAMPLE_FORBIDDEN],
-            array_keys($examples->getArrayCopy()),
+            [ErrorResponseBuilder::EXAMPLE_MISSING_ACCESS_TOKEN, ErrorResponseBuilder::EXAMPLE_FORBIDDEN, static::ERROR_CODE_CONTENT_RESTRICTED],
+            array_map('strval', array_keys($examples->getArrayCopy())),
         );
         $this->assertSame(
             ['errors' => [['code' => '002', 'status' => Response::HTTP_FORBIDDEN, 'detail' => 'Missing access token.']]],
@@ -174,6 +178,36 @@ class ErrorResponseBuilderTest extends Unit
             ['errors' => [['code' => '802', 'status' => Response::HTTP_FORBIDDEN, 'detail' => 'Unauthorized request.', 'message' => 'Unauthorized request.']]],
             $this->getExampleValue($examples, ErrorResponseBuilder::EXAMPLE_FORBIDDEN),
         );
+    }
+
+    public function testGivenStorefrontApiWhenBuildingForbiddenExamplesThenEachSharedCodeIsAnExampleOfItsOwn(): void
+    {
+        // Arrange
+        $operation = new Get(security: static::SECURITY_BACK_OFFICE_USER);
+
+        // Act
+        $examples = $this->createStorefrontBuilder()->buildExamples(Response::HTTP_FORBIDDEN, $operation);
+
+        // Assert
+        $example = $examples[static::ERROR_CODE_CONTENT_RESTRICTED] ?? null;
+        $this->assertInstanceOf(Example::class, $example);
+        $this->assertSame(static::DETAIL_CONTENT_RESTRICTED, $example->getSummary());
+        $this->assertSame(
+            ['errors' => [['code' => static::ERROR_CODE_CONTENT_RESTRICTED, 'status' => Response::HTTP_FORBIDDEN, 'detail' => static::DETAIL_CONTENT_RESTRICTED]]],
+            $example->getValue(),
+        );
+    }
+
+    public function testGivenPublicStorefrontOperationWhenBuildingForbiddenExamplesThenNoSharedCodeIsShown(): void
+    {
+        // Arrange
+        $operation = new Get();
+
+        // Act
+        $examples = $this->createStorefrontBuilder()->buildExamples(Response::HTTP_FORBIDDEN, $operation);
+
+        // Assert
+        $this->assertSame([], $examples->getArrayCopy());
     }
 
     public function testGivenResourceSecurityCodeWhenBuildingForbiddenExamplesThenTheDenialUsesTheResourceCode(): void

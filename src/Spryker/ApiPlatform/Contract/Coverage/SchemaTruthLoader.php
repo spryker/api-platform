@@ -60,6 +60,11 @@ class SchemaTruthLoader
     protected const string EXTRA_PROPERTY_DECLARED_ERROR_CODES = 'declaredErrorCodes';
 
     /**
+     * @uses \Spryker\ApiPlatform\Generator\ResourceAttributeGenerator::EXTRA_PROPERTY_SHARED_ERROR_CODES
+     */
+    protected const string EXTRA_PROPERTY_SHARED_ERROR_CODES = 'sharedErrorCodes';
+
+    /**
      * @uses \Spryker\ApiPlatform\Generator\ResourceAttributeGenerator::EXTRA_PROPERTY_ERROR_MAPPINGS
      */
     protected const string EXTRA_PROPERTY_ERROR_MAPPINGS = 'errorMappings';
@@ -380,6 +385,10 @@ class SchemaTruthLoader
                     [$apiOperation->dispatchKey() => $operationErrorCodes],
                 );
                 $errorCodeOperations = array_merge($errorCodeOperations, $this->deriveDeclaredErrorCodes($operationErrorCodes, $apiOperation));
+                $declaredErrorCodes = TruthSet::mergeDeclaredErrorCodes(
+                    $declaredErrorCodes,
+                    [$apiOperation->dispatchKey() => $this->sharedErrorCodes($operation)],
+                );
             }
 
             $operationType = (new ReflectionClass($operation))->getShortName();
@@ -690,13 +699,33 @@ class SchemaTruthLoader
      */
     protected function declaredErrorCodes(HttpOperation $operation): array
     {
-        $declaredErrorCodes = $operation->getExtraProperties()[static::EXTRA_PROPERTY_DECLARED_ERROR_CODES] ?? null;
-        if (!is_array($declaredErrorCodes)) {
+        return $this->readErrorCodesExtraProperty($operation, static::EXTRA_PROPERTY_DECLARED_ERROR_CODES);
+    }
+
+    /**
+     * The API's shared codes the generator wrote next to the declared ones - see
+     * {@see \Spryker\ApiPlatform\Generator\ResourceAttributeGenerator::addDeclaredErrorCodesExtraProperty()}. A response
+     * may carry them on a status that declares codes, but no test is owed for them.
+     *
+     * @return array<int, array<string>>
+     */
+    protected function sharedErrorCodes(HttpOperation $operation): array
+    {
+        return $this->readErrorCodesExtraProperty($operation, static::EXTRA_PROPERTY_SHARED_ERROR_CODES);
+    }
+
+    /**
+     * @return array<int, array<string>>
+     */
+    protected function readErrorCodesExtraProperty(HttpOperation $operation, string $extraProperty): array
+    {
+        $errorCodes = $operation->getExtraProperties()[$extraProperty] ?? null;
+        if (!is_array($errorCodes)) {
             return [];
         }
 
         $codesByStatus = [];
-        foreach ($declaredErrorCodes as $status => $codes) {
+        foreach ($errorCodes as $status => $codes) {
             if (!is_array($codes) || $codes === []) {
                 continue;
             }

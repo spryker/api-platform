@@ -9,6 +9,7 @@ declare(strict_types=1);
 
 namespace Spryker\ApiPlatform\Generator;
 
+use Spryker\ApiPlatform\Configuration\ApiPlatformConfig;
 use Spryker\ApiPlatform\Exception\ApiSchemaGenerationException;
 
 /**
@@ -20,6 +21,10 @@ use Spryker\ApiPlatform\Exception\ApiSchemaGenerationException;
  * A `codes` entry is either a code string or `{code, description}`. Codes are strings because the
  * JSON:API `code` member is one, and `'005'` keeps its leading zero. The OpenAPI examples and the
  * coverage truth both read this one normalization, so they cannot disagree.
+ *
+ * The API's shared codes ({@see \Spryker\ApiPlatform\Configuration\ApiPlatformConfig::getSharedErrorCodes()})
+ * are resolved apart: they are documented and accepted on every status that declares codes, but no
+ * operation owes a test for them.
  */
 class DeclaredErrorCodeResolver
 {
@@ -40,6 +45,10 @@ class DeclaredErrorCodeResolver
     protected const string KEY_OPERATIONS = 'operations';
 
     protected const int STATUS_CLIENT_ERROR_MIN = 400;
+
+    public function __construct(protected ?ApiPlatformConfig $apiPlatformConfig = null)
+    {
+    }
 
     /**
      * @param array<string, mixed> $parsedSchema
@@ -100,6 +109,41 @@ class DeclaredErrorCodeResolver
         }
 
         return $declaredCodes;
+    }
+
+    /**
+     * The shared codes of each status that declares codes, without the codes that status declares itself. A status
+     * without codes is left to the default examples of the published document, which carry the shared codes too.
+     *
+     * @param array<int, array<string, string>> $declaredErrorCodes Status => code => description, as {@see resolve()} returns them.
+     *
+     * @return array<int, array<string, string>> Status => code => description, both sorted.
+     */
+    public function resolveSharedErrorCodes(array $declaredErrorCodes): array
+    {
+        $sharedErrorCodes = [];
+
+        foreach ($this->apiPlatformConfig?->getSharedErrorCodes() ?? [] as $status => $codes) {
+            if (!isset($declaredErrorCodes[$status])) {
+                continue;
+            }
+
+            $codes = array_diff_key(
+                $this->normalizeCodes($codes, sprintf('the shared error codes of status %d', $status)),
+                $declaredErrorCodes[$status],
+            );
+
+            if ($codes === []) {
+                continue;
+            }
+
+            ksort($codes, SORT_STRING);
+            $sharedErrorCodes[$status] = $codes;
+        }
+
+        ksort($sharedErrorCodes);
+
+        return $sharedErrorCodes;
     }
 
     /**

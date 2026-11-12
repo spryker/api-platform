@@ -32,6 +32,9 @@ use Symfony\Component\HttpFoundation\Response;
  * the Backend API documents every 404 with the one resource-not-found code and message of the legacy Glue
  * application instead of resource-specific ones.
  *
+ * Every protected operation's 403 also lists the API's shared codes
+ * ({@see \Spryker\ApiPlatform\Configuration\ApiPlatformConfig::getSharedErrorCodes()}), such as the Storefront content restriction.
+ *
  * The `default` response covers what no status of its own documents: 405 for a method the path does not support,
  * 406 for an Accept header outside the configured formats and, on an operation with a body, 415 for a Content-Type
  * outside its input formats, all rendered by the framework with its own texts.
@@ -84,6 +87,8 @@ class ErrorResponseBuilder
     protected const string KEY_DETAIL = 'detail';
 
     protected const string KEY_MESSAGE = 'message';
+
+    protected const string KEY_DESCRIPTION = 'description';
 
     protected const string EXTRA_PROPERTY_SECURITY_CODE = 'securityCode';
 
@@ -398,6 +403,26 @@ class ErrorResponseBuilder
             $examples[static::EXAMPLE_ACCESS_DENIED_BY_ACL] = $this->createExample(static::DETAIL_ACCESS_DENIED_BY_ACL, [
                 static::KEY_STATUS => Response::HTTP_FORBIDDEN,
                 static::KEY_DETAIL => static::DETAIL_ACCESS_DENIED_BY_ACL,
+            ]);
+        }
+
+        return $examples + $this->buildSharedErrorCodeExamples(Response::HTTP_FORBIDDEN);
+    }
+
+    /**
+     * One example per shared code of the status, named by its code as the declared codes' examples are.
+     *
+     * @return array<string, \ApiPlatform\OpenApi\Model\Example>
+     */
+    protected function buildSharedErrorCodeExamples(int $status): array
+    {
+        $examples = [];
+
+        foreach ($this->apiPlatformConfig->getSharedErrorCodes()[$status] ?? [] as $sharedErrorCode) {
+            $examples[$sharedErrorCode[static::KEY_CODE]] = $this->createExample($sharedErrorCode[static::KEY_DESCRIPTION], [
+                static::KEY_CODE => $sharedErrorCode[static::KEY_CODE],
+                static::KEY_STATUS => $status,
+                static::KEY_DETAIL => $sharedErrorCode[static::KEY_DESCRIPTION],
             ]);
         }
 
