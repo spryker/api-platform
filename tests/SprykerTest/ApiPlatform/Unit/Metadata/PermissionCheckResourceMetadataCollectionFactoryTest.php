@@ -73,14 +73,14 @@ class PermissionCheckResourceMetadataCollectionFactoryTest extends Unit
         // Arrange
         $factory = $this->createFactory(new ApiResource(
             shortName: 'catalog-search',
-            operations: ['get' => (new Get(uriTemplate: '/catalog-search/{id}'))->withShortName('catalog-search')->withName('get')],
+            operations: ['_api_/catalog-searches/{catalogSearchId}_get' => (new Get(uriTemplate: '/catalog-searches/{catalogSearchId}'))->withShortName('catalog-search')->withName('_api_/catalog-searches/{catalogSearchId}_get')],
         ));
 
         // Act
-        $operation = iterator_to_array($factory->create('App\\Search')[0]->getOperations())['get'];
+        $operation = iterator_to_array($factory->create('App\\Search')[0]->getOperations())['_api_/catalog-searches/{catalogSearchId}_get'];
 
         // Assert
-        $this->assertSame("is_granted('api.storefront.catalog-search.get')", $operation->getSecurity());
+        $this->assertSame("is_granted('api.storefront.catalog-search.get.catalog-searches-catalog-search-id')", $operation->getSecurity());
         $this->assertNull($operation->getExtraProperties()[OperationPermissionIdentifierResolver::EXTRA_PROPERTY_BASELINE_SECURITY]);
     }
 

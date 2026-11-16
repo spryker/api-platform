@@ -76,10 +76,10 @@ class OperationPermissionIdentifierResolverTest extends Unit
         $collection = $this->createCollection('AbstractProductPrices', ['x' => new GetCollection(uriTemplate: '/abstract-product-prices')]);
 
         // Act
-        $identifiers = array_values((new OperationPermissionIdentifierResolver())->resolve('backend', ['App\\Resource' => $collection]));
+        $identifiers = array_values((new OperationPermissionIdentifierResolver())->resolve('storefront', ['App\\Resource' => $collection]));
 
         // Assert
-        $this->assertSame(['api.backend.abstract-product-prices.get-collection'], $identifiers);
+        $this->assertSame(['api.storefront.abstract-product-prices.get-collection'], $identifiers);
     }
 
     public function testGivenASecondResourceWithTheSameShortNameAndKindWhenResolveIsCalledThenTheFirstIdentifierStaysTheSame(): void
