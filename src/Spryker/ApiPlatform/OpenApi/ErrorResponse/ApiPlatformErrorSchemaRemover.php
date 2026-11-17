@@ -92,7 +92,8 @@ class ApiPlatformErrorSchemaRemover
                     $this->schemaReferenceResolver->collectNestedSchemaNames($schemas[$schemaName]),
                 )));
             }
-        } while (count($schemaNames) !== $countBeforeExpansion);
+            $hasNextBatch = count($schemaNames) !== $countBeforeExpansion;
+        } while ($hasNextBatch);
 
         return $schemaNames;
     }

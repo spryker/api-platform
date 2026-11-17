@@ -21,6 +21,8 @@ use Throwable;
 
 /**
  * Builds every JSON:API error response the Glue exception subscriber answers with.
+ *
+ * @SuppressWarnings(PHPMD.UndefinedVariable) PHPMD 2.x flags static property reads as undefined variables; fixed in PHPMD 3.x.
  */
 class JsonApiErrorResponseFactory
 {

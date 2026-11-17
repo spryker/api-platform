@@ -45,6 +45,8 @@ use Symfony\Component\HttpFoundation\Response;
  *
  * The KernelFeature and Glue convention texts are repeated here as literals: neither module is a dependency of this
  * one, and KernelFeature depends on it, so their constants cannot be referenced.
+ *
+ * @SuppressWarnings(PHPMD.UndefinedVariable) PHPMD 2.x flags static property reads as undefined variables; fixed in PHPMD 3.x.
  */
 class ErrorResponseBuilder
 {

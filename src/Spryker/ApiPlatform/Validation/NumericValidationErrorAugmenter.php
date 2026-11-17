@@ -232,7 +232,7 @@ class NumericValidationErrorAugmenter
 
         $errors = array_values(array_filter(
             $errors,
-            static fn (array $e): bool => ($e['detail'] ?? '') !== $typeNumericDetail,
+            static fn (array $error): bool => ($error['detail'] ?? '') !== $typeNumericDetail,
         ));
 
         array_unshift($errors, $this->withSynthesizedViolations([

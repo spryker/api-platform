@@ -2,6 +2,7 @@ parameters:
     ignoreErrors:
         -
             identifier: missingType.iterableValue
+        - '#PHPDoc tag @SuppressWarnings has invalid value#'
     level: 8
     # A @phpstan-ignore only matches under the default deps, not --prefer-lowest (non-ignorable otherwise).
     reportUnmatchedIgnoredErrors: false
